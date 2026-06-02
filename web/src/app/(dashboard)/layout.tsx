@@ -13,6 +13,8 @@ import {
   Search,
   UserCheck,
 } from 'lucide-react';
+import { AuthGuard } from '@/components/auth-guard';
+import { LogoutButton } from '@/components/logout-button';
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -29,6 +31,7 @@ const nav = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
+    <AuthGuard>
     <div className="flex min-h-screen bg-background">
       {/* Brand sidebar */}
       <aside className="brand-gradient sticky top-0 flex h-screen w-64 shrink-0 flex-col p-4 text-white">
@@ -77,6 +80,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Bell className="h-[18px] w-[18px]" />
             <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-destructive" />
           </button>
+          <LogoutButton />
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-full brand-gradient" />
             <div className="hidden leading-tight sm:block">
@@ -89,5 +93,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <main className="flex-1 p-8">{children}</main>
       </div>
     </div>
+    </AuthGuard>
   );
 }

@@ -1,63 +1,87 @@
+'use client';
+
+import { useState } from 'react';
+import useSWR from 'swr';
+import { fetcher, api } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Check, X } from 'lucide-react';
+import { Check, X, Loader2 } from 'lucide-react';
 
-const pending = [
-  { name: 'Ravi Kumar', type: 'CL', range: 'Feb 12 – Feb 13', days: 2, reason: 'Family function' },
-  { name: 'Priya S', type: 'SL', range: 'Feb 11', days: 1, reason: 'Fever' },
-  { name: 'Karthik V', type: 'EL', range: 'Feb 14 – Feb 18', days: 5, reason: 'Vacation' },
-];
+interface PendingLeave {
+  id: string;
+  type: string;
+  fromDate: string;
+  toDate: string;
+  days: number;
+  reason: string;
+  employee?: { name: string } | null;
+}
 
-const summary = [
-  { label: 'Pending', value: '3', tint: 'text-amber-600', bg: 'bg-amber-50' },
-  { label: 'Approved (Feb)', value: '24', tint: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { label: 'Rejected (Feb)', value: '2', tint: 'text-rose-600', bg: 'bg-rose-50' },
-  { label: 'On Leave Today', value: '5', tint: 'text-indigo-600', bg: 'bg-indigo-50' },
-];
+const fmt = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 export default function LeavesPage() {
+  const { data, error, isLoading, mutate } = useSWR<{ pending: PendingLeave[] }>(
+    '/admin/leaves/pending',
+    fetcher,
+    { shouldRetryOnError: false },
+  );
+  const pending = data?.pending ?? [];
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function act(id: string, action: 'approve' | 'reject') {
+    setBusyId(id);
+    try {
+      await api(`/admin/leaves/${id}/${action}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ note: action === 'reject' ? 'Rejected by admin' : 'Approved' }),
+      });
+      await mutate();
+    } catch {
+      alert(`Failed to ${action} leave`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <PageHero title="Leaves" subtitle="Approve requests & manage balances" />
+      <PageHero title="Leaves" subtitle="Approve requests · live from database" />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {summary.map((s) => (
-          <Card key={s.label}>
-            <CardContent className="p-5">
-              <div className={`mb-2 inline-flex rounded-lg px-2 py-1 text-2xl font-bold ${s.bg} ${s.tint}`}>
-                {s.value}
-              </div>
-              <div className="text-xs font-medium text-muted-foreground">{s.label}</div>
-            </CardContent>
-          </Card>
-        ))}
+        <Card><CardContent className="p-5"><div className="text-2xl font-bold text-amber-600">{pending.length}</div><div className="text-xs text-muted-foreground">Pending</div></CardContent></Card>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Pending Approvals</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="text-base">Pending Approvals</CardTitle></CardHeader>
         <CardContent className="space-y-3">
+          {isLoading && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>}
+          {error && <div className="text-sm text-destructive">Couldn&apos;t load leaves. Sign in and ensure the backend is running.</div>}
+          {!isLoading && !error && pending.length === 0 && (
+            <div className="text-sm text-muted-foreground">No pending leave requests. 🎉</div>
+          )}
           {pending.map((p) => (
-            <div
-              key={p.name}
-              className="flex flex-wrap items-center gap-4 rounded-xl border border-border/60 bg-muted/30 p-4"
-            >
+            <div key={p.id} className="flex flex-wrap items-center gap-4 rounded-xl border border-border/60 bg-muted/30 p-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-full brand-gradient text-xs font-bold text-white">
-                {p.name.split(' ').map((n) => n[0]).join('')}
+                {(p.employee?.name ?? '?').split(' ').map((n) => n[0]).join('').slice(0, 2)}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="font-semibold">{p.name}</div>
-                <div className="text-xs text-muted-foreground">
-                  {p.range} · {p.reason}
-                </div>
+                <div className="font-semibold">{p.employee?.name ?? 'Employee'}</div>
+                <div className="text-xs text-muted-foreground">{fmt(p.fromDate)} – {fmt(p.toDate)} · {p.reason}</div>
               </div>
               <span className="chip chip-leave">{p.type} · {p.days}d</span>
               <div className="flex gap-2">
-                <button className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100">
-                  <Check className="h-4 w-4" />
+                <button
+                  onClick={() => act(p.id, 'approve')}
+                  disabled={busyId === p.id}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {busyId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 </button>
-                <button className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100">
+                <button
+                  onClick={() => act(p.id, 'reject')}
+                  disabled={busyId === p.id}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
