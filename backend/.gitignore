@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+# Local SQLite dev database (and its WAL/journal sidecars) — never commit
+prisma/dev.db
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+prisma/migrations/dev.db*

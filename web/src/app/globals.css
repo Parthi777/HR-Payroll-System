@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Brand: indigo/violet gradient HR & Payroll theme (see UI reference) */
+    --background: 248 40% 98%;
+    --foreground: 248 30% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 248 30% 14%;
+    --primary: 247 51% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 248 45% 96%;
+    --secondary-foreground: 247 40% 30%;
+    --muted: 248 30% 95%;
+    --muted-foreground: 248 12% 48%;
+    --accent: 247 60% 96%;
+    --accent-foreground: 247 51% 45%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 40%;
+    --warning: 38 92% 50%;
+    --border: 248 25% 91%;
+    --input: 248 25% 91%;
+    --ring: 247 51% 55%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 248 30% 8%;
+    --foreground: 248 20% 96%;
+    --card: 248 28% 12%;
+    --card-foreground: 248 20% 96%;
+    --primary: 247 60% 68%;
+    --primary-foreground: 248 30% 10%;
+    --secondary: 248 25% 18%;
+    --secondary-foreground: 248 20% 96%;
+    --muted: 248 22% 18%;
+    --muted-foreground: 248 12% 65%;
+    --accent: 248 25% 20%;
+    --accent-foreground: 248 20% 96%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 60% 50%;
+    --warning: 38 92% 55%;
+    --border: 248 20% 22%;
+    --input: 248 20% 22%;
+    --ring: 247 60% 68%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  /* Signature brand gradient used on headers, hero panels and the sidebar */
+  .brand-gradient {
+    background-image: linear-gradient(155deg, #6c5ce7 0%, #5b4fc4 45%, #463aa8 100%);
+  }
+  .brand-gradient-soft {
+    background-image: linear-gradient(155deg, #efeefb 0%, #e7e4fa 100%);
+  }
+  /* Status pills (Present / Leave / Off Day / Half Day) */
+  .chip {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
+  }
+  .chip-present {
+    @apply bg-emerald-100 text-emerald-700;
+  }
+  .chip-leave {
+    @apply bg-indigo-100 text-indigo-700;
+  }
+  .chip-off {
+    @apply bg-rose-100 text-rose-600;
+  }
+  .chip-half {
+    @apply bg-amber-100 text-amber-700;
+  }
+  .card-soft {
+    @apply rounded-2xl border border-border/60 bg-card shadow-[0_8px_30px_-12px_rgba(91,79,196,0.25)];
+  }
+}

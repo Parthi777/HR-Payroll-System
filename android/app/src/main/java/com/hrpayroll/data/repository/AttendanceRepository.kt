@@ -1,0 +1,28 @@
+package com.hrpayroll.data.repository
+
+import com.hrpayroll.data.remote.HrApi
+import com.hrpayroll.data.remote.dto.AttendanceDto
+import com.hrpayroll.data.remote.dto.AttendanceHistoryDto
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
+import javax.inject.Inject
+
+/** Repository: ViewModel -> UseCase -> Repository -> API/Room (see CLAUDE.md conventions). */
+class AttendanceRepository @Inject constructor(
+    private val api: HrApi,
+) {
+    suspend fun checkIn(selfie: File, lat: Double, lng: Double): AttendanceDto {
+        val part = MultipartBody.Part.createFormData(
+            "selfie",
+            selfie.name,
+            selfie.asRequestBody("image/jpeg".toMediaTypeOrNull()),
+        )
+        return api.checkIn(part, lat.toString(), lng.toString())
+    }
+
+    suspend fun today(): AttendanceDto = api.today()
+
+    suspend fun history(): List<AttendanceHistoryDto> = api.history()
+}

@@ -1,0 +1,6 @@
+# Root — see per-package .gitignore for android/, web/, backend/
+.env
+.env.local
+.DS_Store
+*.log
+node_modules/

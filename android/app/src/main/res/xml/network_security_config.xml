@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEV ONLY: permit cleartext HTTP to the local backend during development.
+  Android blocks cleartext (non-HTTPS) traffic by default since API 28.
+  Production must use HTTPS (see CLAUDE.md Security: "HTTPS only") — remove
+  these domains and rely on the default secure config before release.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.1.47</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

@@ -1,0 +1,304 @@
+// Prisma schema — AI HR Payroll System
+// Database: SQLite for local dev (zero-infra). Switch `provider` to "postgresql"
+// for production — see CLAUDE.md "Database Schema". Enums are modelled as String
+// (with documented allowed values) because the SQLite connector has no native enums;
+// the values match shared/types/enums.ts and migrate 1:1 to Postgres enums.
+//
+// Allowed values:
+//   EmployeeStatus  : ACTIVE | INACTIVE | SUSPENDED
+//   GeofenceStatus  : INSIDE | OUTSIDE | BORDERLINE
+//   AttendanceStatus: PRESENT | ABSENT | LATE | HALF_DAY | ON_LEAVE | HOLIDAY
+//   LeaveType       : CL | SL | EL | LOP | HALF_DAY
+//   LeaveStatus     : PENDING | APPROVED | REJECTED | CANCELLED
+//   PayslipStatus   : DRAFT | FINALIZED | SENT | PAID
+//   WAStatus        : QUEUED | SENT | DELIVERED | READ | FAILED
+//   AdminRole       : SUPER_ADMIN | HR_MANAGER | BRANCH_MANAGER | PAYROLL_ADMIN
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Core models
+// ─────────────────────────────────────────────────────────────
+
+model Employee {
+  id              String  @id @default(cuid())
+  employeeCode    String  @unique
+  name            String
+  phone           String  @unique
+  email           String?
+  branchId        String
+  departmentId    String
+  designationId   String
+  shiftId         String
+  faceTemplateUrl String? // Stored face enrollment image
+  faceTemplateId  String? // Rekognition face ID
+  deviceId        String? // Device fingerprint binding
+  status          String  @default("ACTIVE") // EmployeeStatus
+  joiningDate     DateTime
+  salary          Float
+
+  branch        Branch         @relation(fields: [branchId], references: [id])
+  department    Department     @relation(fields: [departmentId], references: [id])
+  designation   Designation    @relation(fields: [designationId], references: [id])
+  shift         Shift          @relation(fields: [shiftId], references: [id])
+  attendances   Attendance[]
+  leaves        Leave[]
+  payslips      Payslip[]
+  leaveBalances LeaveBalance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+  @@index([departmentId])
+  @@index([shiftId])
+}
+
+model Attendance {
+  id             String    @id @default(cuid())
+  employeeId     String
+  date           DateTime
+  checkIn        DateTime?
+  checkOut       DateTime?
+  checkInSelfie  String? // Cloudinary URL
+  checkOutSelfie String?
+  checkInLat     Float?
+  checkInLng     Float?
+  checkOutLat    Float?
+  checkOutLng    Float?
+  checkInDevice  String?
+  geofenceStatus String    @default("INSIDE") // GeofenceStatus
+  faceMatchScore Float? // 0-100
+  status         String    @default("PRESENT") // AttendanceStatus
+  workingMinutes Int?
+  isFlagged      Boolean   @default(false)
+  flagReason     String?
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  gpsLogs  GPSLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model GPSLog {
+  id           String   @id @default(cuid())
+  attendanceId String
+  lat          Float
+  lng          Float
+  accuracy     Float?
+  timestamp    DateTime
+
+  attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceId])
+}
+
+model Branch {
+  id              String  @id @default(cuid())
+  name            String
+  address         String
+  geofenceLat     Float
+  geofenceLng     Float
+  geofenceRadius  Float   @default(100) // meters
+  geofencePolygon String? // JSON-encoded polygon points (for polygon geofence)
+  strictMode      Boolean @default(true)
+
+  employees          Employee[]
+  geofenceViolations GeofenceViolation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Department {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+}
+
+model Designation {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+}
+
+model Shift {
+  id           String  @id @default(cuid())
+  name         String // "Morning Shift"
+  startTime    String // "09:00"
+  endTime      String // "18:00"
+  gracePeriod  Int     @default(15) // minutes
+  isNightShift Boolean @default(false)
+
+  employees Employee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Leave {
+  id           String   @id @default(cuid())
+  employeeId   String
+  type         String // LeaveType
+  fromDate     DateTime
+  toDate       DateTime
+  days         Float
+  reason       String
+  documentUrl  String?
+  status       String   @default("PENDING") // LeaveStatus
+  approvedBy   String?
+  approverNote String?
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+model LeaveBalance {
+  id         String @id @default(cuid())
+  employeeId String
+  type       String // LeaveType
+  year       Int
+  total      Float  @default(0)
+  used       Float  @default(0)
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, type, year])
+}
+
+model Payslip {
+  id              String @id @default(cuid())
+  employeeId      String
+  month           Int
+  year            Int
+  presentDays     Int
+  absentDays      Int
+  lopDays         Float
+  basicSalary     Float
+  hra             Float
+  da              Float
+  otherAllowances Float
+  grossSalary     Float
+  pfDeduction     Float
+  esiDeduction    Float
+  ptDeduction     Float
+  tdsDeduction    Float
+  otherDeductions Float
+  netSalary       Float
+  pdfUrl          String?
+  status          String  @default("DRAFT") // PayslipStatus
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, month, year])
+}
+
+model WhatsAppLog {
+  id           String    @id @default(cuid())
+  employeeId   String?
+  phone        String
+  templateName String
+  message      String
+  status       String    @default("QUEUED") // WAStatus
+  messageId    String? // Meta's message ID
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  trigger      String // "CHECK_IN" | "PAYSLIP" | "LEAVE_APPROVED" etc.
+
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+  @@index([status])
+}
+
+model GeofenceViolation {
+  id         String   @id @default(cuid())
+  employeeId String
+  branchId   String
+  lat        Float
+  lng        Float
+  distance   Float // meters from boundary
+  timestamp  DateTime @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@index([employeeId])
+  @@index([branchId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Auth / OTP / RBAC / Audit
+// ─────────────────────────────────────────────────────────────
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String
+  codeHash  String // bcrypt hash of the 6-digit code (never store plaintext)
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+}
+
+model AdminUser {
+  id           String  @id @default(cuid())
+  name         String
+  email        String  @unique
+  passwordHash String
+  role         String  @default("HR_MANAGER") // AdminRole
+  branchId     String? // null = all branches (for super admin)
+  isActive     Boolean @default(true)
+
+  auditLogs AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String
+  entity    String
+  entityId  String?
+  metadata  String? // JSON-encoded metadata
+  ipAddress String?
+  timestamp DateTime @default(now())
+
+  admin AdminUser @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([entity])
+}
+
+model Holiday {
+  id   String   @id @default(cuid())
+  name String
+  date DateTime
+
+  @@unique([date])
+}
