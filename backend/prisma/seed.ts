@@ -24,15 +24,17 @@ async function main() {
   });
 
   // Branches
+  // strictMode:false (soft) for dev so you can test check-in from any real GPS location
+  // (out-of-zone check-ins are allowed but flagged). Set true + real coords for production.
   const bhavani = await prisma.branch.upsert({
     where: { id: 'seed-branch-1' },
-    update: {},
-    create: { id: 'seed-branch-1', name: 'Bhavani Branch', address: 'Bhavani, Tamil Nadu', geofenceLat: 11.4452, geofenceLng: 77.6822, geofenceRadius: 100 },
+    update: { strictMode: false },
+    create: { id: 'seed-branch-1', name: 'Bhavani Branch', address: 'Bhavani, Tamil Nadu', geofenceLat: 11.4452, geofenceLng: 77.6822, geofenceRadius: 100, strictMode: false },
   });
   const erode = await prisma.branch.upsert({
     where: { id: 'seed-branch-2' },
-    update: {},
-    create: { id: 'seed-branch-2', name: 'Erode Branch', address: 'Erode, Tamil Nadu', geofenceLat: 11.341, geofenceLng: 77.7172, geofenceRadius: 150 },
+    update: { strictMode: false },
+    create: { id: 'seed-branch-2', name: 'Erode Branch', address: 'Erode, Tamil Nadu', geofenceLat: 11.341, geofenceLng: 77.7172, geofenceRadius: 150, strictMode: false },
   });
 
   // Masters
@@ -46,7 +48,8 @@ async function main() {
 
   // Employees (phone +919000000001 is the one to log into the Android app with)
   const people = [
-    { code: 'EMP001', name: 'Ravi Kumar', phone: '+919000000001', branchId: bhavani.id, status: 'PRESENT', checkIn: todayAt(9, 2), checkOut: null },
+    // EMP001 is the Android test login — left without a check-in so you can do a fresh selfie check-in.
+    { code: 'EMP001', name: 'Ravi Kumar', phone: '+919000000001', branchId: bhavani.id, status: 'ABSENT', checkIn: null, checkOut: null },
     { code: 'EMP002', name: 'Priya S', phone: '+919000000002', branchId: erode.id, status: 'LATE', checkIn: todayAt(9, 48), checkOut: null },
     { code: 'EMP003', name: 'Arjun M', phone: '+919000000003', branchId: bhavani.id, status: 'ABSENT', checkIn: null, checkOut: null },
     { code: 'EMP004', name: 'Divya R', phone: '+919000000004', branchId: erode.id, status: 'PRESENT', checkIn: todayAt(8, 55), checkOut: todayAt(18, 10) },

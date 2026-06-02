@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
@@ -10,9 +10,12 @@ import { logger } from './utils/logger.js';
 import prismaPlugin from './plugins/prisma.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { registerRoutes } from './routes/index.js';
+import { ensureSeedData } from './bootstrap.js';
 
 async function buildServer() {
-  const app = Fastify({ loggerInstance: logger });
+  // Cast to the default FastifyInstance: passing a custom pino instance otherwise
+  // leaks a narrower logger generic that conflicts with our route registrars.
+  const app = Fastify({ logger }) as unknown as FastifyInstance;
 
   await app.register(cors, { origin: true, credentials: true });
   await app.register(jwt, { secret: env.JWT_SECRET });
@@ -39,6 +42,7 @@ async function start() {
   const app = await buildServer();
 
   try {
+    await ensureSeedData(app.prisma); // no-op once seeded; makes fresh deploys log-in-ready
     await app.listen({ port: env.PORT, host: '0.0.0.0' });
     logger.info(`🚀 Backend listening on http://localhost:${env.PORT}`);
   } catch (err) {

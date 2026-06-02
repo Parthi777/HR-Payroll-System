@@ -1,5 +1,26 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { markCheckIn, markCheckOut } from '../services/attendance/attendance.service.js';
+
+/** Parse the selfie file + lat/lng/accuracy fields from a multipart request (any part order). */
+async function parseCheckinParts(req: FastifyRequest) {
+  let selfie: Buffer | null = null;
+  let lat = 0;
+  let lng = 0;
+  let accuracy: number | undefined;
+  for await (const part of req.parts()) {
+    if (part.type === 'file') {
+      selfie = await part.toBuffer();
+    } else if (part.fieldname === 'lat') {
+      lat = parseFloat(String(part.value));
+    } else if (part.fieldname === 'lng') {
+      lng = parseFloat(String(part.value));
+    } else if (part.fieldname === 'accuracy') {
+      accuracy = parseFloat(String(part.value));
+    }
+  }
+  return { selfie, lat, lng, accuracy };
+}
 
 /** Start/end of the current day (local) for "today" attendance queries. */
 function todayRange() {
@@ -30,14 +51,16 @@ const displayStatus: Record<string, string> = {
  * TODO: wire check-in/out to AttendanceService (face match, geofence, WhatsApp trigger).
  */
 export async function attendanceRoutes(app: FastifyInstance) {
-  app.post('/attendance/checkin', { preHandler: authenticate }, async () => {
-    // TODO: upload selfie -> Cloudinary, AWS Rekognition face match, geofence check, mark
-    return { status: 'TODO', message: 'check-in not yet implemented' };
+  app.post('/attendance/checkin', { preHandler: authenticate }, async (req) => {
+    const { selfie, lat, lng, accuracy } = await parseCheckinParts(req);
+    // TODO: WhatsApp check-in confirmation via BullMQ queue.
+    return markCheckIn(app.prisma, req.user.sub, selfie, lat, lng, accuracy);
   });
 
-  app.post('/attendance/checkout', { preHandler: authenticate }, async () => {
-    // TODO: upload selfie, mark checkout, compute workingMinutes, WhatsApp summary
-    return { status: 'TODO', message: 'check-out not yet implemented' };
+  app.post('/attendance/checkout', { preHandler: authenticate }, async (req) => {
+    const { selfie, lat, lng } = await parseCheckinParts(req);
+    // TODO: WhatsApp check-out summary via BullMQ queue.
+    return markCheckOut(app.prisma, req.user.sub, selfie, lat, lng);
   });
 
   app.get('/attendance/today', { preHandler: authenticate }, async (req) => {

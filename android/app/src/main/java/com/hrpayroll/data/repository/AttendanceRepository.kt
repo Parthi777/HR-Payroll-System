@@ -13,13 +13,13 @@ import javax.inject.Inject
 class AttendanceRepository @Inject constructor(
     private val api: HrApi,
 ) {
-    suspend fun checkIn(selfie: File, lat: Double, lng: Double): AttendanceDto {
+    suspend fun checkIn(selfie: File, lat: Double, lng: Double, accuracy: Float): AttendanceDto {
         val part = MultipartBody.Part.createFormData(
             "selfie",
             selfie.name,
             selfie.asRequestBody("image/jpeg".toMediaTypeOrNull()),
         )
-        return api.checkIn(part, lat.toString(), lng.toString())
+        return api.checkIn(part, lat.toString(), lng.toString(), accuracy.toString())
     }
 
     suspend fun today(): AttendanceDto = api.today()

@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
 import javax.inject.Inject
 
 /** UI model for a single attendance row (decoupled from the network DTO). */
@@ -65,15 +64,4 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
-    fun checkIn(selfie: File, lat: Double, lng: Double) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            runCatching { repository.checkIn(selfie, lat, lng) }
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(isLoading = false, status = it.status ?: "Checked in")
-                    loadHistory()
-                }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
-        }
-    }
 }

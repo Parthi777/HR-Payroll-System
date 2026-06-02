@@ -25,6 +25,7 @@ interface HrApi {
         @Part selfie: MultipartBody.Part,
         @Part("lat") lat: String,
         @Part("lng") lng: String,
+        @Part("accuracy") accuracy: String,
     ): AttendanceDto
 
     @Multipart

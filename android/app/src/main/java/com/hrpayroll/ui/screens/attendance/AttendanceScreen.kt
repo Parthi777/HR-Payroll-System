@@ -57,8 +57,21 @@ private val sampleRecords = listOf(
 )
 
 @Composable
-fun AttendanceScreen(viewModel: AttendanceViewModel = hiltViewModel()) {
+fun AttendanceScreen(
+    onCheckIn: () -> Unit = {},
+    viewModel: AttendanceViewModel = hiltViewModel(),
+) {
     val state by viewModel.uiState.collectAsState()
+
+    // Refresh history whenever the screen resumes (e.g. returning from a successful check-in).
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.loadHistory()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -105,7 +118,7 @@ fun AttendanceScreen(viewModel: AttendanceViewModel = hiltViewModel()) {
             Spacer(Modifier.height(8.dp))
 
             Button(
-                onClick = { /* TODO: launch camera + capture, then viewModel.checkIn(...) */ },
+                onClick = onCheckIn,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
