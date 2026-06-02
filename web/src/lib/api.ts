@@ -27,5 +27,20 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return res.json() as Promise<T>;
 }
 
+/** Multipart upload (e.g. face enrollment). Lets the browser set the boundary. */
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.message ?? res.statusText);
+  }
+  return res.json() as Promise<T>;
+}
+
 /** SWR fetcher. */
 export const fetcher = <T>(path: string) => api<T>(path);

@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import useSWR from 'swr';
-import { fetcher, api } from '@/lib/api';
+import { fetcher, api, apiUpload } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent } from '@/components/ui/card';
-import { UserPlus, Loader2, X } from 'lucide-react';
+import { UserPlus, Loader2, X, ScanFace, Check } from 'lucide-react';
 
 interface EmployeeRow {
   id: string;
@@ -13,6 +13,7 @@ interface EmployeeRow {
   employeeCode: string;
   phone: string;
   status: string;
+  faceTemplateId?: string | null;
   branch?: { name: string } | null;
 }
 interface Named { id: string; name: string }
@@ -44,15 +45,18 @@ export default function EmployeesPage() {
           {employees.length === 0 && <Card><CardContent className="p-5 text-sm text-muted-foreground">No employees yet — add one.</CardContent></Card>}
           {employees.map((e) => (
             <Card key={e.id}>
-              <CardContent className="flex items-center gap-4 p-5">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full brand-gradient text-sm font-bold text-white">
-                  {e.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+              <CardContent className="flex flex-col gap-3 p-5">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full brand-gradient text-sm font-bold text-white">
+                    {e.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold">{e.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">{e.employeeCode} · {e.branch?.name ?? '—'}</div>
+                  </div>
+                  <span className={`chip ${chipClass[e.status] ?? 'chip-leave'}`}>{e.status}</span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold">{e.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">{e.employeeCode} · {e.branch?.name ?? '—'}</div>
-                </div>
-                <span className={`chip ${chipClass[e.status] ?? 'chip-leave'}`}>{e.status}</span>
+                <EnrollFaceButton employee={e} onEnrolled={() => mutate()} />
               </CardContent>
             </Card>
           ))}
@@ -144,6 +148,59 @@ function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function EnrollFaceButton({ employee, onEnrolled }: { employee: EmployeeRow; onEnrolled: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>(
+    employee.faceTemplateId ? 'done' : 'idle',
+  );
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStatus('uploading');
+    setMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      await apiUpload(`/admin/employees/${employee.id}/enroll-face`, fd);
+      setStatus('done');
+      onEnrolled();
+    } catch (err) {
+      setStatus('error');
+      setMsg(err instanceof Error ? err.message : 'Enrollment failed');
+    } finally {
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  const enrolled = status === 'done';
+  return (
+    <div>
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onPick} />
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={status === 'uploading'}
+        className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium ${
+          enrolled
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-border text-muted-foreground hover:bg-muted/50'
+        }`}
+      >
+        {status === 'uploading' ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : enrolled ? (
+          <Check className="h-3.5 w-3.5" />
+        ) : (
+          <ScanFace className="h-3.5 w-3.5" />
+        )}
+        {status === 'uploading' ? 'Enrolling…' : enrolled ? 'Face enrolled — re-enroll' : 'Enroll Face'}
+      </button>
+      {msg && <p className="mt-1 text-[11px] text-destructive">{msg}</p>}
     </div>
   );
 }
