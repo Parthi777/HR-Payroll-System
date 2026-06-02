@@ -25,6 +25,7 @@ const envSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_REKOGNITION_COLLECTION_ID: z.string().default('hr-payroll-faces'),
+  AWS_S3_BUCKET: z.string().optional(), // selfie storage; falls back to local disk if unset
 
   WHATSAPP_PROVIDER: z.enum(['wati', 'twilio', 'meta']).default('wati'),
   WATI_API_URL: z.string().optional(),

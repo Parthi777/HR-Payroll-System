@@ -5,6 +5,7 @@ import { AppError } from '../../utils/AppError.js';
 import { checkGeofence } from '../geofence/geofence.service.js';
 import { verifyFace } from '../ai/face.service.js';
 import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
+import { isS3Enabled, uploadImage } from '../storage/storage.service.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 
@@ -23,10 +24,13 @@ function shiftStartToday(startTime: string): Date {
 }
 
 /**
- * Persist the selfie. Dev: writes to backend/uploads and returns a relative path.
- * TODO (CLAUDE.md): upload to Cloudinary with a 24h signed URL instead.
+ * Persist the selfie. Uses S3 (private object key) when configured; otherwise
+ * falls back to local disk so dev works with zero setup.
  */
 async function saveSelfie(buf: Buffer, employeeId: string): Promise<string> {
+  if (isS3Enabled()) {
+    return uploadImage(buf, `selfies/${employeeId}-${Date.now()}.jpg`);
+  }
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
   const name = `${employeeId}-${Date.now()}.jpg`;
   await fs.writeFile(path.join(UPLOAD_DIR, name), buf);
