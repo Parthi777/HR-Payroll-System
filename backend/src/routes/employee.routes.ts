@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { enrollFace, isFaceMatchEnabled } from '../services/ai/face.service.js';
 
 const createEmployeeSchema = z.object({
   employeeCode: z.string(),
@@ -52,8 +53,13 @@ export async function employeeRoutes(app: FastifyInstance) {
 
   app.post('/:id/enroll-face', async (req) => {
     const { id } = req.params as { id: string };
-    // TODO: upload to Cloudinary + register in AWS Rekognition collection -> faceTemplateId
-    return { id, enrolled: 'TODO' };
+    if (!isFaceMatchEnabled()) throw new AppError('Face recognition is not configured (set AWS keys)', 503);
+    const data = await req.file();
+    if (!data) throw new AppError('No image uploaded', 400);
+    const buffer = await data.toBuffer();
+    const { faceId } = await enrollFace(buffer, id);
+    await app.prisma.employee.update({ where: { id }, data: { faceTemplateId: faceId } });
+    return { id, faceId, enrolled: true };
   });
 
   app.post('/bulk-import', async () => {

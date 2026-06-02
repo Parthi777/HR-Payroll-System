@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { AppError } from '../../utils/AppError.js';
 import { checkGeofence } from '../geofence/geofence.service.js';
+import { verifyFace } from '../ai/face.service.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 
@@ -77,12 +78,28 @@ export async function markCheckIn(
   const status = now.getTime() > lateAfter ? 'LATE' : 'PRESENT';
 
   const selfieUrl = selfie ? await saveSelfie(selfie, employeeId) : null;
-  // TODO: AWS Rekognition face match -> score. Per CLAUDE.md, a low score flags but never blocks.
-  const faceMatchScore: number | null = null;
-  const flagged = geo.status !== 'INSIDE';
+
+  // AWS Rekognition face match (no-op + null score when AWS isn't configured).
+  // Per CLAUDE.md a mismatch flags for HR review but never blocks attendance.
+  let faceMatchScore: number | null = null;
+  let faceFlagged = false;
+  if (selfie) {
+    const fm = await verifyFace(selfie, employeeId);
+    if (fm.enabled) {
+      faceMatchScore = fm.score;
+      faceFlagged = !fm.matched;
+    }
+  }
+
+  const geoFlagged = geo.status !== 'INSIDE';
+  const flagged = geoFlagged || faceFlagged;
+  const flagReason =
+    [geoFlagged ? `Geofence ${geo.status}` : null, faceFlagged ? `Face match ${faceMatchScore ?? 0}%` : null]
+      .filter(Boolean)
+      .join('; ') || null;
 
   // Log a geofence violation row when the check-in is outside/borderline the zone.
-  if (flagged) {
+  if (geoFlagged) {
     await prisma.geofenceViolation.create({
       data: { employeeId, branchId: employee.branchId, lat, lng, distance: geo.distance },
     });
@@ -93,12 +110,12 @@ export async function markCheckIn(
     update: {
       checkIn: now, checkInLat: lat, checkInLng: lng, checkInSelfie: selfieUrl,
       geofenceStatus: geo.status, status, faceMatchScore,
-      isFlagged: flagged, flagReason: flagged ? `Geofence ${geo.status}` : null,
+      isFlagged: flagged, flagReason,
     },
     create: {
       employeeId, date: today, checkIn: now, checkInLat: lat, checkInLng: lng, checkInSelfie: selfieUrl,
       geofenceStatus: geo.status, status, faceMatchScore,
-      isFlagged: flagged, flagReason: flagged ? `Geofence ${geo.status}` : null,
+      isFlagged: flagged, flagReason,
     },
   });
 
