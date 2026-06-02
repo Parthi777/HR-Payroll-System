@@ -1,10 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import useSWR from 'swr';
-import { fetcher } from '@/lib/api';
+import { fetcher, api } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessageSquare, Loader2 } from 'lucide-react';
+import { MessageSquare, Loader2, Send } from 'lucide-react';
 
 interface WaLog {
   id: string;
@@ -24,10 +25,34 @@ const chipClass: Record<string, string> = {
 };
 
 export default function WhatsappPage() {
-  const { data, error, isLoading } = useSWR<{ logs: WaLog[] }>('/admin/whatsapp/logs', fetcher, { shouldRetryOnError: false });
+  const { data, error, isLoading, mutate } = useSWR<{ logs: WaLog[] }>('/admin/whatsapp/logs', fetcher, { shouldRetryOnError: false });
   const { data: t } = useSWR<{ templates: string[] }>('/admin/whatsapp/templates', fetcher, { shouldRetryOnError: false });
   const logs = data?.logs ?? [];
   const templates = t?.templates ?? [];
+
+  const [phone, setPhone] = useState('+919000000001');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function send() {
+    if (!message.trim()) return;
+    setSending(true);
+    setNote(null);
+    try {
+      const res = await api<{ sent: boolean }>('/admin/whatsapp/send', {
+        method: 'POST',
+        body: JSON.stringify({ phone, message }),
+      });
+      setNote(res.sent ? 'Sent ✓' : 'Queued (no provider configured yet)');
+      setMessage('');
+      await mutate();
+    } catch {
+      setNote('Failed to send');
+    } finally {
+      setSending(false);
+    }
+  }
 
   const delivered = logs.filter((l) => l.status === 'DELIVERED' || l.status === 'READ').length;
   const failed = logs.filter((l) => l.status === 'FAILED').length;
@@ -42,6 +67,35 @@ export default function WhatsappPage() {
         <Card><CardContent className="p-5"><div className="text-2xl font-bold text-indigo-600">{templates.length}</div><div className="text-xs text-muted-foreground">Templates</div></CardContent></Card>
         <Card><CardContent className="p-5"><div className="text-2xl font-bold text-rose-600">{failed}</div><div className="text-xs text-muted-foreground">Failed</div></CardContent></Card>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Compose</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+91…"
+              className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40 sm:w-48"
+            />
+            <input
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && send()}
+              placeholder="Type a message…"
+              className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+            />
+            <button
+              onClick={send}
+              disabled={sending}
+              className="flex h-10 items-center justify-center gap-2 rounded-xl brand-gradient px-5 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send
+            </button>
+          </div>
+          {note && <p className="text-xs text-muted-foreground">{note}</p>}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Recent Messages</CardTitle></CardHeader>

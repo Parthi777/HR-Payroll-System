@@ -4,6 +4,7 @@ import path from 'path';
 import { AppError } from '../../utils/AppError.js';
 import { checkGeofence } from '../geofence/geofence.service.js';
 import { verifyFace } from '../ai/face.service.js';
+import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 
@@ -124,6 +125,19 @@ export async function markCheckIn(
       geofenceStatus: geo.status, status, faceMatchScore,
       isFlagged: flagged, flagReason,
     },
+  });
+
+  // Check-in confirmation (logged always; delivered when a provider is configured).
+  await dispatchWhatsApp(prisma, {
+    phone: employee.phone,
+    employeeId: employee.id,
+    trigger: 'CHECK_IN',
+    templateName: 'CHECK_IN_CONFIRMATION',
+    message: waTemplates.checkIn(
+      employee.name,
+      now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      employee.branch.name,
+    ),
   });
 
   return toResult(record, geo.status, geo.distance, flagged, flagReason);

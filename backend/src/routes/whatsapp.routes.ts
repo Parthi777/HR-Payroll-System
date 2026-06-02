@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
 import { env } from '../config/env.js';
+import { dispatchWhatsApp, isWhatsAppEnabled } from '../services/whatsapp/whatsapp.service.js';
 
 export async function whatsappRoutes(app: FastifyInstance) {
   // Meta webhook verification (GET) — echoes hub.challenge
@@ -26,10 +27,10 @@ export async function whatsappRoutes(app: FastifyInstance) {
 
   app.post('/admin/whatsapp/send', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
     const { phone, templateName, message } = z
-      .object({ phone: z.string(), templateName: z.string(), message: z.string() })
+      .object({ phone: z.string().min(8), templateName: z.string().default('MANUAL'), message: z.string().min(1) })
       .parse(req.body);
-    // TODO: enqueue WhatsApp send job (BullMQ)
-    return { queued: true, phone, templateName, message };
+    await dispatchWhatsApp(app.prisma, { phone, message, trigger: 'MANUAL', templateName });
+    return { sent: isWhatsAppEnabled(), logged: true };
   });
 
   app.post('/admin/whatsapp/broadcast', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {

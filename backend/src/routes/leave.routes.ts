@@ -1,6 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { dispatchWhatsApp, waTemplates } from '../services/whatsapp/whatsapp.service.js';
+
+const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 const applyLeaveSchema = z.object({
   type: z.enum(['CL', 'SL', 'EL', 'LOP', 'HALF_DAY']),
@@ -37,16 +40,36 @@ export async function leaveRoutes(app: FastifyInstance) {
   app.patch('/admin/leaves/:id/approve', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async (req) => {
     const { id } = req.params as { id: string };
     const { note } = z.object({ note: z.string().optional() }).parse(req.body ?? {});
-    const leave = await app.prisma.leave.update({ where: { id }, data: { status: 'APPROVED', approvedBy: req.user.sub, approverNote: note } });
-    // TODO: queue LEAVE_APPROVED WhatsApp notification
+    const leave = await app.prisma.leave.update({
+      where: { id },
+      data: { status: 'APPROVED', approvedBy: req.user.sub, approverNote: note },
+      include: { employee: true },
+    });
+    await dispatchWhatsApp(app.prisma, {
+      phone: leave.employee.phone,
+      employeeId: leave.employeeId,
+      trigger: 'LEAVE_APPROVED',
+      templateName: 'LEAVE_APPROVED',
+      message: waTemplates.leaveApproved(leave.type, fmtDate(leave.fromDate), fmtDate(leave.toDate), leave.days),
+    });
     return { leave };
   });
 
   app.patch('/admin/leaves/:id/reject', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async (req) => {
     const { id } = req.params as { id: string };
     const { note } = z.object({ note: z.string() }).parse(req.body);
-    const leave = await app.prisma.leave.update({ where: { id }, data: { status: 'REJECTED', approvedBy: req.user.sub, approverNote: note } });
-    // TODO: queue LEAVE_REJECTED WhatsApp notification
+    const leave = await app.prisma.leave.update({
+      where: { id },
+      data: { status: 'REJECTED', approvedBy: req.user.sub, approverNote: note },
+      include: { employee: true },
+    });
+    await dispatchWhatsApp(app.prisma, {
+      phone: leave.employee.phone,
+      employeeId: leave.employeeId,
+      trigger: 'LEAVE_REJECTED',
+      templateName: 'LEAVE_REJECTED',
+      message: waTemplates.leaveRejected(fmtDate(leave.fromDate), fmtDate(leave.toDate), note),
+    });
     return { leave };
   });
 }
