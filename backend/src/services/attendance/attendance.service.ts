@@ -39,6 +39,8 @@ export interface MarkResult {
   checkOut: Date | null;
   workingMinutes: number | null;
   faceMatchScore: number | null;
+  flagged: boolean;
+  flagReason: string | null;
   geofence: string;
   distance: number;
 }
@@ -82,19 +84,24 @@ export async function markCheckIn(
   // AWS Rekognition face match (no-op + null score when AWS isn't configured).
   // Per CLAUDE.md a mismatch flags for HR review but never blocks attendance.
   let faceMatchScore: number | null = null;
-  let faceFlagged = false;
+  let faceFlagReason: string | null = null;
   if (selfie) {
     const fm = await verifyFace(selfie, employeeId);
     if (fm.enabled) {
       faceMatchScore = fm.score;
-      faceFlagged = !fm.matched;
+      if (!fm.matched) {
+        faceFlagReason =
+          fm.matchedEmployeeId && fm.matchedEmployeeId !== employeeId
+            ? `Face mismatch — selfie matched a different employee (${fm.score}%)`
+            : `Face not recognised (${fm.score}%)`;
+      }
     }
   }
 
   const geoFlagged = geo.status !== 'INSIDE';
-  const flagged = geoFlagged || faceFlagged;
+  const flagged = geoFlagged || faceFlagReason !== null;
   const flagReason =
-    [geoFlagged ? `Geofence ${geo.status}` : null, faceFlagged ? `Face match ${faceMatchScore ?? 0}%` : null]
+    [geoFlagged ? `Geofence ${geo.status}` : null, faceFlagReason]
       .filter(Boolean)
       .join('; ') || null;
 
@@ -119,7 +126,7 @@ export async function markCheckIn(
     },
   });
 
-  return toResult(record, geo.status, geo.distance);
+  return toResult(record, geo.status, geo.distance, flagged, flagReason);
 }
 
 /** Selfie check-out: compute working minutes, persist. */
@@ -146,13 +153,15 @@ export async function markCheckOut(
     data: { checkOut: now, checkOutLat: lat, checkOutLng: lng, checkOutSelfie: selfieUrl, workingMinutes },
   });
 
-  return toResult(record, record.geofenceStatus, 0);
+  return toResult(record, record.geofenceStatus, 0, record.isFlagged, record.flagReason);
 }
 
 function toResult(
   r: { id: string; status: string; checkIn: Date | null; checkOut: Date | null; workingMinutes: number | null; faceMatchScore: number | null },
   geofence: string,
   distance: number,
+  flagged: boolean,
+  flagReason: string | null,
 ): MarkResult {
   return {
     id: r.id,
@@ -161,6 +170,8 @@ function toResult(
     checkOut: r.checkOut,
     workingMinutes: r.workingMinutes,
     faceMatchScore: r.faceMatchScore,
+    flagged,
+    flagReason,
     geofence,
     distance,
   };
