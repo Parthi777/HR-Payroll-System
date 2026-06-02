@@ -91,6 +91,7 @@ fun CameraCaptureScreen(
     LaunchedEffect(state.success) { if (state.success) onDone() }
 
     var faceCount by remember { mutableIntStateOf(0) }
+    var livenessPassed by remember { mutableStateOf(false) }
     var capturing by remember { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
 
@@ -112,7 +113,12 @@ fun CameraCaptureScreen(
             val analysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-                .also { it.setAnalyzer(mainExecutor, FaceAnalyzer { n -> faceCount = n }) }
+                .also {
+                    it.setAnalyzer(mainExecutor, FaceAnalyzer { n, blinked ->
+                        faceCount = n
+                        if (blinked && n == 1) livenessPassed = true
+                    })
+                }
             runCatching {
                 provider.unbindAll()
                 provider.bindToLifecycle(
@@ -144,13 +150,14 @@ fun CameraCaptureScreen(
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                val ready = faceCount == 1
+                val ready = faceCount == 1 && livenessPassed
                 val statusText = when {
                     state.isSubmitting -> "Verifying…"
                     capturing -> "Capturing…"
                     faceCount == 0 -> "Position your face in the frame"
                     faceCount > 1 -> "Only one person allowed"
-                    else -> "Face detected ✓  Tap to check in"
+                    !livenessPassed -> "Blink to verify you're live 👁️"
+                    else -> "Verified ✓  Tap to check in"
                 }
                 Text(statusText, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(16.dp))
@@ -233,8 +240,13 @@ fun CameraCaptureScreen(
     }
 }
 
-/** ML Kit analyzer: reports the number of faces in each frame. */
-private class FaceAnalyzer(val onFaces: (Int) -> Unit) : ImageAnalysis.Analyzer {
+/**
+ * ML Kit analyzer: reports face count + a blink event (eyes-open → eyes-closed
+ * transition) for a basic anti-photo-spoof liveness check.
+ */
+private class FaceAnalyzer(val onUpdate: (count: Int, blinked: Boolean) -> Unit) : ImageAnalysis.Analyzer {
+    private var eyesWereOpen = false
+
     @AndroidOptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
         val media = imageProxy.image
@@ -244,8 +256,24 @@ private class FaceAnalyzer(val onFaces: (Int) -> Unit) : ImageAnalysis.Analyzer 
         }
         val input = InputImage.fromMediaImage(media, imageProxy.imageInfo.rotationDegrees)
         FaceLivenessAnalyzer.detector.process(input)
-            .addOnSuccessListener { faces -> onFaces(faces.size) }
-            .addOnFailureListener { onFaces(0) }
+            .addOnSuccessListener { faces ->
+                var blinked = false
+                if (faces.size == 1) {
+                    val face = faces[0]
+                    val left = face.leftEyeOpenProbability
+                    val right = face.rightEyeOpenProbability
+                    if (left != null && right != null) {
+                        if (left > 0.6f && right > 0.6f) {
+                            eyesWereOpen = true
+                        } else if (left < 0.3f && right < 0.3f && eyesWereOpen) {
+                            blinked = true
+                            eyesWereOpen = false
+                        }
+                    }
+                }
+                onUpdate(faces.size, blinked)
+            }
+            .addOnFailureListener { onUpdate(0, false) }
             .addOnCompleteListener { imageProxy.close() }
     }
 }

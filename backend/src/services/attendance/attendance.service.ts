@@ -81,6 +81,13 @@ export async function markCheckIn(
   const faceMatchScore: number | null = null;
   const flagged = geo.status !== 'INSIDE';
 
+  // Log a geofence violation row when the check-in is outside/borderline the zone.
+  if (flagged) {
+    await prisma.geofenceViolation.create({
+      data: { employeeId, branchId: employee.branchId, lat, lng, distance: geo.distance },
+    });
+  }
+
   const record = await prisma.attendance.upsert({
     where: { employeeId_date: { employeeId, date: today } },
     update: {
