@@ -36,7 +36,25 @@ export async function shiftRoutes(app: FastifyInstance) {
   });
 
   app.get('/shifts/my-schedule', { preHandler: authenticate }, async (req) => {
-    // TODO: build 7-day schedule from shift + rotation rules
-    return { employeeId: req.user.sub, schedule: [] };
+    const employee = await app.prisma.employee.findUnique({
+      where: { id: req.user.sub },
+      include: { shift: true },
+    });
+    const shift = employee?.shift;
+    // Next 7 days on the employee's assigned shift (Sundays marked as off).
+    const schedule = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + i);
+      const isOff = d.getDay() === 0;
+      return {
+        date: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+        shiftName: isOff ? 'Weekly Off' : (shift?.name ?? 'General Shift'),
+        startTime: isOff ? null : (shift?.startTime ?? '09:00'),
+        endTime: isOff ? null : (shift?.endTime ?? '18:00'),
+        isOff,
+      };
+    });
+    return { employeeId: req.user.sub, schedule };
   });
 }

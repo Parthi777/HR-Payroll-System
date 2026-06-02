@@ -23,6 +23,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.hrpayroll.data.remote.dto.ScheduleDayDto
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,18 +39,10 @@ import com.hrpayroll.ui.theme.BrandGradient
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.ui.theme.StatusPresentBg
 
-/** Shift monitor: live timer, break tracker, history (see CLAUDE.md). TODO: wire live data. */
-private data class ShiftDay(val day: String, val type: String, val hours: String)
-
-private val sampleSchedule = listOf(
-    ShiftDay("Tue, Feb 10", "General · 09:00–18:00", "9h 00m"),
-    ShiftDay("Wed, Feb 11", "General · 09:00–18:00", "9h 00m"),
-    ShiftDay("Thu, Feb 12", "Evening · 14:00–22:00", "8h 00m"),
-    ShiftDay("Fri, Feb 13", "Evening · 14:00–22:00", "8h 00m"),
-)
-
+/** Shift monitor: live timer, break tracker + 7-day schedule (GET /shifts/my-schedule). */
 @Composable
-fun ShiftScreen() {
+fun ShiftScreen(viewModel: ShiftViewModel = hiltViewModel()) {
+    val state by viewModel.uiState.collectAsState()
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             BrandHeader(title = "Shift Monitor")
@@ -104,7 +100,15 @@ fun ShiftScreen() {
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Spacer(Modifier.height(10.dp))
-                sampleSchedule.forEach { ScheduleRow(it); Spacer(Modifier.height(10.dp)) }
+                if (state.schedule.isEmpty()) {
+                    Text(
+                        state.error ?: "No schedule available.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                    )
+                } else {
+                    state.schedule.forEach { ScheduleRow(it); Spacer(Modifier.height(10.dp)) }
+                }
                 Spacer(Modifier.height(24.dp))
             }
         }
@@ -124,7 +128,9 @@ private fun TimePill(label: String, value: String) {
 }
 
 @Composable
-private fun ScheduleRow(shift: ShiftDay) {
+private fun ScheduleRow(day: ScheduleDayDto) {
+    val detail = if (day.isOff == true) "Weekly Off"
+    else "${day.shiftName ?: "Shift"} · ${day.startTime ?: ""}–${day.endTime ?: ""}"
     Card(
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -135,16 +141,14 @@ private fun ScheduleRow(shift: ShiftDay) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(0.dp))
             Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
-                Text(shift.day, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                Text(day.date ?: "", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 Text(
-                    shift.type,
+                    detail,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
             }
-            Text(shift.hours, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

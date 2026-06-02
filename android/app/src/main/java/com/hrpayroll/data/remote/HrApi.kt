@@ -1,8 +1,14 @@
 package com.hrpayroll.data.remote
 
+import com.hrpayroll.data.remote.dto.ApplyLeaveRequest
 import com.hrpayroll.data.remote.dto.AttendanceDto
 import com.hrpayroll.data.remote.dto.AttendanceHistoryDto
+import com.hrpayroll.data.remote.dto.BalanceListResponse
+import com.hrpayroll.data.remote.dto.LeaveCreatedResponse
+import com.hrpayroll.data.remote.dto.LeaveListResponse
 import com.hrpayroll.data.remote.dto.OtpResponse
+import com.hrpayroll.data.remote.dto.PayslipListResponse
+import com.hrpayroll.data.remote.dto.ScheduleResponse
 import okhttp3.MultipartBody
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -41,4 +47,22 @@ interface HrApi {
 
     @GET("attendance/history")
     suspend fun history(): List<AttendanceHistoryDto>
+
+    // Leaves
+    @POST("leaves/apply")
+    suspend fun applyLeave(@Body body: ApplyLeaveRequest): LeaveCreatedResponse
+
+    @GET("leaves/my-leaves")
+    suspend fun myLeaves(): LeaveListResponse
+
+    @GET("leaves/balance")
+    suspend fun leaveBalance(): BalanceListResponse
+
+    // Payslips
+    @GET("payroll/my-payslips")
+    suspend fun myPayslips(): PayslipListResponse
+
+    // Shift schedule
+    @GET("shifts/my-schedule")
+    suspend fun mySchedule(): ScheduleResponse
 }
