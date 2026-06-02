@@ -34,7 +34,7 @@ export async function ensureSeedData(prisma: PrismaClient): Promise<void> {
   const shift = await prisma.shift.create({
     data: { name: 'General Shift', startTime: '09:00', endTime: '18:00', gracePeriod: 15 },
   });
-  await prisma.employee.create({
+  const emp = await prisma.employee.create({
     data: {
       employeeCode: 'EMP001',
       name: 'Ravi Kumar',
@@ -47,6 +47,11 @@ export async function ensureSeedData(prisma: PrismaClient): Promise<void> {
       salary: 25000,
     },
   });
+
+  const year = new Date().getFullYear();
+  for (const [type, total] of [['CL', 12], ['SL', 8], ['EL', 15]] as const) {
+    await prisma.leaveBalance.create({ data: { employeeId: emp.id, type, year, total, used: 0 } });
+  }
 
   logger.info('Seed complete — admin@hrpayroll.local / admin123, employee phone +919000000001');
 }

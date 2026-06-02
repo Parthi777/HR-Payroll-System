@@ -26,7 +26,7 @@ export async function verifyOtp(prisma: PrismaClient, phone: string, otp: string
   // Removed automatically in production where DEV_FIXED_OTP is unset.
   if (env.DEV_FIXED_OTP && otp === env.DEV_FIXED_OTP) {
     const employee = await prisma.employee.findUnique({ where: { phone } });
-    if (!employee) throw AppError.notFound('No employee registered with this phone number');
+    if (!employee) throw new AppError(`No employee registered for ${phone}`, 404);
     return employee;
   }
 
@@ -47,7 +47,7 @@ export async function verifyOtp(prisma: PrismaClient, phone: string, otp: string
   await prisma.otpCode.update({ where: { id: record.id }, data: { consumed: true } });
 
   const employee = await prisma.employee.findUnique({ where: { phone } });
-  if (!employee) throw AppError.notFound('No employee registered with this phone number');
+  if (!employee) throw new AppError(`No employee registered for ${phone}`, 404);
   return employee;
 }
 

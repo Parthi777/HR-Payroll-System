@@ -79,7 +79,7 @@ fun LoginScreen(
                     value = state.phone,
                     onValueChange = viewModel::onPhoneChange,
                     label = { Text("Phone number") },
-                    placeholder = { Text("+91 90000 00001") },
+                    placeholder = { Text("+919000000001") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),

@@ -87,6 +87,16 @@ async function main() {
         checkInLng: p.checkIn ? bhavani.geofenceLng : null,
       },
     });
+
+    // Leave balances for the current year (CL 12 / SL 8 / EL 15)
+    const year = new Date().getFullYear();
+    for (const [type, total] of [['CL', 12], ['SL', 8], ['EL', 15]] as const) {
+      await prisma.leaveBalance.upsert({
+        where: { employeeId_type_year: { employeeId: emp.id, type, year } },
+        update: { total },
+        create: { employeeId: emp.id, type, year, total, used: 0 },
+      });
+    }
   }
 
   // A pending leave so the dashboard shows "1 pending approval"

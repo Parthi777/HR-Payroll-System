@@ -7,6 +7,7 @@ import { leaveRoutes } from './leave.routes.js';
 import { shiftRoutes } from './shift.routes.js';
 import { payrollRoutes } from './payroll.routes.js';
 import { whatsappRoutes } from './whatsapp.routes.js';
+import { masterRoutes } from './master.routes.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
@@ -19,4 +20,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(shiftRoutes, { prefix: '/api' });
   await app.register(payrollRoutes, { prefix: '/api' });
   await app.register(whatsappRoutes, { prefix: '/api' });
+  await app.register(masterRoutes, { prefix: '/api' });
 }
