@@ -1,10 +1,21 @@
 'use client';
 
 import useSWR from 'swr';
+import dynamic from 'next/dynamic';
 import { fetcher } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Loader2 } from 'lucide-react';
+
+// Leaflet touches `window`, so load the map only on the client.
+const BranchMap = dynamic(() => import('@/components/branch-map'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[360px] items-center justify-center rounded-2xl bg-muted/40 text-muted-foreground">
+      Loading map…
+    </div>
+  ),
+});
 
 interface Branch {
   id: string;
@@ -31,6 +42,18 @@ export default function GeofencePage() {
   return (
     <div className="space-y-6">
       <PageHero title="Geofence" subtitle="Work zones & violations · live" />
+
+      {!isLoading && !error && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Branch Map</CardTitle></CardHeader>
+          <CardContent>
+            <BranchMap branches={branches} />
+            <p className="mt-2 text-xs text-muted-foreground">
+              Red = strict zone · Green = soft zone · circle = geofence radius
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>}
       {error && <Card><CardContent className="p-5 text-sm text-destructive">Couldn&apos;t load geofences. Sign in and ensure the backend is running.</CardContent></Card>}

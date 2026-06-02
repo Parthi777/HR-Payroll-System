@@ -1,8 +1,16 @@
 'use client';
 
+import useSWR from 'swr';
+import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserCheck, UserX, Clock4, CalendarOff, FileClock, ArrowUpRight } from 'lucide-react';
 import { useDashboardStats, type DashboardStats } from '@/hooks/useApi';
+import { fetcher } from '@/lib/api';
+
+const BranchMap = dynamic(() => import('@/components/branch-map'), {
+  ssr: false,
+  loading: () => <div className="flex h-64 items-center justify-center text-muted-foreground">Loading map…</div>,
+});
 
 // Zeroed fallback so the dashboard renders instantly, then upgrades to live values.
 const fallback: DashboardStats = {
@@ -10,8 +18,11 @@ const fallback: DashboardStats = {
   totalStaff: 0, branches: 0, checkedIn: 0, attendanceRate: 0,
 };
 
+interface MapBranch { id: string; name: string; geofenceLat: number; geofenceLng: number; geofenceRadius: number; strictMode: boolean }
+
 export default function DashboardPage() {
   const { data, isLive } = useDashboardStats(fallback);
+  const { data: bd } = useSWR<{ branches: MapBranch[] }>('/admin/geofence', fetcher, { shouldRetryOnError: false });
   const fmt = (n: number) => (isLive ? n.toLocaleString() : '—');
 
   const stats = [
@@ -82,9 +93,8 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-base">Live Map</CardTitle>
           </CardHeader>
-          <CardContent className="flex h-64 items-center justify-center rounded-xl bg-muted/40 text-muted-foreground">
-            {/* TODO: React Leaflet map with employee location dots */}
-            Map placeholder
+          <CardContent>
+            <BranchMap branches={bd?.branches ?? []} height={256} />
           </CardContent>
         </Card>
         <Card>
