@@ -1,7 +1,22 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { AppError } from '../utils/AppError.js';
 import { runMonthlyPayroll } from '../services/payroll/payroll-run.service.js';
+import { generatePayslipPdf } from '../services/payroll/payslip-pdf.service.js';
+
+/** Fetch a payslip (with employee+branch) and stream it as a PDF. */
+async function streamPayslipPdf(app: FastifyInstance, reply: FastifyReply, id: string) {
+  const payslip = await app.prisma.payslip.findUnique({
+    where: { id },
+    include: { employee: { include: { branch: true } } },
+  });
+  if (!payslip) throw AppError.notFound('Payslip');
+  const pdf = await generatePayslipPdf(payslip);
+  reply.header('Content-Type', 'application/pdf');
+  reply.header('Content-Disposition', `inline; filename="payslip-${payslip.month}-${payslip.year}.pdf"`);
+  return reply.send(pdf);
+}
 
 const runSchema = z.object({ month: z.number().int().min(1).max(12), year: z.number().int() });
 
@@ -34,10 +49,20 @@ export async function payrollRoutes(app: FastifyInstance) {
     return { payslips };
   });
 
-  app.get('/payroll/my-payslips/:id/pdf', { preHandler: authenticate }, async (req) => {
+  app.get('/payroll/my-payslips/:id/pdf', { preHandler: authenticate }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    // TODO: stream PDF from Cloudinary signed URL
-    return { id, pdfUrl: 'TODO' };
+    const payslip = await app.prisma.payslip.findUnique({ where: { id } });
+    if (!payslip) throw AppError.notFound('Payslip');
+    if (req.user.role === 'EMPLOYEE' && payslip.employeeId !== req.user.sub) {
+      throw AppError.forbidden('Not your payslip');
+    }
+    return streamPayslipPdf(app, reply, id);
+  });
+
+  // Admin: download any employee's payslip PDF.
+  app.get('/admin/payroll/payslips/:id/pdf', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN', 'HR_MANAGER') }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return streamPayslipPdf(app, reply, id);
   });
 
   app.post('/admin/payroll/send-slips', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN') }, async () => {

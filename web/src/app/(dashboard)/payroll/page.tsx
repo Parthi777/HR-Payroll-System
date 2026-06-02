@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { fetcher, api } from '@/lib/api';
+import { fetcher, api, apiDownload } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Play, Loader2 } from 'lucide-react';
+import { Play, Loader2, FileDown } from 'lucide-react';
 
 interface Payslip {
   id: string;
@@ -97,6 +97,7 @@ export default function PayrollPage() {
                     <th className="px-6 py-3 font-medium">Gross</th>
                     <th className="px-6 py-3 font-medium">Deductions</th>
                     <th className="px-6 py-3 font-medium">Net</th>
+                    <th className="px-6 py-3 font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -107,6 +108,14 @@ export default function PayrollPage() {
                       <td className="px-6 py-4">{inr(p.grossSalary)}</td>
                       <td className="px-6 py-4 text-rose-600">- {inr(p.pfDeduction + p.esiDeduction)}</td>
                       <td className="px-6 py-4 font-semibold text-emerald-600">{inr(p.netSalary)}</td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => apiDownload(`/admin/payroll/payslips/${p.id}/pdf`, `payslip-${p.employee?.employeeCode ?? p.id}-${month}-${year}.pdf`)}
+                          className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
+                        >
+                          <FileDown className="h-3.5 w-3.5" /> PDF
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

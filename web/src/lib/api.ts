@@ -42,5 +42,23 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
   return res.json() as Promise<T>;
 }
 
+/** Fetch a file (with auth) and trigger a browser download. */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** SWR fetcher. */
 export const fetcher = <T>(path: string) => api<T>(path);
