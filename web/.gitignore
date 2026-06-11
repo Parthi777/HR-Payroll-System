@@ -5,3 +5,4 @@ out/
 .env.local
 *.log
 next-env.d.ts.timestamp
+*.tsbuildinfo

@@ -12,6 +12,7 @@ import {
   Bell,
   Search,
   UserCheck,
+  ReceiptText,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/auth-guard';
 import { LogoutButton } from '@/components/logout-button';
@@ -23,6 +24,7 @@ const nav = [
   { href: '/geofence', label: 'Geofence', icon: MapPin },
   { href: '/shifts', label: 'Shifts', icon: Clock },
   { href: '/leaves', label: 'Leaves', icon: CalendarDays },
+  { href: '/claims', label: 'Claims', icon: ReceiptText },
   { href: '/payroll', label: 'Payroll', icon: Wallet },
   { href: '/whatsapp', label: 'WhatsApp', icon: MessageSquare },
   { href: '/reports', label: 'Reports', icon: BarChart3 },

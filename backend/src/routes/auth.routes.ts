@@ -1,12 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { createOtp, verifyOtp, adminLogin } from '../services/auth/auth.service.js';
+import { createOtp, verifyOtp, adminLogin, employeeLogin } from '../services/auth/auth.service.js';
 import type { JwtRole } from '../middleware/auth.js';
 import { env } from '../config/env.js';
 
 const sendOtpSchema = z.object({ phone: z.string().min(10) });
-const verifyOtpSchema = z.object({ phone: z.string().min(10), otp: z.string().length(6) });
+// TEMP (dev): OTP disabled — otp may be blank/omitted. Restore z.string().length(6) to re-enable.
+const verifyOtpSchema = z.object({ phone: z.string().min(10), otp: z.string().optional().default('') });
 const adminLoginSchema = z.object({ email: z.string().email(), password: z.string().min(6) });
+const employeeLoginSchema = z.object({ phone: z.string().min(10), password: z.string().min(1) });
 
 const TOKEN_TTL = '7d';
 const REFRESH_TTL = '30d';
@@ -41,6 +43,15 @@ export async function authRoutes(app: FastifyInstance) {
     const decoded = app.jwt.verify<{ sub: string; role: JwtRole }>(refreshToken);
     const token = app.jwt.sign({ sub: decoded.sub, role: decoded.role }, { expiresIn: TOKEN_TTL });
     return { token, refreshToken };
+  });
+
+  app.post('/employee-login', async (req) => {
+    const { phone, password } = employeeLoginSchema.parse(req.body);
+    const employee = await employeeLogin(app.prisma, phone, password);
+    const role: JwtRole = 'EMPLOYEE';
+    const token = app.jwt.sign({ sub: employee.id, role, branchId: employee.branchId }, { expiresIn: TOKEN_TTL });
+    const refreshToken = app.jwt.sign({ sub: employee.id, role }, { expiresIn: REFRESH_TTL });
+    return { token, refreshToken, employeeId: employee.id, name: employee.name };
   });
 
   app.post('/admin/login', async (req) => {

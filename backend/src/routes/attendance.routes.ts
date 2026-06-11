@@ -145,6 +145,65 @@ export async function attendanceRoutes(app: FastifyInstance) {
     },
   );
 
+  // Per-employee performance/monitoring report for a month (admin, mobile + web).
+  app.get(
+    '/admin/reports/performance',
+    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') },
+    async (req) => {
+      const q = req.query as { month?: string; year?: string };
+      const now = new Date();
+      const month = q.month ? parseInt(q.month, 10) : now.getMonth() + 1; // 1-12
+      const year = q.year ? parseInt(q.year, 10) : now.getFullYear();
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 1);
+
+      const [employees, rows] = await Promise.all([
+        app.prisma.employee.findMany({
+          where: { status: 'ACTIVE' },
+          include: { branch: true },
+          orderBy: { name: 'asc' },
+        }),
+        app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } }),
+      ]);
+
+      const byEmp = new Map<string, typeof rows>();
+      for (const r of rows) {
+        const list = byEmp.get(r.employeeId) ?? [];
+        list.push(r);
+        byEmp.set(r.employeeId, list);
+      }
+
+      return employees.map((e) => {
+        const list = byEmp.get(e.id) ?? [];
+        const present = list.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
+        const late = list.filter((r) => r.status === 'LATE').length;
+        const absent = list.filter((r) => r.status === 'ABSENT').length;
+        const leave = list.filter((r) => r.status === 'ON_LEAVE').length;
+        const flagged = list.filter((r) => r.isFlagged).length;
+        const withCheckout = list.filter((r) => r.workingMinutes != null);
+        const totalMin = withCheckout.reduce((s, r) => s + (r.workingMinutes ?? 0), 0);
+        const avgHours = withCheckout.length
+          ? Math.round((totalMin / withCheckout.length / 60) * 10) / 10
+          : 0;
+        const denom = present + absent;
+        const attendanceRate = denom > 0 ? Math.round((present / denom) * 100) : 0;
+        return {
+          employeeId: e.id,
+          employeeCode: e.employeeCode,
+          name: e.name,
+          branch: e.branch.name,
+          presentDays: present,
+          lateDays: late,
+          absentDays: absent,
+          leaveDays: leave,
+          attendanceRate,
+          avgHours,
+          flaggedCount: flagged,
+        };
+      });
+    },
+  );
+
   app.patch(
     '/admin/attendance/:id/override',
     { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') },

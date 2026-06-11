@@ -60,5 +60,15 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   URL.revokeObjectURL(url);
 }
 
+/** Fetch a file (with auth) and return an object URL for inline viewing / opening in a tab. */
+export async function apiBlobUrl(path: string): Promise<string> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  return URL.createObjectURL(await res.blob());
+}
+
 /** SWR fetcher. */
 export const fetcher = <T>(path: string) => api<T>(path);

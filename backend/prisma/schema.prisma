@@ -10,6 +10,8 @@
 //   AttendanceStatus: PRESENT | ABSENT | LATE | HALF_DAY | ON_LEAVE | HOLIDAY
 //   LeaveType       : CL | SL | EL | LOP | HALF_DAY
 //   LeaveStatus     : PENDING | APPROVED | REJECTED | CANCELLED
+//   ClaimType       : TRAVEL | FOOD | MEDICAL | ACCOMMODATION | OTHER
+//   ClaimStatus     : PENDING | APPROVED | REJECTED | NEEDS_CLARIFICATION
 //   PayslipStatus   : DRAFT | FINALIZED | SENT | PAID
 //   WAStatus        : QUEUED | SENT | DELIVERED | READ | FAILED
 //   AdminRole       : SUPER_ADMIN | HR_MANAGER | BRANCH_MANAGER | PAYROLL_ADMIN
@@ -40,6 +42,8 @@ model Employee {
   faceTemplateUrl String? // Stored face enrollment image
   faceTemplateId  String? // Rekognition face ID
   deviceId        String? // Device fingerprint binding
+  driveFolderId   String? // Google Drive folder id holding this employee's claim files
+  passwordHash    String? // bcrypt; set by admin at creation — employee logs in with phone + password
   status          String  @default("ACTIVE") // EmployeeStatus
   joiningDate     DateTime
   salary          Float
@@ -52,6 +56,7 @@ model Employee {
   leaves        Leave[]
   payslips      Payslip[]
   leaveBalances LeaveBalance[]
+  claims        Claim[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -161,6 +166,31 @@ model Leave {
   status       String   @default("PENDING") // LeaveStatus
   approvedBy   String?
   approverNote String?
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+model Claim {
+  id             String  @id @default(cuid())
+  employeeId     String
+  type           String // ClaimType
+  title          String
+  amount         Float
+  description    String?
+  photoFileId    String? // Google Drive file id (receipt photo)
+  documentFileId String? // Google Drive file id (PDF)
+  photoUrl       String? // fallback (S3/local) when Drive isn't configured
+  documentUrl    String?
+  status         String  @default("PENDING") // ClaimStatus
+  reviewedBy     String? // admin id who acted
+  reviewerNote   String? // admin note: rejection reason OR clarification question
+  employeeNote   String? // employee's reply when resubmitting after clarification
 
   employee Employee @relation(fields: [employeeId], references: [id])
 

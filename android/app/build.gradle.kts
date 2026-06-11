@@ -102,6 +102,9 @@ dependencies {
     // ML Kit — Face Detection (liveness)
     implementation("com.google.mlkit:face-detection:16.1.7")
 
+    // ML Kit — Document Scanner (CamScanner-style capture: edge detect, crop, enhance)
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+
     // Maps + Location
     implementation("com.google.android.gms:play-services-maps:19.0.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")

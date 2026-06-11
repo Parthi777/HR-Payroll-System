@@ -95,3 +95,91 @@ data class ScheduleDayDto(
 
 @JsonClass(generateAdapter = true)
 data class ScheduleResponse(val schedule: List<ScheduleDayDto> = emptyList())
+
+// ── Admin (mobile reports + monitoring) ──
+@JsonClass(generateAdapter = true)
+data class AdminLoginResponse(
+    val token: String? = null,
+    val role: String? = null,
+    val email: String? = null,
+    val name: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class DashboardStatsDto(
+    val presentNow: Int = 0,
+    val absent: Int = 0,
+    val lateArrivals: Int = 0,
+    val onLeave: Int = 0,
+    val pendingApprovals: Int = 0,
+    val totalStaff: Int = 0,
+    val branches: Int = 0,
+    val checkedIn: Int = 0,
+    val attendanceRate: Int = 0,
+)
+
+@JsonClass(generateAdapter = true)
+data class LiveAttendanceRowDto(
+    val id: String? = null,
+    val name: String? = null,
+    val branch: String? = null,
+    val checkIn: String? = null,
+    val checkOut: String? = null,
+    val status: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class PerformanceRowDto(
+    val employeeId: String? = null,
+    val employeeCode: String? = null,
+    val name: String? = null,
+    val branch: String? = null,
+    val presentDays: Int = 0,
+    val lateDays: Int = 0,
+    val absentDays: Int = 0,
+    val leaveDays: Int = 0,
+    val attendanceRate: Int = 0,
+    val avgHours: Double = 0.0,
+    val flaggedCount: Int = 0,
+)
+
+// ── Claims ──
+@JsonClass(generateAdapter = true)
+data class ClaimEmployeeDto(val name: String? = null, val employeeCode: String? = null)
+
+@JsonClass(generateAdapter = true)
+data class ClaimDto(
+    val id: String? = null,
+    val type: String? = null,
+    val title: String? = null,
+    val amount: Double? = null,
+    val description: String? = null,
+    val status: String? = null,
+    val reviewerNote: String? = null,
+    val employeeNote: String? = null,
+    val photoFileId: String? = null,
+    val documentFileId: String? = null,
+    val photoUrl: String? = null,
+    val documentUrl: String? = null,
+    val createdAt: String? = null,
+    val employee: ClaimEmployeeDto? = null, // present on admin listings
+)
+
+@JsonClass(generateAdapter = true)
+data class ClaimListResponse(val claims: List<ClaimDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class ClaimCreatedResponse(val claim: ClaimDto? = null)
+
+// ── Profile (home dashboard) ──
+@JsonClass(generateAdapter = true)
+data class MeDto(
+    val id: String? = null,
+    val name: String? = null,
+    val employeeCode: String? = null,
+    val phone: String? = null,
+    val designation: String? = null,
+    val department: String? = null,
+    val branch: String? = null,
+    val shift: String? = null,
+)

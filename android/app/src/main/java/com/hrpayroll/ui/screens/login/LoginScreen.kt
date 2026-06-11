@@ -1,6 +1,7 @@
 package com.hrpayroll.ui.screens.login
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PersonOutline
 import androidx.compose.runtime.Composable
@@ -33,21 +33,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hrpayroll.ui.theme.BrandGradient
+import com.hrpayroll.ui.theme.BrandIndigo
 
-/** Phone + OTP login (see CLAUDE.md Authentication). Wired to /api/auth via LoginViewModel. */
+/** Phone (employee) or email+password (admin) login. Wired to /api/auth via LoginViewModel. */
 @Composable
 fun LoginScreen(
-    onLoggedIn: () -> Unit,
+    onLoggedIn: (isAdmin: Boolean) -> Unit,
     viewModel: LoginViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
 
     LaunchedEffect(state.loggedIn) {
-        if (state.loggedIn) onLoggedIn()
+        if (state.loggedIn) onLoggedIn(state.isAdmin)
     }
 
     Box(modifier = Modifier.fillMaxSize().background(BrandGradient)) {
@@ -65,7 +67,21 @@ fun LoginScreen(
             Spacer(Modifier.height(20.dp))
             Text("HR & PAYROLL", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Text("Smart Solutions for Employees", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(36.dp))
+
+            // Employee / Admin toggle
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(Color.White.copy(alpha = 0.15f))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                LoginTab("Employee", selected = !state.adminMode, modifier = Modifier.weight(1f)) { viewModel.setAdminMode(false) }
+                LoginTab("Admin", selected = state.adminMode, modifier = Modifier.weight(1f)) { viewModel.setAdminMode(true) }
+            }
+            Spacer(Modifier.height(20.dp))
 
             val fieldColors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Color.White,
@@ -74,7 +90,31 @@ fun LoginScreen(
                 unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
             )
 
-            if (state.phase == LoginPhase.PHONE) {
+            if (state.adminMode) {
+                OutlinedTextField(
+                    value = state.email,
+                    onValueChange = viewModel::onEmailChange,
+                    label = { Text("Admin email") },
+                    placeholder = { Text("admin@hrpayroll.local") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = fieldColors,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = state.password,
+                    onValueChange = viewModel::onPasswordChange,
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = fieldColors,
+                )
+                Spacer(Modifier.height(20.dp))
+                PrimaryButton(text = "Admin Login", loading = state.isLoading, onClick = viewModel::adminLogin)
+            } else {
                 OutlinedTextField(
                     value = state.phone,
                     onValueChange = viewModel::onPhoneChange,
@@ -85,34 +125,19 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = fieldColors,
                 )
-                Spacer(Modifier.height(20.dp))
-                PrimaryButton(text = "Send OTP", loading = state.isLoading, onClick = viewModel::sendOtp)
-            } else {
-                Text("Enter the code sent to ${state.phone}", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
-                state.devOtp?.let { code ->
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Dev mode — no SMS provider. Use OTP: $code",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
-                    value = state.otp,
-                    onValueChange = viewModel::onOtpChange,
-                    label = { Text("6-digit OTP") },
+                    value = state.password,
+                    onValueChange = viewModel::onPasswordChange,
+                    label = { Text("Password") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                     colors = fieldColors,
                 )
                 Spacer(Modifier.height(20.dp))
-                PrimaryButton(text = "Verify & Continue", loading = state.isLoading, onClick = viewModel::verifyOtp)
-                TextButton(onClick = viewModel::back) {
-                    Text("Change number", color = Color.White)
-                }
+                PrimaryButton(text = "Login", loading = state.isLoading, onClick = viewModel::login)
             }
 
             state.error?.let {
@@ -120,6 +145,30 @@ fun LoginScreen(
                 Text(it, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
+    }
+}
+
+@Composable
+private fun LoginTab(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.small)
+            .background(if (selected) Color.White else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = if (selected) BrandIndigo else Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

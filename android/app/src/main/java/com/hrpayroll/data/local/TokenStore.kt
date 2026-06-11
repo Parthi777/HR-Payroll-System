@@ -26,11 +26,19 @@ class TokenStore @Inject constructor(@ApplicationContext context: Context) {
 
     fun getToken(): String? = prefs.getString(KEY_TOKEN, null)
 
-    fun saveToken(token: String) = prefs.edit().putString(KEY_TOKEN, token).apply()
+    /** Persist the JWT and the caller's role (null for employee logins). */
+    fun saveToken(token: String, role: String? = null) =
+        prefs.edit().putString(KEY_TOKEN, token).putString(KEY_ROLE, role).apply()
+
+    fun getRole(): String? = prefs.getString(KEY_ROLE, null)
+
+    /** True for any admin role (SUPER_ADMIN / HR_MANAGER / …); false for employees. */
+    fun isAdmin(): Boolean = getRole().let { it != null && it != "EMPLOYEE" }
 
     fun clear() = prefs.edit().clear().apply()
 
     private companion object {
         const val KEY_TOKEN = "jwt_token"
+        const val KEY_ROLE = "user_role"
     }
 }

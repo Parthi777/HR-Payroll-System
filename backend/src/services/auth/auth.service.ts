@@ -21,6 +21,14 @@ export async function createOtp(prisma: PrismaClient, phone: string): Promise<st
 
 /** Verify an OTP and return the matching employee. Throws on any failure. */
 export async function verifyOtp(prisma: PrismaClient, phone: string, otp: string) {
+  // TEMP (dev only): OTP disabled — a blank OTP logs in by phone alone. Auto-off
+  // in production (NODE_ENV=production). Remove this block to restore OTP login.
+  if (env.NODE_ENV !== 'production' && otp.trim() === '') {
+    const employee = await prisma.employee.findUnique({ where: { phone } });
+    if (!employee) throw new AppError(`No employee registered for ${phone}`, 404);
+    return employee;
+  }
+
   // Dev convenience: when a fixed OTP is configured (no SMS provider), accept it
   // directly — independent of send-otp rate limits, the 5-min expiry, or consumption.
   // Removed automatically in production where DEV_FIXED_OTP is unset.
@@ -48,6 +56,16 @@ export async function verifyOtp(prisma: PrismaClient, phone: string, otp: string
 
   const employee = await prisma.employee.findUnique({ where: { phone } });
   if (!employee) throw new AppError(`No employee registered for ${phone}`, 404);
+  return employee;
+}
+
+/** Employee login with phone + password (password is set by the admin at creation). */
+export async function employeeLogin(prisma: PrismaClient, phone: string, password: string) {
+  const employee = await prisma.employee.findUnique({ where: { phone } });
+  // Same generic error whether the phone or password is wrong, or no password is set yet.
+  if (!employee || !employee.passwordHash) throw AppError.unauthorized('Invalid phone or password');
+  const ok = await bcrypt.compare(password, employee.passwordHash);
+  if (!ok) throw AppError.unauthorized('Invalid phone or password');
   return employee;
 }
 

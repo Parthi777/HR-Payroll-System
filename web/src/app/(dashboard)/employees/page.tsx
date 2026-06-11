@@ -75,7 +75,7 @@ function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const { data: sh } = useSWR<{ shifts: Named[] }>('/shifts', fetcher, { shouldRetryOnError: false });
 
   const [f, setF] = useState({
-    name: '', employeeCode: '', phone: '', email: '', salary: '',
+    name: '', employeeCode: '', phone: '', email: '', salary: '', password: '',
     joiningDate: new Date().toISOString().slice(0, 10),
     branchId: '', departmentId: '', designationId: '', shiftId: '',
   });
@@ -87,6 +87,10 @@ function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     setErr(null);
     if (!f.name || !f.phone || !f.branchId || !f.departmentId || !f.designationId || !f.shiftId || !f.salary) {
       setErr('Please fill all required fields.');
+      return;
+    }
+    if (!f.password || f.password.length < 4) {
+      setErr('Set an app login password (min 4 characters) for the employee.');
       return;
     }
     setSaving(true);
@@ -121,6 +125,7 @@ function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           <input className={input} placeholder="Employee code *" value={f.employeeCode} onChange={(e) => set('employeeCode', e.target.value)} />
           <input className={input} placeholder="Phone * (+91…)" value={f.phone} onChange={(e) => set('phone', e.target.value)} />
           <input className={input} placeholder="Email" value={f.email} onChange={(e) => set('email', e.target.value)} />
+          <input className={input} type="password" placeholder="App login password *" value={f.password} onChange={(e) => set('password', e.target.value)} />
           <input className={input} type="number" placeholder="Salary (₹/mo) *" value={f.salary} onChange={(e) => set('salary', e.target.value)} />
           <input className={input} type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} />
           <select className={input} value={f.branchId} onChange={(e) => set('branchId', e.target.value)}>
