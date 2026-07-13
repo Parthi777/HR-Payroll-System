@@ -10,7 +10,8 @@ const verifyOtpSchema = z.object({ phone: z.string().min(10), otp: z.string().op
 const adminLoginSchema = z.object({ email: z.string().email(), password: z.string().min(6) });
 const employeeLoginSchema = z.object({ phone: z.string().min(10), password: z.string().min(1) });
 
-const TOKEN_TTL = '7d';
+const TOKEN_TTL = '7d'; // employee sessions (field staff shouldn't re-login daily)
+const ADMIN_TOKEN_TTL = '12h'; // admin sessions are more sensitive — expire same day
 const REFRESH_TTL = '30d';
 
 /**
@@ -45,7 +46,9 @@ export async function authRoutes(app: FastifyInstance) {
     return { token, refreshToken };
   });
 
-  app.post('/employee-login', async (req) => {
+  // Password endpoints are brute-forceable — throttle per client IP (needs trustProxy
+  // behind Railway's proxy, set in server.ts, or every user shares one bucket).
+  app.post('/employee-login', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
     const { phone, password } = employeeLoginSchema.parse(req.body);
     const employee = await employeeLogin(app.prisma, phone, password);
     const role: JwtRole = 'EMPLOYEE';
@@ -54,12 +57,12 @@ export async function authRoutes(app: FastifyInstance) {
     return { token, refreshToken, employeeId: employee.id, name: employee.name };
   });
 
-  app.post('/admin/login', async (req) => {
+  app.post('/admin/login', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (req) => {
     const { email, password } = adminLoginSchema.parse(req.body);
     const admin = await adminLogin(app.prisma, email, password);
     const token = app.jwt.sign(
       { sub: admin.id, role: admin.role as JwtRole, branchId: admin.branchId ?? undefined },
-      { expiresIn: TOKEN_TTL },
+      { expiresIn: ADMIN_TOKEN_TTL },
     );
     return { token, role: admin.role, email: admin.email, name: admin.name };
   });

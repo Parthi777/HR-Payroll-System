@@ -15,7 +15,9 @@ import { ensureSeedData } from './bootstrap.js';
 async function buildServer() {
   // Cast to the default FastifyInstance: passing a custom pino instance otherwise
   // leaks a narrower logger generic that conflicts with our route registrars.
-  const app = Fastify({ logger }) as unknown as FastifyInstance;
+  // trustProxy: behind Railway's edge proxy the client IP arrives in X-Forwarded-For;
+  // without this, per-IP rate limits would lump every user into one shared bucket.
+  const app = Fastify({ logger, trustProxy: true }) as unknown as FastifyInstance;
 
   await app.register(cors, { origin: true, credentials: true });
   await app.register(jwt, { secret: env.JWT_SECRET });
