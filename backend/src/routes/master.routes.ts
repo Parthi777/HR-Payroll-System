@@ -48,6 +48,20 @@ export async function masterRoutes(app: FastifyInstance) {
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
     return { department: await app.prisma.department.create({ data: { name } }) };
   });
+  app.put('/admin/departments/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
+    return { department: await app.prisma.department.update({ where: { id }, data: { name } }) };
+  });
+  app.delete('/admin/departments/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    const staff = await app.prisma.employee.count({ where: { departmentId: id } });
+    if (staff > 0) {
+      throw new AppError(`Cannot delete — ${staff} employee(s) are in this department. Reassign them first.`, 409);
+    }
+    await app.prisma.department.delete({ where: { id } });
+    return { id, deleted: true };
+  });
 
   // Designations
   app.get('/admin/designations', async () => ({
@@ -56,5 +70,19 @@ export async function masterRoutes(app: FastifyInstance) {
   app.post('/admin/designations', async (req) => {
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
     return { designation: await app.prisma.designation.create({ data: { name } }) };
+  });
+  app.put('/admin/designations/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
+    return { designation: await app.prisma.designation.update({ where: { id }, data: { name } }) };
+  });
+  app.delete('/admin/designations/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    const staff = await app.prisma.employee.count({ where: { designationId: id } });
+    if (staff > 0) {
+      throw new AppError(`Cannot delete — ${staff} employee(s) hold this designation. Reassign them first.`, 409);
+    }
+    await app.prisma.designation.delete({ where: { id } });
+    return { id, deleted: true };
   });
 }
