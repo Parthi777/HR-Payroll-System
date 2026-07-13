@@ -49,7 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Mobile backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
           onClick={() => setOpen(false)}
           aria-hidden
         />
@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Brand sidebar — drawer on mobile, sticky on md+ */}
       <aside
-        className={`brand-gradient fixed inset-y-0 left-0 z-40 flex h-full w-64 shrink-0 flex-col p-4 text-white transition-transform duration-200 md:sticky md:top-0 md:h-screen md:translate-x-0 ${
+        className={`brand-gradient fixed inset-y-0 left-0 z-50 flex h-full w-64 shrink-0 flex-col p-4 text-white transition-transform duration-200 md:sticky md:top-0 md:h-screen md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

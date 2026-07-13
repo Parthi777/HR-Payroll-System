@@ -34,6 +34,9 @@ export default function BranchMap({ branches, height = 360 }: { branches: MapBra
     : [11.4452, 77.6822]; // fallback: Bhavani
 
   return (
+    // `isolate` confines Leaflet's internal z-indexes (panes/controls go up to 1000)
+    // so the map can never overlap the app header, drawer, or backdrop.
+    <div className="relative z-0 isolate">
     <MapContainer
       center={center}
       zoom={valid.length > 1 ? 9 : 14}
@@ -64,5 +67,6 @@ export default function BranchMap({ branches, height = 360 }: { branches: MapBra
         );
       })}
     </MapContainer>
+    </div>
   );
 }
