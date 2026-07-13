@@ -22,9 +22,20 @@ export async function geofenceRoutes(app: FastifyInstance) {
     return { branches };
   });
 
+  // Flexible geofence: admin can move the center, resize the radius, and switch
+  // strict/soft mode per branch at any time.
   app.put('/admin/geofence/:branchId', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
     const { branchId } = req.params as { branchId: string };
-    return { branchId, updated: true };
+    const data = z
+      .object({
+        geofenceLat: z.number().min(-90).max(90).optional(),
+        geofenceLng: z.number().min(-180).max(180).optional(),
+        geofenceRadius: z.number().min(20).max(10000).optional(), // meters
+        strictMode: z.boolean().optional(),
+      })
+      .parse(req.body);
+    const branch = await app.prisma.branch.update({ where: { id: branchId }, data });
+    return { branch };
   });
 
   app.get('/admin/geofence/violations', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async () => {

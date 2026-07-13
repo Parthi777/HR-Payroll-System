@@ -27,12 +27,17 @@ const envSchema = z.object({
   AWS_REKOGNITION_COLLECTION_ID: z.string().default('hr-payroll-faces'),
   AWS_S3_BUCKET: z.string().optional(), // selfie storage; falls back to local disk if unset
 
-  // Google Drive (claim attachments). OAuth2 — files land in the connected Gmail's Drive.
-  // When unset, claim files fall back to S3/local so the feature still works in dev.
+  // Google Drive (claim attachments). Two auth modes; when neither is configured,
+  // claim files fall back to S3/local so the feature still works in dev.
+  // Mode 1 — service account (recommended): file path OR raw JSON string.
+  GOOGLE_SERVICE_ACCOUNT_FILE: z.string().optional(),
+  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  // Mode 2 — OAuth2 (files land in the connected Gmail's Drive).
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REFRESH_TOKEN: z.string().optional(),
   GOOGLE_DRIVE_PARENT_FOLDER_ID: z.string().optional(), // parent folder for per-employee subfolders
+  GOOGLE_DRIVE_SHARE_WITH: z.string().optional(), // auto-share created folders with this email
 
   WHATSAPP_PROVIDER: z.enum(['wati', 'twilio', 'meta']).default('wati'),
   WATI_API_URL: z.string().optional(),

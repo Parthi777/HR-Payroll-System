@@ -1,6 +1,6 @@
 'use client';
 
-import { MapContainer, TileLayer, Circle, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Marker, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -24,14 +24,37 @@ const markerIcon = L.icon({
   shadowSize: [41, 41],
 });
 
-export default function BranchMap({ branches, height = 360 }: { branches: MapBranch[]; height?: number }) {
+function ClickCapture({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+export default function BranchMap({
+  branches,
+  height = 360,
+  onMapClick,
+  draft,
+}: {
+  branches: MapBranch[];
+  height?: number;
+  /** When set, map clicks report coordinates (used by the geofence editor). */
+  onMapClick?: (lat: number, lng: number) => void;
+  /** Live preview of the geofence being edited (dashed indigo circle). */
+  draft?: { lat: number; lng: number; radius: number } | null;
+}) {
   const valid = branches.filter((b) => b.geofenceLat && b.geofenceLng);
-  const center: [number, number] = valid.length
-    ? [
-        valid.reduce((s, b) => s + b.geofenceLat, 0) / valid.length,
-        valid.reduce((s, b) => s + b.geofenceLng, 0) / valid.length,
-      ]
-    : [11.4452, 77.6822]; // fallback: Bhavani
+  const center: [number, number] = draft
+    ? [draft.lat, draft.lng]
+    : valid.length
+      ? [
+          valid.reduce((s, b) => s + b.geofenceLat, 0) / valid.length,
+          valid.reduce((s, b) => s + b.geofenceLng, 0) / valid.length,
+        ]
+      : [11.4452, 77.6822]; // fallback: Bhavani
 
   return (
     // `isolate` confines Leaflet's internal z-indexes (panes/controls go up to 1000)
@@ -39,14 +62,15 @@ export default function BranchMap({ branches, height = 360 }: { branches: MapBra
     <div className="relative z-0 isolate">
     <MapContainer
       center={center}
-      zoom={valid.length > 1 ? 9 : 14}
+      zoom={valid.length > 1 && !draft ? 9 : 14}
       scrollWheelZoom={false}
-      style={{ height, width: '100%', borderRadius: 16 }}
+      style={{ height, width: '100%', borderRadius: 16, cursor: onMapClick ? 'crosshair' : undefined }}
     >
       <TileLayer
         attribution='&copy; OpenStreetMap contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+      {onMapClick && <ClickCapture onMapClick={onMapClick} />}
       {valid.map((b) => {
         const color = b.strictMode ? '#e11d48' : '#16a34a';
         return (
@@ -66,6 +90,16 @@ export default function BranchMap({ branches, height = 360 }: { branches: MapBra
           </div>
         );
       })}
+      {draft && (
+        <>
+          <Marker position={[draft.lat, draft.lng]} icon={markerIcon} />
+          <Circle
+            center={[draft.lat, draft.lng]}
+            radius={draft.radius}
+            pathOptions={{ color: '#6C5CE7', fillColor: '#6C5CE7', fillOpacity: 0.15, dashArray: '6 6' }}
+          />
+        </>
+      )}
     </MapContainer>
     </div>
   );

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { AppError } from '../utils/AppError.js';
 
 const shiftSchema = z.object({
   name: z.string(),
@@ -27,6 +28,16 @@ export async function shiftRoutes(app: FastifyInstance) {
     const data = shiftSchema.partial().parse(req.body);
     const shift = await app.prisma.shift.update({ where: { id }, data });
     return { shift };
+  });
+
+  app.delete('/admin/shifts/:id', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
+    const { id } = req.params as { id: string };
+    const staff = await app.prisma.employee.count({ where: { shiftId: id } });
+    if (staff > 0) {
+      throw new AppError(`Cannot delete — ${staff} employee(s) are on this shift. Reassign them first.`, 409);
+    }
+    await app.prisma.shift.delete({ where: { id } });
+    return { id, deleted: true };
   });
 
   app.post('/admin/shifts/assign', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
