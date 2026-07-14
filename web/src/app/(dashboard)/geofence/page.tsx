@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { fetcher, api } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MapPin, Loader2, Pencil, Trash2, Plus, X } from 'lucide-react';
+import { MapPin, Loader2, Pencil, Trash2, Plus, X, LocateFixed } from 'lucide-react';
 
 // Leaflet touches `window`, so load the map only on the client.
 const BranchMap = dynamic(() => import('@/components/branch-map'), {
@@ -56,6 +56,34 @@ export default function GeofencePage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [gpsInfo, setGpsInfo] = useState<string | null>(null);
+
+  /** Fill lat/lng from the browser's GPS — stand at the branch for an exact fix. */
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setErr('This browser does not support geolocation.');
+      return;
+    }
+    setLocating(true);
+    setGpsInfo(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setDraft((d) => (d ? { ...d, lat: pos.coords.latitude, lng: pos.coords.longitude } : d));
+        setGpsInfo(`GPS fix: ±${Math.round(pos.coords.accuracy)}m accuracy`);
+        setLocating(false);
+      },
+      (e) => {
+        setErr(
+          e.code === e.PERMISSION_DENIED
+            ? 'Location permission denied — allow it in the browser and try again.'
+            : `Could not get location: ${e.message}`,
+        );
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  }
 
   const startEdit = (b: Branch) =>
     setDraft({ id: b.id, name: b.name, address: b.address, lat: b.geofenceLat, lng: b.geofenceLng, radius: b.geofenceRadius, strict: b.strictMode });
@@ -113,7 +141,7 @@ export default function GeofencePage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              {draft ? `Editing: ${draft.name || 'New branch'} — click the map to set the centre` : 'Branch Map'}
+              {draft ? `Editing: ${draft.name || 'New branch'} — click the map or drag the pin to set the centre` : 'Branch Map'}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -142,6 +170,20 @@ export default function GeofencePage() {
               <input className={input} placeholder="Address *" value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} />
               <input className={input} type="number" step="0.0001" placeholder="Latitude" value={draft.lat} onChange={(e) => setDraft({ ...draft, lat: parseFloat(e.target.value) || 0 })} />
               <input className={input} type="number" step="0.0001" placeholder="Longitude" value={draft.lng} onChange={(e) => setDraft({ ...draft, lng: parseFloat(e.target.value) || 0 })} />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={useMyLocation}
+                disabled={locating}
+                className="flex h-10 items-center gap-2 rounded-xl border border-brand-600/40 bg-brand-50 px-4 text-sm font-semibold text-brand-600 hover:bg-brand-50/70 disabled:opacity-60"
+              >
+                {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
+                {locating ? 'Getting GPS fix…' : 'Use my current location'}
+              </button>
+              {gpsInfo && <span className="text-xs font-medium text-emerald-600">{gpsInfo}</span>}
+              <span className="text-xs text-muted-foreground">Stand at the branch for the most accurate fence centre — then fine-tune by dragging the pin.</span>
             </div>
 
             <div>

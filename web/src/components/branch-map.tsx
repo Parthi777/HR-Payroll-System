@@ -1,6 +1,7 @@
 'use client';
 
-import { MapContainer, TileLayer, Circle, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { useEffect } from 'react';
+import { MapContainer, TileLayer, Circle, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -30,6 +31,19 @@ function ClickCapture({ onMapClick }: { onMapClick: (lat: number, lng: number) =
       onMapClick(e.latlng.lat, e.latlng.lng);
     },
   });
+  return null;
+}
+
+/** Fly to the draft point when it jumps far (current-location / branch switch),
+ *  but stay put for small click/drag adjustments so editing isn't jumpy. */
+function Recenter({ lat, lng }: { lat: number; lng: number }) {
+  const map = useMap();
+  useEffect(() => {
+    const c = map.getCenter();
+    if (Math.abs(c.lat - lat) > 0.005 || Math.abs(c.lng - lng) > 0.005) {
+      map.flyTo([lat, lng], Math.max(map.getZoom(), 16));
+    }
+  }, [map, lat, lng]);
   return null;
 }
 
@@ -92,7 +106,22 @@ export default function BranchMap({
       })}
       {draft && (
         <>
-          <Marker position={[draft.lat, draft.lng]} icon={markerIcon} />
+          <Recenter lat={draft.lat} lng={draft.lng} />
+          <Marker
+            position={[draft.lat, draft.lng]}
+            icon={markerIcon}
+            draggable={!!onMapClick}
+            eventHandlers={
+              onMapClick
+                ? {
+                    dragend: (e) => {
+                      const p = (e.target as L.Marker).getLatLng();
+                      onMapClick(p.lat, p.lng);
+                    },
+                  }
+                : undefined
+            }
+          />
           <Circle
             center={[draft.lat, draft.lng]}
             radius={draft.radius}
