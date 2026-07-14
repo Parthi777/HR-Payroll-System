@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Schedule
@@ -30,6 +31,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.hrpayroll.ui.screens.admin.AdminClaimsScreen
 import com.hrpayroll.ui.screens.admin.AdminDashboardScreen
+import com.hrpayroll.ui.screens.admin.AdminUsersScreen
 import com.hrpayroll.ui.screens.admin.LiveAttendanceScreen
 import com.hrpayroll.ui.screens.admin.PerformanceScreen
 import com.hrpayroll.ui.screens.claim.ClaimSubmitScreen
@@ -59,6 +61,7 @@ object Routes {
     const val ADMIN_LIVE = "admin_live"
     const val ADMIN_PERFORMANCE = "admin_performance"
     const val ADMIN_CLAIMS = "admin_claims"
+    const val ADMIN_USERS = "admin_users"
 }
 
 /** Build the claim submit route; pass "new" for a fresh claim or a claim id to resubmit. */
@@ -79,6 +82,7 @@ private val adminTabs = listOf(
     BottomTab(Routes.ADMIN_LIVE, "Live", Icons.Filled.Groups),
     BottomTab(Routes.ADMIN_CLAIMS, "Claims", Icons.Filled.ReceiptLong),
     BottomTab(Routes.ADMIN_PERFORMANCE, "Performance", Icons.Filled.Assessment),
+    BottomTab(Routes.ADMIN_USERS, "Users", Icons.Filled.ManageAccounts),
 )
 
 @Composable
@@ -183,6 +187,7 @@ fun HrPayrollNavHost() {
             composable(Routes.ADMIN_LIVE) { LiveAttendanceScreen() }
             composable(Routes.ADMIN_CLAIMS) { AdminClaimsScreen() }
             composable(Routes.ADMIN_PERFORMANCE) { PerformanceScreen() }
+            composable(Routes.ADMIN_USERS) { AdminUsersScreen() }
         }
     }
 }

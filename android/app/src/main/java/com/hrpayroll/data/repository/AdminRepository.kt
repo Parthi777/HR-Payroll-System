@@ -1,6 +1,7 @@
 package com.hrpayroll.data.repository
 
 import com.hrpayroll.data.remote.HrApi
+import com.hrpayroll.data.remote.dto.AdminUserDto
 import com.hrpayroll.data.remote.dto.ClaimDto
 import com.hrpayroll.data.remote.dto.DashboardStatsDto
 import com.hrpayroll.data.remote.dto.LiveAttendanceRowDto
@@ -19,4 +20,11 @@ class AdminRepository @Inject constructor(
     suspend fun approveClaim(id: String) = api.approveClaim(id)
     suspend fun rejectClaim(id: String, note: String) = api.rejectClaim(id, mapOf("note" to note))
     suspend fun clarifyClaim(id: String, note: String) = api.clarifyClaim(id, mapOf("note" to note))
+
+    // User access (SUPER_ADMIN)
+    suspend fun adminUsers(): List<AdminUserDto> = api.adminUsers().admins
+    suspend fun createAdminUser(name: String, email: String, role: String, password: String) =
+        api.createAdminUser(mapOf("name" to name, "email" to email, "role" to role, "password" to password))
+    suspend fun setAdminActive(id: String, active: Boolean) =
+        api.updateAdminUser(id, mapOf("isActive" to active))
 }

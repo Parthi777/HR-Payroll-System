@@ -171,6 +171,22 @@ data class ClaimListResponse(val claims: List<ClaimDto> = emptyList())
 @JsonClass(generateAdapter = true)
 data class ClaimCreatedResponse(val claim: ClaimDto? = null)
 
+// ── Admin user-access management ──
+@JsonClass(generateAdapter = true)
+data class AdminUserDto(
+    val id: String? = null,
+    val name: String? = null,
+    val email: String? = null,
+    val role: String? = null,
+    val isActive: Boolean = true,
+)
+
+@JsonClass(generateAdapter = true)
+data class AdminUserListResponse(val admins: List<AdminUserDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class AdminUserResponse(val admin: AdminUserDto? = null)
+
 // ── Profile (home dashboard) ──
 @JsonClass(generateAdapter = true)
 data class MeDto(

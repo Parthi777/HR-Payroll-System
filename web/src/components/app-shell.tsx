@@ -17,6 +17,7 @@ import {
   Search,
   UserCheck,
   ReceiptText,
+  ShieldCheck,
   Menu,
   X,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ const nav = [
   { href: '/payroll', label: 'Payroll', icon: Wallet },
   { href: '/whatsapp', label: 'WhatsApp', icon: MessageSquare },
   { href: '/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/access', label: 'User Access', icon: ShieldCheck },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

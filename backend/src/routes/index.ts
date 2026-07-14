@@ -10,6 +10,7 @@ import { whatsappRoutes } from './whatsapp.routes.js';
 import { masterRoutes } from './master.routes.js';
 import { claimRoutes } from './claim.routes.js';
 import { profileRoutes } from './profile.routes.js';
+import { adminUsersRoutes } from './admin-users.routes.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
@@ -25,4 +26,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(masterRoutes, { prefix: '/api' });
   await app.register(claimRoutes, { prefix: '/api' });
   await app.register(profileRoutes, { prefix: '/api' });
+  await app.register(adminUsersRoutes, { prefix: '/api' });
 }

@@ -66,6 +66,7 @@ export async function employeeLogin(prisma: PrismaClient, phone: string, passwor
   if (!employee || !employee.passwordHash) throw AppError.unauthorized('Invalid phone or password');
   const ok = await bcrypt.compare(password, employee.passwordHash);
   if (!ok) throw AppError.unauthorized('Invalid phone or password');
+  if (employee.status !== 'ACTIVE') throw AppError.unauthorized('Account disabled — contact HR');
   return employee;
 }
 

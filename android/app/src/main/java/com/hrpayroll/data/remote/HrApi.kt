@@ -1,6 +1,8 @@
 package com.hrpayroll.data.remote
 
 import com.hrpayroll.data.remote.dto.AdminLoginResponse
+import com.hrpayroll.data.remote.dto.AdminUserListResponse
+import com.hrpayroll.data.remote.dto.AdminUserResponse
 import com.hrpayroll.data.remote.dto.ApplyLeaveRequest
 import com.hrpayroll.data.remote.dto.AttendanceDto
 import com.hrpayroll.data.remote.dto.AttendanceHistoryDto
@@ -22,6 +24,7 @@ import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -119,4 +122,14 @@ interface HrApi {
 
     @PATCH("admin/claims/{id}/clarify")
     suspend fun clarifyClaim(@Path("id") id: String, @Body body: Map<String, String>): ClaimCreatedResponse
+
+    // ── User access (SUPER_ADMIN) ──
+    @GET("admin/users")
+    suspend fun adminUsers(): AdminUserListResponse
+
+    @POST("admin/users")
+    suspend fun createAdminUser(@Body body: Map<String, String>): AdminUserResponse
+
+    @PUT("admin/users/{id}")
+    suspend fun updateAdminUser(@Path("id") id: String, @Body body: Map<String, @JvmSuppressWildcards Any>): AdminUserResponse
 }

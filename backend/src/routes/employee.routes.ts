@@ -17,6 +17,7 @@ const createEmployeeSchema = z.object({
   joiningDate: z.coerce.date(),
   salary: z.number().positive(),
   password: z.string().min(4).optional(), // employee's app login password (phone + password)
+  status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(), // app-access control
 });
 
 /** Never return the password hash to clients. */
