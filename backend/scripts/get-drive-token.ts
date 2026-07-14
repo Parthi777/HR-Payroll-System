@@ -32,7 +32,9 @@ const oauth2 = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 const authUrl = oauth2.generateAuthUrl({
   access_type: 'offline',
   prompt: 'consent', // force a refresh token even on re-consent
-  scope: ['https://www.googleapis.com/auth/drive.file'],
+  // Full drive scope: the app must create files inside the pre-existing
+  // "HR and Payroll" folder, which the narrower drive.file scope cannot see.
+  scope: ['https://www.googleapis.com/auth/drive'],
 });
 
 const server = http.createServer(async (req, res) => {

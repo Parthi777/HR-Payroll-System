@@ -39,6 +39,10 @@ const envSchema = z.object({
   GOOGLE_DRIVE_PARENT_FOLDER_ID: z.string().optional(), // parent folder for per-employee subfolders
   GOOGLE_DRIVE_SHARE_WITH: z.string().optional(), // auto-share created folders with this email
 
+  // "Sign in with Google" on the admin web app — Web-application OAuth client id
+  // (used as the audience when verifying Google ID tokens). Unset = feature off.
+  GOOGLE_WEB_CLIENT_ID: z.string().optional(),
+
   WHATSAPP_PROVIDER: z.enum(['wati', 'twilio', 'meta']).default('wati'),
   WATI_API_URL: z.string().optional(),
   WATI_API_TOKEN: z.string().optional(),

@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { OAuth2Client } from 'google-auth-library';
 import { createOtp, verifyOtp, adminLogin, employeeLogin } from '../services/auth/auth.service.js';
 import type { JwtRole } from '../middleware/auth.js';
 import { env } from '../config/env.js';
+import { AppError } from '../utils/AppError.js';
 
 const sendOtpSchema = z.object({ phone: z.string().min(10) });
 // TEMP (dev): OTP disabled — otp may be blank/omitted. Restore z.string().length(6) to re-enable.
@@ -55,6 +57,35 @@ export async function authRoutes(app: FastifyInstance) {
     const token = app.jwt.sign({ sub: employee.id, role, branchId: employee.branchId }, { expiresIn: TOKEN_TTL });
     const refreshToken = app.jwt.sign({ sub: employee.id, role }, { expiresIn: REFRESH_TTL });
     return { token, refreshToken, employeeId: employee.id, name: employee.name };
+  });
+
+  // "Sign in with Google": the web app sends a Google ID token; we verify it against
+  // our Web OAuth client id, then authorize ONLY emails that already exist as active
+  // AdminUsers. Google proves identity; our AdminUser table decides access + role.
+  app.post('/admin/google', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
+    if (!env.GOOGLE_WEB_CLIENT_ID) throw new AppError('Google login is not configured', 503);
+    const { credential } = z.object({ credential: z.string().min(10) }).parse(req.body);
+
+    const client = new OAuth2Client(env.GOOGLE_WEB_CLIENT_ID);
+    let email: string | undefined;
+    try {
+      const ticket = await client.verifyIdToken({ idToken: credential, audience: env.GOOGLE_WEB_CLIENT_ID });
+      const payload = ticket.getPayload();
+      if (payload?.email_verified) email = payload.email;
+    } catch {
+      throw AppError.unauthorized('Invalid Google credential');
+    }
+    if (!email) throw AppError.unauthorized('Google account has no verified email');
+
+    const admin = await app.prisma.adminUser.findUnique({ where: { email } });
+    if (!admin || !admin.isActive) {
+      throw new AppError(`${email} is not an authorized admin`, 403);
+    }
+    const token = app.jwt.sign(
+      { sub: admin.id, role: admin.role as JwtRole, branchId: admin.branchId ?? undefined },
+      { expiresIn: ADMIN_TOKEN_TTL },
+    );
+    return { token, role: admin.role, email: admin.email, name: admin.name };
   });
 
   app.post('/admin/login', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (req) => {
