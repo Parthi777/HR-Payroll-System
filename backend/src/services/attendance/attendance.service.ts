@@ -48,6 +48,8 @@ export interface MarkResult {
   flagReason: string | null;
   geofence: string;
   distance: number;
+  /** PENDING when the check-in was outside the geofence and awaits HR approval. */
+  approvalStatus: string | null;
 }
 
 /** Selfie check-in: geofence gate, late/present calc, persist attendance. */
@@ -66,13 +68,9 @@ export async function markCheckIn(
   if (!employee) throw AppError.notFound('Employee not found');
 
   const geo = checkGeofence({ lat, lng }, employee.branch, accuracy);
-  // Strict branches block out-of-zone check-ins; soft branches allow but flag (CLAUDE.md).
-  if (employee.branch.strictMode && geo.status === 'OUTSIDE') {
-    throw new AppError(
-      `Outside work zone — ${Math.round(geo.distance)}m from ${employee.branch.name}`,
-      403,
-    );
-  }
+  // Out-of-zone selfie check-ins are accepted but held for HR/admin approval —
+  // they don't count for payroll until approved (rejected → marked absent).
+  const approvalStatus = geo.status === 'OUTSIDE' ? 'PENDING' : null;
 
   const today = startOfToday();
   const existing = await prisma.attendance.findUnique({
@@ -106,7 +104,12 @@ export async function markCheckIn(
   const geoFlagged = geo.status !== 'INSIDE';
   const flagged = geoFlagged || faceFlagReason !== null;
   const flagReason =
-    [geoFlagged ? `Geofence ${geo.status}` : null, faceFlagReason]
+    [
+      geoFlagged
+        ? `Geofence ${geo.status} — ${Math.round(geo.distance)}m from ${employee.branch.name}${approvalStatus ? ' (awaiting HR approval)' : ''}`
+        : null,
+      faceFlagReason,
+    ]
       .filter(Boolean)
       .join('; ') || null;
 
@@ -122,12 +125,12 @@ export async function markCheckIn(
     update: {
       checkIn: now, checkInLat: lat, checkInLng: lng, checkInSelfie: selfieUrl,
       geofenceStatus: geo.status, status, faceMatchScore,
-      isFlagged: flagged, flagReason,
+      isFlagged: flagged, flagReason, approvalStatus,
     },
     create: {
       employeeId, date: today, checkIn: now, checkInLat: lat, checkInLng: lng, checkInSelfie: selfieUrl,
       geofenceStatus: geo.status, status, faceMatchScore,
-      isFlagged: flagged, flagReason,
+      isFlagged: flagged, flagReason, approvalStatus,
     },
   });
 
@@ -144,7 +147,7 @@ export async function markCheckIn(
     ),
   });
 
-  return toResult(record, geo.status, geo.distance, flagged, flagReason);
+  return toResult(record, geo.status, geo.distance, flagged, flagReason, approvalStatus);
 }
 
 /** Selfie check-out: compute working minutes, persist. */
@@ -171,7 +174,30 @@ export async function markCheckOut(
     data: { checkOut: now, checkOutLat: lat, checkOutLng: lng, checkOutSelfie: selfieUrl, workingMinutes },
   });
 
-  return toResult(record, record.geofenceStatus, 0, record.isFlagged, record.flagReason);
+  return toResult(record, record.geofenceStatus, 0, record.isFlagged, record.flagReason, record.approvalStatus);
+}
+
+/** HR/admin decision on an out-of-geofence check-in. Reject marks the day absent. */
+export async function decideAttendanceApproval(
+  prisma: PrismaClient,
+  adminId: string,
+  attendanceId: string,
+  approve: boolean,
+) {
+  const att = await prisma.attendance.findUnique({ where: { id: attendanceId } });
+  if (!att) throw AppError.notFound('Attendance record');
+  if (att.approvalStatus !== 'PENDING') {
+    throw new AppError('This attendance is not awaiting approval', 409);
+  }
+  return prisma.attendance.update({
+    where: { id: attendanceId },
+    data: {
+      approvalStatus: approve ? 'APPROVED' : 'REJECTED',
+      approvedBy: adminId,
+      approvedAt: new Date(),
+      ...(approve ? {} : { status: 'ABSENT' }),
+    },
+  });
 }
 
 function toResult(
@@ -180,6 +206,7 @@ function toResult(
   distance: number,
   flagged: boolean,
   flagReason: string | null,
+  approvalStatus: string | null,
 ): MarkResult {
   return {
     id: r.id,
@@ -192,5 +219,6 @@ function toResult(
     flagReason,
     geofence,
     distance,
+    approvalStatus,
   };
 }

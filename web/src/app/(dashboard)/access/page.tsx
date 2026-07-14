@@ -28,12 +28,13 @@ interface BranchRow {
 }
 
 const ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER'];
+// Shared chip palette from globals.css (dark-mode safe).
 const roleChip: Record<string, string> = {
-  SUPER_ADMIN: 'bg-rose-50 text-rose-700',
-  HR_MANAGER: 'bg-indigo-50 text-indigo-700',
-  BRANCH_MANAGER: 'bg-amber-50 text-amber-700',
-  PAYROLL_ADMIN: 'bg-emerald-50 text-emerald-700',
-  CASHIER: 'bg-sky-50 text-sky-700',
+  SUPER_ADMIN: 'chip-off',
+  HR_MANAGER: 'chip-leave',
+  BRANCH_MANAGER: 'chip-half',
+  PAYROLL_ADMIN: 'chip-present',
+  CASHIER: 'chip-paid',
 };
 
 export default function AccessPage() {

@@ -1,9 +1,23 @@
 'use client';
 
+import { useState } from 'react';
+import useSWR from 'swr';
 import { PageHero } from '@/components/page-hero';
-import { Card, CardContent } from '@/components/ui/card';
-import { Download, Filter } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Download, Filter, Check, X, Camera, Loader2, MapPinOff } from 'lucide-react';
 import { useLiveAttendance, type LiveAttendanceRow } from '@/hooks/useApi';
+import { fetcher, api, apiBlobUrl } from '@/lib/api';
+
+interface PendingApproval {
+  id: string;
+  name: string;
+  employeeCode: string;
+  branch: string;
+  date: string;
+  checkIn: string | null;
+  reason: string | null;
+  hasSelfie: boolean;
+}
 
 // Rendered immediately; replaced by live data once the backend responds.
 const sampleRows: LiveAttendanceRow[] = [
@@ -38,6 +52,8 @@ export default function AttendancePage() {
         </button>
       </PageHero>
 
+      <ApprovalsCard />
+
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -69,5 +85,73 @@ export default function AttendancePage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** Out-of-geofence selfie check-ins waiting for HR/admin sign-off. Hidden when empty. */
+function ApprovalsCard() {
+  const { data, mutate } = useSWR<{ approvals: PendingApproval[] }>(
+    '/admin/attendance/approvals',
+    fetcher,
+    { shouldRetryOnError: false, refreshInterval: 30_000 },
+  );
+  const approvals = data?.approvals ?? [];
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function decide(id: string, action: 'approve' | 'reject') {
+    if (action === 'reject' && !confirm('Reject this check-in? The day will be marked absent.')) return;
+    setBusyId(id);
+    try {
+      await api(`/admin/attendance/${id}/${action}`, { method: 'PATCH' });
+      await mutate();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : `Failed to ${action}`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function viewSelfie(id: string) {
+    try {
+      window.open(await apiBlobUrl(`/admin/attendance/${id}/selfie`), '_blank');
+    } catch {
+      alert('Could not open selfie');
+    }
+  }
+
+  if (approvals.length === 0) return null;
+
+  return (
+    <Card className="border-amber-300/60">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MapPinOff className="h-4 w-4 text-amber-600" />
+          Outside-geofence check-ins awaiting approval ({approvals.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {approvals.map((a) => (
+          <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">{a.name} <span className="text-xs text-muted-foreground">({a.employeeCode}) · {a.branch}</span></div>
+              <div className="text-xs text-muted-foreground">{a.date} · Check-in {a.checkIn ?? '—'}</div>
+              {a.reason && <div className="mt-1 text-xs text-amber-700">{a.reason}</div>}
+            </div>
+            {a.hasSelfie && (
+              <button onClick={() => viewSelfie(a.id)} title="View selfie" className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-muted-foreground hover:text-foreground">
+                <Camera className="h-4 w-4" /> Selfie
+              </button>
+            )}
+            <button onClick={() => decide(a.id, 'approve')} disabled={busyId === a.id} className="flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+              {busyId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve
+            </button>
+            <button onClick={() => decide(a.id, 'reject')} disabled={busyId === a.id} className="flex h-9 items-center gap-1.5 rounded-lg bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">
+              <X className="h-4 w-4" /> Reject
+            </button>
+          </div>
+        ))}
+        <p className="text-xs text-muted-foreground">Approved check-ins count for attendance & payroll. Rejected ones are marked absent.</p>
+      </CardContent>
+    </Card>
   );
 }

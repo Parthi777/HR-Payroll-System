@@ -28,6 +28,8 @@ data class AttendanceUiState(
     /** Today's state — drives which of the Check-In / Check-Out buttons is enabled. */
     val todayCheckIn: String? = null, // "09:02 AM" or null
     val todayCheckOut: String? = null,
+    val todayMinutes: Int? = null, // worked minutes once checked out
+    val todayApproval: String? = null, // PENDING = outside geofence, awaiting HR
 )
 
 @HiltViewModel
@@ -75,6 +77,8 @@ class AttendanceViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     todayCheckIn = formatIsoTime(today.checkIn),
                     todayCheckOut = formatIsoTime(today.checkOut),
+                    todayMinutes = today.workingMinutes,
+                    todayApproval = today.approvalStatus,
                 )
             }
             .onFailure { /* keep whatever we had; buttons stay enabled */ }

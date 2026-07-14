@@ -67,82 +67,76 @@ fun LoginScreen(
             Spacer(Modifier.height(20.dp))
             Text("HR & PAYROLL", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Text("Smart Solutions for Employees", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
-            Spacer(Modifier.height(36.dp))
+            Spacer(Modifier.height(28.dp))
 
-            // Employee / Admin toggle
-            androidx.compose.foundation.layout.Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(Color.White.copy(alpha = 0.15f))
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            // Sign-in card — white panel over the gradient, like the reference mockups.
+            androidx.compose.material3.Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 10.dp),
             ) {
-                LoginTab("Employee", selected = !state.adminMode, modifier = Modifier.weight(1f)) { viewModel.setAdminMode(false) }
-                LoginTab("Admin", selected = state.adminMode, modifier = Modifier.weight(1f)) { viewModel.setAdminMode(true) }
-            }
-            Spacer(Modifier.height(20.dp))
+                Column(modifier = Modifier.padding(20.dp)) {
+                    // Employee / Admin toggle
+                    androidx.compose.foundation.layout.Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.small)
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        LoginTab("Employee", selected = !state.adminMode, modifier = Modifier.weight(1f)) { viewModel.setAdminMode(false) }
+                        LoginTab("Admin", selected = state.adminMode, modifier = Modifier.weight(1f)) { viewModel.setAdminMode(true) }
+                    }
+                    Spacer(Modifier.height(18.dp))
 
-            val fieldColors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color.White,
-                unfocusedContainerColor = Color.White,
-                focusedBorderColor = Color.White,
-                unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
-            )
+                    if (state.adminMode) {
+                        OutlinedTextField(
+                            value = state.email,
+                            onValueChange = viewModel::onEmailChange,
+                            label = { Text("Admin email") },
+                            placeholder = { Text("you@company.com") },
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.small,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        OutlinedTextField(
+                            value = state.phone,
+                            onValueChange = viewModel::onPhoneChange,
+                            label = { Text("Phone number") },
+                            placeholder = { Text("+919000000001") },
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.small,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = state.password,
+                        onValueChange = viewModel::onPasswordChange,
+                        label = { Text("Password") },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.small,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    PrimaryButton(
+                        text = if (state.adminMode) "Admin Login" else "Login",
+                        loading = state.isLoading,
+                        onClick = if (state.adminMode) viewModel::adminLogin else viewModel::login,
+                    )
 
-            if (state.adminMode) {
-                OutlinedTextField(
-                    value = state.email,
-                    onValueChange = viewModel::onEmailChange,
-                    label = { Text("Admin email") },
-                    placeholder = { Text("admin@hrpayroll.local") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = fieldColors,
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = state.password,
-                    onValueChange = viewModel::onPasswordChange,
-                    label = { Text("Password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = fieldColors,
-                )
-                Spacer(Modifier.height(20.dp))
-                PrimaryButton(text = "Admin Login", loading = state.isLoading, onClick = viewModel::adminLogin)
-            } else {
-                OutlinedTextField(
-                    value = state.phone,
-                    onValueChange = viewModel::onPhoneChange,
-                    label = { Text("Phone number") },
-                    placeholder = { Text("+919000000001") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = fieldColors,
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = state.password,
-                    onValueChange = viewModel::onPasswordChange,
-                    label = { Text("Password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = fieldColors,
-                )
-                Spacer(Modifier.height(20.dp))
-                PrimaryButton(text = "Login", loading = state.isLoading, onClick = viewModel::login)
-            }
-
-            state.error?.let {
-                Spacer(Modifier.height(14.dp))
-                Text(it, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    state.error?.let {
+                        Spacer(Modifier.height(12.dp))
+                        Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
             }
         }
     }
@@ -158,14 +152,14 @@ private fun LoginTab(
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .background(if (selected) Color.White else Color.Transparent)
+            .background(if (selected) BrandIndigo else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
-            color = if (selected) BrandIndigo else Color.White,
+            color = if (selected) Color.White else BrandIndigo,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -179,12 +173,12 @@ private fun PrimaryButton(text: String, loading: Boolean, onClick: () -> Unit) {
         enabled = !loading,
         modifier = Modifier.fillMaxWidth().height(54.dp),
         shape = MaterialTheme.shapes.medium,
-        colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
     ) {
         if (loading) {
-            CircularProgressIndicator(modifier = Modifier.size(22.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
         } else {
-            Text(text, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text(text, color = Color.White, fontWeight = FontWeight.Bold)
         }
     }
 }

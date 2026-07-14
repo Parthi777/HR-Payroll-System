@@ -60,6 +60,8 @@ import com.hrpayroll.ui.theme.StatusLeave
 import com.hrpayroll.ui.theme.StatusLeaveBg
 import com.hrpayroll.ui.theme.StatusOff
 import com.hrpayroll.ui.theme.StatusOffBg
+import com.hrpayroll.ui.theme.StatusPaid
+import com.hrpayroll.ui.theme.StatusPaidBg
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.ui.theme.StatusPresentBg
 
@@ -341,7 +343,8 @@ private fun label(status: String?): String = when (status) {
 }
 
 private fun statusColors(status: String?): Pair<Color, Color> = when (status) {
-    "APPROVED", "PAID" -> StatusPresent to StatusPresentBg
+    "APPROVED" -> StatusPresent to StatusPresentBg
+    "PAID" -> StatusPaid to StatusPaidBg
     "PENDING" -> StatusHalf to StatusHalfBg
     "REJECTED" -> StatusOff to StatusOffBg
     "NEEDS_CLARIFICATION" -> StatusLeave to StatusLeaveBg

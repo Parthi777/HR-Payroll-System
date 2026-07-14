@@ -1,6 +1,7 @@
 package com.hrpayroll.ui.screens.leave
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,6 +46,14 @@ import com.hrpayroll.ui.theme.StatusOffBg
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.ui.theme.StatusPresentBg
 
+private val LEAVE_TYPES = listOf(
+    "CL" to "Casual Leave",
+    "SL" to "Sick Leave",
+    "EL" to "Earned Leave",
+    "LOP" to "Loss of Pay",
+    "HALF_DAY" to "Half Day",
+)
+
 /** Leave: balance + apply (POST /leaves/apply) + my-leaves list — wired to backend. */
 @Composable
 fun LeaveScreen(viewModel: LeaveViewModel = hiltViewModel()) {
@@ -51,6 +62,17 @@ fun LeaveScreen(viewModel: LeaveViewModel = hiltViewModel()) {
     var fromDate by remember { mutableStateOf("") }
     var toDate by remember { mutableStateOf("") }
     var reason by remember { mutableStateOf("") }
+    var pickerFor by remember { mutableStateOf<String?>(null) } // "from" | "to"
+
+    // Days auto-computed from the selected range (0.5 for half day).
+    val days: Double = remember(leaveType, fromDate, toDate) {
+        if (leaveType == "HALF_DAY") 0.5
+        else runCatching {
+            val f = java.time.LocalDate.parse(fromDate)
+            val t = java.time.LocalDate.parse(toDate)
+            (java.time.temporal.ChronoUnit.DAYS.between(f, t) + 1).coerceAtLeast(1).toDouble()
+        }.getOrDefault(1.0)
+    }
 
     fun balance(type: String): String {
         val b = state.balances.firstOrNull { it.type == type } ?: return "—"
@@ -79,18 +101,17 @@ fun LeaveScreen(viewModel: LeaveViewModel = hiltViewModel()) {
                     Text("Apply for Leave", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(14.dp))
 
-                    FieldLabel("Leave Type (CL / SL / EL / LOP / HALF_DAY)")
-                    OutlinedTextField(value = leaveType, onValueChange = { leaveType = it.uppercase() }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small)
+                    LeaveTypeDropdown(selected = leaveType, onSelect = { leaveType = it })
                     Spacer(Modifier.height(12.dp))
 
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Column(Modifier.weight(1f)) {
                             FieldLabel("From")
-                            OutlinedTextField(value = fromDate, onValueChange = { fromDate = it }, placeholder = { Text("YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small)
+                            DateField(value = fromDate, onClick = { pickerFor = "from" })
                         }
                         Column(Modifier.weight(1f)) {
                             FieldLabel("To")
-                            OutlinedTextField(value = toDate, onValueChange = { toDate = it }, placeholder = { Text("YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small)
+                            DateField(value = toDate, onClick = { pickerFor = "to" })
                         }
                     }
                     Spacer(Modifier.height(12.dp))
@@ -100,14 +121,18 @@ fun LeaveScreen(viewModel: LeaveViewModel = hiltViewModel()) {
                     Spacer(Modifier.height(16.dp))
 
                     Button(
-                        onClick = { viewModel.apply(leaveType, fromDate, toDate, 1.0, reason) },
+                        onClick = { viewModel.apply(leaveType, fromDate, toDate, days, reason) },
                         enabled = !state.isSubmitting,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = MaterialTheme.shapes.medium,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     ) {
                         if (state.isSubmitting) CircularProgressIndicator(Modifier.height(22.dp), color = Color.White, strokeWidth = 2.dp)
-                        else Text("Submit", color = Color.White, fontWeight = FontWeight.SemiBold)
+                        else Text(
+                            "Submit  ·  ${if (days == 0.5) "Half day" else "${days.toInt()} day(s)"}",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
 
                     state.message?.let { Spacer(Modifier.height(10.dp)); Text(it, color = StatusPresent, fontWeight = FontWeight.SemiBold) }
@@ -148,6 +173,91 @@ fun LeaveScreen(viewModel: LeaveViewModel = hiltViewModel()) {
                 Spacer(Modifier.height(20.dp))
             }
         }
+    }
+
+    // Material date picker for From / To.
+    pickerFor?.let { which ->
+        LeaveDatePicker(
+            onPicked = { iso ->
+                if (which == "from") {
+                    fromDate = iso
+                    if (toDate.isBlank()) toDate = iso
+                } else {
+                    toDate = iso
+                }
+                pickerFor = null
+            },
+            onDismiss = { pickerFor = null },
+        )
+    }
+}
+
+/** Leave type dropdown with full names (matches the reference "Selected Leave Type"). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun LeaveTypeDropdown(selected: String, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = LEAVE_TYPES.firstOrNull { it.first == selected }?.second ?: selected
+    androidx.compose.material3.ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = "$selectedLabel ($selected)",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Leave type") },
+            trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            LEAVE_TYPES.forEach { (code, name) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("$name ($code)") },
+                    onClick = {
+                        onSelect(code)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** Read-only date field that opens the Material date picker on tap. */
+@Composable
+private fun DateField(value: String, onClick: () -> Unit) {
+    Box {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            placeholder = { Text("Select date") },
+            trailingIcon = { androidx.compose.material3.Icon(Icons.Filled.CalendarMonth, "Pick date") },
+            singleLine = true,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // Transparent overlay so the whole field is tappable (readOnly fields swallow clicks).
+        Box(Modifier.matchParentSize().clickable(onClick = onClick))
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun LeaveDatePicker(onPicked: (String) -> Unit, onDismiss: () -> Unit) {
+    val pickerState = androidx.compose.material3.rememberDatePickerState()
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = {
+                pickerState.selectedDateMillis?.let { ms ->
+                    // DatePicker millis are UTC-midnight based — format in UTC.
+                    onPicked(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString())
+                } ?: onDismiss()
+            }) { Text("OK") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) {
+        androidx.compose.material3.DatePicker(state = pickerState)
     }
 }
 

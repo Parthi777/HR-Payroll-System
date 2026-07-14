@@ -1,6 +1,5 @@
 package com.hrpayroll.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -42,12 +41,15 @@ private val BrandShapes = Shapes(
 
 @Composable
 fun HrPayrollTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    // Always light by owner preference — the brand look is the light reference
+    // design; system dark mode is intentionally ignored.
+    darkTheme: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
         shapes = BrandShapes,
+        typography = BrandTypography,
         content = content,
     )
 }

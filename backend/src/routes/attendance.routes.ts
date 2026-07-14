@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { promises as fs } from 'fs';
+import path from 'path';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { markCheckIn, markCheckOut } from '../services/attendance/attendance.service.js';
+import { AppError } from '../utils/AppError.js';
+import { markCheckIn, markCheckOut, decideAttendanceApproval } from '../services/attendance/attendance.service.js';
+import { getSignedSelfieUrl } from '../services/storage/storage.service.js';
 
 /** Parse the selfie file + lat/lng/accuracy fields from a multipart request (any part order). */
 async function parseCheckinParts(req: FastifyRequest) {
@@ -213,4 +217,49 @@ export async function attendanceRoutes(app: FastifyInstance) {
       return { id, overridden: true };
     },
   );
+
+  // ── Out-of-geofence check-in approvals (HR / admin) ──
+  const approvalGuard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER');
+
+  app.get('/admin/attendance/approvals', { preHandler: approvalGuard }, async () => {
+    const rows = await app.prisma.attendance.findMany({
+      where: { approvalStatus: 'PENDING' },
+      orderBy: { checkIn: 'desc' },
+      include: { employee: { include: { branch: true } } },
+    });
+    return {
+      approvals: rows.map((r) => ({
+        id: r.id,
+        name: r.employee.name,
+        employeeCode: r.employee.employeeCode,
+        branch: r.employee.branch.name,
+        date: fmtDate(r.date),
+        checkIn: fmtTime(r.checkIn),
+        reason: r.flagReason,
+        hasSelfie: !!r.checkInSelfie,
+      })),
+    };
+  });
+
+  app.patch('/admin/attendance/:id/approve', { preHandler: approvalGuard }, async (req) => {
+    const { id } = req.params as { id: string };
+    return { attendance: await decideAttendanceApproval(app.prisma, req.user.sub, id, true) };
+  });
+
+  app.patch('/admin/attendance/:id/reject', { preHandler: approvalGuard }, async (req) => {
+    const { id } = req.params as { id: string };
+    return { attendance: await decideAttendanceApproval(app.prisma, req.user.sub, id, false) };
+  });
+
+  // Check-in selfie (S3 signed redirect or local file) so HR can verify before approving.
+  app.get('/admin/attendance/:id/selfie', { preHandler: approvalGuard }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const att = await app.prisma.attendance.findUnique({ where: { id } });
+    if (!att?.checkInSelfie) throw AppError.notFound('Selfie');
+    if (att.checkInSelfie.startsWith('/uploads/')) {
+      const abs = path.resolve(process.cwd(), att.checkInSelfie.replace(/^\//, ''));
+      return reply.type('image/jpeg').send(await fs.readFile(abs));
+    }
+    return reply.redirect(await getSignedSelfieUrl(att.checkInSelfie));
+  });
 }

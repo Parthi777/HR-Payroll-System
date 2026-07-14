@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -79,15 +80,49 @@ fun AttendanceScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             BrandHeader(title = "Attendance")
 
-            // Records card floats up over the header, like the reference.
+            // "Today" summary tiles float up over the header, like the reference.
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = (-20).dp)
+                    .offset(y = (-22).dp)
                     .padding(horizontal = 16.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            ) {
+                Column {
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
+                        TodayStat("Check In", state.todayCheckIn ?: "—", StatusPresent, Modifier.weight(1f))
+                        TodayStat("Check Out", state.todayCheckOut ?: "—", StatusOff, Modifier.weight(1f))
+                        TodayStat(
+                            "Hours",
+                            state.todayMinutes?.let { "%d:%02d".format(it / 60, it % 60) } ?: "—",
+                            MaterialTheme.colorScheme.primary,
+                            Modifier.weight(1f),
+                        )
+                    }
+                    if (state.todayApproval == "PENDING") {
+                        Text(
+                            "Outside work zone — today's check-in is waiting for HR approval",
+                            fontSize = 11.sp,
+                            color = StatusHalf,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                }
+            }
+
+            // Records list fills the remaining space.
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .offset(y = (-8).dp)
+                    .padding(horizontal = 16.dp),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -110,14 +145,14 @@ fun AttendanceScreen(
                     val records = if (state.usingSampleData) sampleRecords else state.records
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.height(360.dp),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
                         items(records) { record -> RecordRow(record) }
                     }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
             // One check-in and one check-out per day (the backend also enforces this):
             // Check In is disabled once done; Check Out unlocks after check-in.
@@ -172,12 +207,27 @@ fun AttendanceScreen(
             }
 
             Text(
-                "Today:  In ${state.todayCheckIn ?: "—"}   ·   Out ${state.todayCheckOut ?: "—"}",
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                "One check-in and one check-out per day",
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                fontSize = 11.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
             )
         }
+    }
+}
+
+/** One tile of the floating "Today" summary card. */
+@Composable
+private fun TodayStat(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+        )
     }
 }
 
@@ -198,6 +248,13 @@ private fun RecordRow(record: AttendanceRecordUi) {
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(
+                modifier = Modifier
+                    .padding(end = 12.dp)
+                    .height(10.dp)
+                    .width(10.dp)
+                    .background(fg, androidx.compose.foundation.shape.CircleShape),
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     record.date,

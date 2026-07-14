@@ -21,7 +21,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Hotel
+import androidx.compose.material.icons.filled.MedicalServices
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -59,6 +64,8 @@ import com.hrpayroll.ui.theme.StatusLeave
 import com.hrpayroll.ui.theme.StatusLeaveBg
 import com.hrpayroll.ui.theme.StatusOff
 import com.hrpayroll.ui.theme.StatusOffBg
+import com.hrpayroll.ui.theme.StatusPaid
+import com.hrpayroll.ui.theme.StatusPaidBg
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.ui.theme.StatusPresentBg
 
@@ -147,6 +154,15 @@ fun MyClaimsScreen(
     }
 }
 
+/** Icon per claim type — shown in a tinted circle on each card. */
+private fun typeIcon(type: String?) = when (type) {
+    "TRAVEL" -> Icons.Filled.DirectionsCar
+    "FOOD" -> Icons.Filled.Restaurant
+    "MEDICAL" -> Icons.Filled.MedicalServices
+    "ACCOMMODATION" -> Icons.Filled.Hotel
+    else -> Icons.Filled.ReceiptLong
+}
+
 @Composable
 private fun ClaimCard(
     claim: ClaimDto,
@@ -162,10 +178,24 @@ private fun ClaimCard(
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        typeIcon(claim.type),
+                        contentDescription = claim.type,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(Modifier.size(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(claim.title ?: "Claim", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        "${claim.type ?: ""} · ₹${claim.amount ?: 0.0} · ${shortDate(claim.createdAt)}",
+                        "₹${claim.amount ?: 0.0} · ${shortDate(claim.createdAt)}",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -358,7 +388,8 @@ private fun label(status: String?): String = when (status) {
 }
 
 private fun statusColors(status: String?): Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color> = when (status) {
-    "APPROVED", "PAID" -> StatusPresent to StatusPresentBg
+    "APPROVED" -> StatusPresent to StatusPresentBg
+    "PAID" -> StatusPaid to StatusPaidBg
     "PENDING" -> StatusHalf to StatusHalfBg
     "REJECTED" -> StatusOff to StatusOffBg
     "NEEDS_CLARIFICATION" -> StatusLeave to StatusLeaveBg

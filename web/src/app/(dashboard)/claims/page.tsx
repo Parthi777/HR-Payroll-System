@@ -59,12 +59,13 @@ const fmt = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numer
 const fmtFull = (d: string) =>
   new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+// Shared chip palette from globals.css (dark-mode safe).
 const statusChip: Record<string, string> = {
-  PENDING: 'bg-amber-50 text-amber-700',
-  NEEDS_CLARIFICATION: 'bg-indigo-50 text-indigo-700',
-  APPROVED: 'bg-emerald-50 text-emerald-700',
-  PAID: 'bg-sky-50 text-sky-700',
-  REJECTED: 'bg-rose-50 text-rose-700',
+  PENDING: 'chip-half',
+  NEEDS_CLARIFICATION: 'chip-leave',
+  APPROVED: 'chip-present',
+  PAID: 'chip-paid',
+  REJECTED: 'chip-off',
 };
 
 const PAY_ROLES = ['SUPER_ADMIN', 'PAYROLL_ADMIN', 'CASHIER'];
@@ -200,7 +201,7 @@ export default function ClaimsPage() {
                 </div>
 
                 <div className="font-bold">{inr(c.amount)}</div>
-                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusChip[c.status] ?? 'bg-muted text-muted-foreground'}`}>
+                <span className={`chip ${statusChip[c.status] ?? 'bg-muted text-muted-foreground'}`}>
                   {c.status.replace('_', ' ')}
                 </span>
 
@@ -285,7 +286,7 @@ function ClaimDetailDialog({
             <h2 className="text-lg font-bold">{c.title}</h2>
             <div className="text-xs text-muted-foreground">Voucher No: CLM-{c.id.slice(-8).toUpperCase()}</div>
           </div>
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusChip[c.status] ?? 'bg-muted'}`}>
+          <span className={`chip ${statusChip[c.status] ?? 'bg-muted text-muted-foreground'}`}>
             {c.status.replace('_', ' ')}
           </span>
         </div>
@@ -319,7 +320,9 @@ function ClaimDetailDialog({
                 <div
                   key={m.id}
                   className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
-                    m.senderRole === 'ADMIN' ? 'bg-indigo-50 text-indigo-900' : 'ml-auto bg-muted'
+                    m.senderRole === 'ADMIN'
+                      ? 'bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200'
+                      : 'ml-auto bg-muted'
                   }`}
                 >
                   <div className="text-[10px] font-semibold text-muted-foreground">

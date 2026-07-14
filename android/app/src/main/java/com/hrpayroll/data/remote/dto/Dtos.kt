@@ -18,6 +18,7 @@ data class AttendanceDto(
     val checkOut: String? = null,
     val workingMinutes: Int? = null,
     val faceMatchScore: Double? = null,
+    val approvalStatus: String? = null, // PENDING when outside geofence, awaiting HR
 )
 
 @JsonClass(generateAdapter = true)

@@ -21,6 +21,7 @@
     --destructive-foreground: 0 0% 100%;
     --success: 142 71% 40%;
     --warning: 38 92% 50%;
+    --info: 199 89% 40%; /* paid / informational (sky) */
     --border: 248 25% 91%;
     --input: 248 25% 91%;
     --ring: 247 51% 55%;
@@ -44,6 +45,7 @@
     --destructive-foreground: 0 0% 100%;
     --success: 142 60% 50%;
     --warning: 38 92% 55%;
+    --info: 199 80% 55%;
     --border: 248 20% 22%;
     --input: 248 20% 22%;
     --ring: 247 60% 68%;
@@ -67,21 +69,27 @@
   .brand-gradient-soft {
     background-image: linear-gradient(155deg, #efeefb 0%, #e7e4fa 100%);
   }
-  /* Status pills (Present / Leave / Off Day / Half Day) */
+  /* Status pills — one palette for attendance, claims and roles.
+     Color roles: present/approved = emerald · leave/clarify = indigo ·
+     off/rejected = rose · half/pending = amber · paid/info = sky.
+     Each has a dark-mode variant; always use these instead of ad-hoc bg-*-50. */
   .chip {
     @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
   }
   .chip-present {
-    @apply bg-emerald-100 text-emerald-700;
+    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300;
   }
   .chip-leave {
-    @apply bg-indigo-100 text-indigo-700;
+    @apply bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300;
   }
   .chip-off {
-    @apply bg-rose-100 text-rose-600;
+    @apply bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-300;
   }
   .chip-half {
-    @apply bg-amber-100 text-amber-700;
+    @apply bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300;
+  }
+  .chip-paid {
+    @apply bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300;
   }
   .card-soft {
     @apply rounded-2xl border border-border/60 bg-card shadow-[0_8px_30px_-12px_rgba(91,79,196,0.25)];

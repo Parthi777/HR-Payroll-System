@@ -85,6 +85,11 @@ model Attendance {
   workingMinutes Int?
   isFlagged      Boolean   @default(false)
   flagReason     String?
+  // Out-of-geofence check-ins need HR/admin sign-off before they count:
+  // null = normal, PENDING = awaiting review, APPROVED / REJECTED = decided.
+  approvalStatus String?
+  approvedBy     String? // admin id who decided
+  approvedAt     DateTime?
 
   employee Employee @relation(fields: [employeeId], references: [id])
   gpsLogs  GPSLog[]
