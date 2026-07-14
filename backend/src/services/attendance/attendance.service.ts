@@ -142,7 +142,11 @@ export async function markCheckIn(
     templateName: 'CHECK_IN_CONFIRMATION',
     message: waTemplates.checkIn(
       employee.name,
-      now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      now.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: process.env.COMPANY_TZ ?? 'Asia/Kolkata',
+      }),
       employee.branch.name,
     ),
   });

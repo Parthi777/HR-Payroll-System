@@ -35,10 +35,12 @@ function todayRange() {
   return { start, end };
 }
 
+// Format in company time — the server itself may run in UTC (Railway).
+const COMPANY_TZ = process.env.COMPANY_TZ ?? 'Asia/Kolkata';
 const fmtDate = (d: Date) =>
-  d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: COMPANY_TZ });
 const fmtTime = (d: Date | null) =>
-  d ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : null;
+  d ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: COMPANY_TZ }) : null;
 
 /** Map the stored AttendanceStatus to the display labels the clients expect. */
 const displayStatus: Record<string, string> = {
