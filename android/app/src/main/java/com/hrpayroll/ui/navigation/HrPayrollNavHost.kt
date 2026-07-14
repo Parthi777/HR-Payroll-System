@@ -156,6 +156,11 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
                 HomeScreen(
                     onCheckIn = { navController.navigate(cameraRoute("checkin")) },
                     onPayslip = { navController.navigate(Routes.PAYSLIP) },
+                    onLogout = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(0) { inclusive = true } // clear the whole back stack
+                        }
+                    },
                 )
             }
             composable(Routes.ATTENDANCE) {

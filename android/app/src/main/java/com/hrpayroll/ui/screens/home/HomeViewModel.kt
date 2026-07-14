@@ -2,7 +2,10 @@ package com.hrpayroll.ui.screens.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hrpayroll.BuildConfig
+import com.hrpayroll.data.local.TokenStore
 import com.hrpayroll.data.repository.AttendanceRepository
+import com.hrpayroll.data.repository.AuthRepository
 import com.hrpayroll.data.repository.EmployeeDataRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -30,10 +33,18 @@ data class HomeUiState(
 class HomeViewModel @Inject constructor(
     private val employeeRepo: EmployeeDataRepository,
     private val attendanceRepo: AttendanceRepository,
+    private val authRepository: AuthRepository,
+    tokenStore: TokenStore,
 ) : ViewModel() {
+
+    /** Authenticated profile-photo URL (enrolled face photo or latest selfie). */
+    val photoUrl: String = "${BuildConfig.API_BASE_URL}me/photo"
+    val authToken: String? = tokenStore.getToken()
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    fun logout() = authRepository.logout()
 
     init { refresh() }
 

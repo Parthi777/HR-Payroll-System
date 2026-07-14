@@ -1,9 +1,12 @@
 import type { FastifyInstance } from 'fastify';
+import { promises as fs } from 'fs';
+import path from 'path';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { enrollFace, isFaceMatchEnabled } from '../services/ai/face.service.js';
+import { isS3Enabled, uploadImage } from '../services/storage/storage.service.js';
 
 const createEmployeeSchema = z.object({
   employeeCode: z.string(),
@@ -69,7 +72,20 @@ export async function employeeRoutes(app: FastifyInstance) {
     if (!data) throw new AppError('No image uploaded', 400);
     const buffer = await data.toBuffer();
     const { faceId } = await enrollFace(buffer, id);
-    await app.prisma.employee.update({ where: { id }, data: { faceTemplateId: faceId } });
+
+    // Keep the enrolled photo — it doubles as the employee's profile picture (/me/photo).
+    let faceTemplateUrl: string;
+    if (isS3Enabled()) {
+      faceTemplateUrl = await uploadImage(buffer, `faces/${id}-${Date.now()}.jpg`);
+    } else {
+      const dir = path.resolve(process.cwd(), 'uploads', 'faces');
+      await fs.mkdir(dir, { recursive: true });
+      const name = `${id}-${Date.now()}.jpg`;
+      await fs.writeFile(path.join(dir, name), buffer);
+      faceTemplateUrl = `/uploads/faces/${name}`;
+    }
+
+    await app.prisma.employee.update({ where: { id }, data: { faceTemplateId: faceId, faceTemplateUrl } });
     return { id, faceId, enrolled: true };
   });
 

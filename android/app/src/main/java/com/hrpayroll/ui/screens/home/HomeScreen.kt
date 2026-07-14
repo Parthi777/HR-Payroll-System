@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Call
@@ -62,10 +63,30 @@ import com.hrpayroll.ui.theme.StatusPresent
 fun HomeScreen(
     onCheckIn: () -> Unit,
     onPayslip: () -> Unit,
+    onLogout: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val s by viewModel.uiState.collectAsState()
     var locationOn by remember { mutableStateOf(true) }
+    var confirmLogout by remember { mutableStateOf(false) }
+
+    if (confirmLogout) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmLogout = false },
+            title = { Text("Log out?") },
+            text = { Text("You will need your phone number and password to sign in again.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmLogout = false
+                    viewModel.logout()
+                    onLogout()
+                }) { Text("Log out") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmLogout = false }) { Text("Cancel") }
+            },
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -83,14 +104,37 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Filled.Notifications, contentDescription = "Alerts", tint = Color.White) }
 
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.18f))
+                        .clickable { confirmLogout = true },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout", tint = Color.White) }
+
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    // Profile photo (enrolled face / latest selfie); person icon shows until it loads.
                     Box(
                         modifier = Modifier.size(86.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)),
                         contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(46.dp)) }
+                    ) {
+                        Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(46.dp))
+                        coil.compose.AsyncImage(
+                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                .data(viewModel.photoUrl)
+                                .apply { viewModel.authToken?.let { addHeader("Authorization", "Bearer $it") } }
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Profile photo",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.size(86.dp).clip(CircleShape),
+                        )
+                    }
                     Spacer(Modifier.height(10.dp))
                     Text(s.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Text(
