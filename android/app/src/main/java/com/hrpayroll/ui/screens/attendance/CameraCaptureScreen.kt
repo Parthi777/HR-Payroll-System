@@ -132,13 +132,15 @@ fun CameraCaptureScreen(
         }, mainExecutor)
     }
 
+    val actionLabel = if (viewModel.isCheckOut) "Check-Out" else "Check-In"
+
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (hasPermissions) {
             AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
 
             // Top title
             Text(
-                "Selfie Check-In",
+                "Selfie $actionLabel",
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
@@ -157,7 +159,7 @@ fun CameraCaptureScreen(
                     faceCount == 0 -> "Position your face in the frame"
                     faceCount > 1 -> "Only one person allowed"
                     !livenessPassed -> "Blink to verify you're live 👁️"
-                    else -> "Verified ✓  Tap to check in"
+                    else -> "Verified ✓  Tap to ${if (viewModel.isCheckOut) "check out" else "check in"}"
                 }
                 Text(statusText, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(16.dp))

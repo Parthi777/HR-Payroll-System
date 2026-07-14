@@ -13,7 +13,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-val CLAIM_FILTERS = listOf("PENDING", "NEEDS_CLARIFICATION", "APPROVED", "REJECTED", "ALL")
+val CLAIM_FILTERS = listOf("PENDING", "NEEDS_CLARIFICATION", "APPROVED", "PAID", "REJECTED", "ALL")
+
+/** Roles allowed to mark an approved claim as paid (must match the backend payGuard). */
+private val PAY_ROLES = setOf("SUPER_ADMIN", "PAYROLL_ADMIN", "CASHIER")
 
 data class AdminClaimsUiState(
     val isLoading: Boolean = false,
@@ -29,8 +32,16 @@ class AdminClaimsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val authToken: String? = tokenStore.getToken()
+    val role: String? = tokenStore.getRole()
 
-    private val _uiState = MutableStateFlow(AdminClaimsUiState())
+    /** Cashiers approve nothing — they check details and hand over the money. */
+    val canApprove: Boolean = role != "CASHIER"
+    val canPay: Boolean = role in PAY_ROLES
+
+    private val _uiState = MutableStateFlow(
+        // A cashier's work queue is the approved-awaiting-payment list.
+        AdminClaimsUiState(filter = if (role == "CASHIER") "APPROVED" else "PENDING"),
+    )
     val uiState: StateFlow<AdminClaimsUiState> = _uiState.asStateFlow()
 
     init { refresh() }
@@ -53,6 +64,7 @@ class AdminClaimsViewModel @Inject constructor(
     fun approve(id: String) = act { repository.approveClaim(id) }
     fun reject(id: String, note: String) = act { repository.rejectClaim(id, note) }
     fun clarify(id: String, note: String) = act { repository.clarifyClaim(id, note) }
+    fun pay(id: String, note: String?) = act { repository.payClaim(id, note) }
 
     private fun act(block: suspend () -> Unit) {
         viewModelScope.launch {

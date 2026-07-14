@@ -35,6 +35,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -102,13 +105,7 @@ fun ClaimSubmitScreen(
 
             Column(modifier = Modifier.padding(16.dp)) {
                 if (!state.isResubmit) {
-                    Text("Type", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
-                    Spacer(Modifier.height(8.dp))
-                    Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CLAIM_TYPES.forEach { t ->
-                            FilterChip(selected = state.type == t, onClick = { viewModel.onType(t) }, label = { Text(t) })
-                        }
-                    }
+                    ClaimTypeDropdown(selected = state.type, onSelect = viewModel::onType)
                     Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = state.title,
@@ -180,6 +177,53 @@ fun ClaimSubmitScreen(
                     }
                 }
                 Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+/** Claim type picker — a proper dropdown with a short hint for each type. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun ClaimTypeDropdown(selected: String, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val hints = mapOf(
+        "TRAVEL" to "Cab, bus, train, fuel",
+        "FOOD" to "Meals during duty / client visits",
+        "MEDICAL" to "Medicines, consultation",
+        "ACCOMMODATION" to "Hotel / lodge stay",
+        "OTHER" to "Anything else — describe below",
+    )
+    androidx.compose.material3.ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Claim type") },
+            supportingText = { Text(hints[selected] ?: "") },
+            trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            CLAIM_TYPES.forEach { t ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(t, fontWeight = FontWeight.SemiBold)
+                            Text(hints[t] ?: "", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        }
+                    },
+                    onClick = {
+                        onSelect(t)
+                        expanded = false
+                    },
+                )
             }
         }
     }

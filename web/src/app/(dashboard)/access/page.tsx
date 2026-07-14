@@ -12,6 +12,7 @@ interface AdminRow {
   name: string;
   email: string;
   role: string;
+  branchId?: string | null;
   isActive: boolean;
 }
 interface EmployeeRow {
@@ -21,17 +22,24 @@ interface EmployeeRow {
   phone: string;
   status: string;
 }
+interface BranchRow {
+  id: string;
+  name: string;
+}
 
-const ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN'];
+const ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER'];
 const roleChip: Record<string, string> = {
   SUPER_ADMIN: 'bg-rose-50 text-rose-700',
   HR_MANAGER: 'bg-indigo-50 text-indigo-700',
   BRANCH_MANAGER: 'bg-amber-50 text-amber-700',
   PAYROLL_ADMIN: 'bg-emerald-50 text-emerald-700',
+  CASHIER: 'bg-sky-50 text-sky-700',
 };
 
 export default function AccessPage() {
   const { data, error, isLoading, mutate } = useSWR<{ admins: AdminRow[] }>('/admin/users', fetcher, { shouldRetryOnError: false });
+  const { data: branchData } = useSWR<{ branches: BranchRow[] }>('/admin/branches', fetcher, { shouldRetryOnError: false });
+  const branches = branchData?.branches ?? [];
   const admins = data?.admins ?? [];
   const [showAdd, setShowAdd] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -96,6 +104,17 @@ export default function AccessPage() {
                   {ROLES.map((r) => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
                 </select>
 
+                <select
+                  value={a.branchId ?? ''}
+                  disabled={busyId === a.id}
+                  title="Branch scope — this account only sees that branch's claims (re-login to apply)"
+                  onChange={(e) => update(a.id, { branchId: e.target.value || null })}
+                  className="h-9 rounded-lg border border-border bg-card px-2 text-xs font-medium text-muted-foreground outline-none"
+                >
+                  <option value="">All branches</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+
                 <button onClick={() => resetPassword(a)} title="Reset password" className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground">
                   <KeyRound className="h-4 w-4" />
                 </button>
@@ -118,7 +137,7 @@ export default function AccessPage() {
 
       {!error && <EmployeeAccessCard />}
 
-      {showAdd && <AddAdminModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); mutate(); }} />}
+      {showAdd && <AddAdminModal branches={branches} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); mutate(); }} />}
     </div>
   );
 }
@@ -171,8 +190,8 @@ function EmployeeAccessCard() {
   );
 }
 
-function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({ name: '', email: '', role: 'HR_MANAGER', password: '' });
+function AddAdminModal({ branches, onClose, onSaved }: { branches: BranchRow[]; onClose: () => void; onSaved: () => void }) {
+  const [f, setF] = useState({ name: '', email: '', role: 'HR_MANAGER', password: '', branchId: '' });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const input = 'h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40';
@@ -185,7 +204,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     }
     setSaving(true);
     try {
-      await api('/admin/users', { method: 'POST', body: JSON.stringify(f) });
+      await api('/admin/users', { method: 'POST', body: JSON.stringify({ ...f, branchId: f.branchId || null }) });
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to create admin');
@@ -206,6 +225,10 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           <input className={input} type="email" placeholder="Email (their Google login too) *" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <select className={input} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
             {ROLES.map((r) => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+          </select>
+          <select className={input} value={f.branchId} onChange={(e) => setF({ ...f, branchId: e.target.value })}>
+            <option value="">All branches</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name} only</option>)}
           </select>
           <input className={input} type="password" placeholder="Password (min 8) *" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
         </div>

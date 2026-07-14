@@ -1,7 +1,13 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AppError } from '../utils/AppError.js';
 
-export type JwtRole = 'EMPLOYEE' | 'SUPER_ADMIN' | 'HR_MANAGER' | 'BRANCH_MANAGER' | 'PAYROLL_ADMIN';
+export type JwtRole =
+  | 'EMPLOYEE'
+  | 'SUPER_ADMIN'
+  | 'HR_MANAGER'
+  | 'BRANCH_MANAGER'
+  | 'PAYROLL_ADMIN'
+  | 'CASHIER';
 
 export interface JwtPayload {
   sub: string; // employeeId or adminId

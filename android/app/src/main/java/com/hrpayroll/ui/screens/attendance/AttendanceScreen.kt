@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -59,6 +60,7 @@ private val sampleRecords = listOf(
 @Composable
 fun AttendanceScreen(
     onCheckIn: () -> Unit = {},
+    onCheckOut: () -> Unit = {},
     viewModel: AttendanceViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -117,26 +119,64 @@ fun AttendanceScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            Button(
-                onClick = onCheckIn,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .height(54.dp),
-                shape = MaterialTheme.shapes.medium,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+            // One check-in and one check-out per day (the backend also enforces this):
+            // Check In is disabled once done; Check Out unlocks after check-in.
+            val checkedIn = state.todayCheckIn != null
+            val checkedOut = state.todayCheckOut != null
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(Icons.Filled.CameraAlt, contentDescription = null, tint = Color.White)
-                Spacer(Modifier.height(0.dp))
-                Text("  Selfie Check-In", color = Color.White, fontWeight = FontWeight.SemiBold)
+                Button(
+                    onClick = onCheckIn,
+                    enabled = !checkedIn,
+                    modifier = Modifier.weight(1f).height(54.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StatusPresent,
+                        disabledContainerColor = StatusPresentBg,
+                    ),
+                ) {
+                    Icon(
+                        Icons.Filled.CameraAlt,
+                        contentDescription = null,
+                        tint = if (checkedIn) StatusPresent else Color.White,
+                    )
+                    Text(
+                        if (checkedIn) "  Checked In ✓" else "  Check In",
+                        color = if (checkedIn) StatusPresent else Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Button(
+                    onClick = onCheckOut,
+                    enabled = checkedIn && !checkedOut,
+                    modifier = Modifier.weight(1f).height(54.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StatusOff,
+                        disabledContainerColor = StatusOffBg,
+                    ),
+                ) {
+                    Icon(
+                        Icons.Filled.Logout,
+                        contentDescription = null,
+                        tint = if (checkedIn && !checkedOut) Color.White else StatusOff,
+                    )
+                    Text(
+                        if (checkedOut) "  Checked Out ✓" else "  Check Out",
+                        color = if (checkedIn && !checkedOut) Color.White else StatusOff,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
-            state.status?.let {
-                Text(
-                    "Status: $it",
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-            }
+
+            Text(
+                "Today:  In ${state.todayCheckIn ?: "—"}   ·   Out ${state.todayCheckOut ?: "—"}",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+            )
         }
     }
 }

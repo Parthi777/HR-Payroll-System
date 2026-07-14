@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -52,6 +53,7 @@ import coil.request.ImageRequest
 import com.hrpayroll.data.remote.dto.ClaimDto
 import com.hrpayroll.ui.components.BrandHeader
 import com.hrpayroll.ui.components.StatusChip
+import com.hrpayroll.ui.screens.claim.fullDate
 import com.hrpayroll.ui.theme.StatusHalf
 import com.hrpayroll.ui.theme.StatusHalfBg
 import com.hrpayroll.ui.theme.StatusLeave
@@ -61,16 +63,19 @@ import com.hrpayroll.ui.theme.StatusOffBg
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.ui.theme.StatusPresentBg
 
-/** Admin claims review: filter, see receipt + details, approve / reject / clarify. */
+/** Admin claims review: filter, see receipt + details, approve / reject / clarify.
+ *  Cashier accounts see their branch's claims and mark approved ones as paid. */
 @Composable
 fun AdminClaimsScreen(viewModel: AdminClaimsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     // Pending note dialog: (claimId, action) where action is "reject" | "clarify".
     var noteFor by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Claim awaiting the "mark paid" confirmation.
+    var payFor by remember { mutableStateOf<ClaimDto?>(null) }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            BrandHeader(title = "Claims")
+            BrandHeader(title = if (viewModel.role == "CASHIER") "Claims · Cashier" else "Claims")
 
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp, 10.dp),
@@ -102,9 +107,12 @@ fun AdminClaimsScreen(viewModel: AdminClaimsViewModel = hiltViewModel()) {
                             claim = claim,
                             photoUrl = claim.id?.let(viewModel::photoUrl),
                             authToken = viewModel.authToken,
+                            canApprove = viewModel.canApprove,
+                            canPay = viewModel.canPay,
                             onApprove = { claim.id?.let(viewModel::approve) },
                             onReject = { claim.id?.let { noteFor = it to "reject" } },
                             onClarify = { claim.id?.let { noteFor = it to "clarify" } },
+                            onPay = { payFor = claim },
                         )
                     }
                     item { Spacer(Modifier.height(16.dp)) }
@@ -124,6 +132,17 @@ fun AdminClaimsScreen(viewModel: AdminClaimsViewModel = hiltViewModel()) {
             onDismiss = { noteFor = null },
         )
     }
+
+    payFor?.let { claim ->
+        PayDialog(
+            claim = claim,
+            onConfirm = { note ->
+                claim.id?.let { viewModel.pay(it, note) }
+                payFor = null
+            },
+            onDismiss = { payFor = null },
+        )
+    }
 }
 
 @Composable
@@ -131,9 +150,12 @@ private fun AdminClaimCard(
     claim: ClaimDto,
     photoUrl: String?,
     authToken: String?,
+    canApprove: Boolean,
+    canPay: Boolean,
     onApprove: () -> Unit,
     onReject: () -> Unit,
     onClarify: () -> Unit,
+    onPay: () -> Unit,
 ) {
     val hasPhoto = claim.photoFileId != null || claim.photoUrl != null
     val hasPdf = claim.documentFileId != null || claim.documentUrl != null
@@ -149,7 +171,12 @@ private fun AdminClaimCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(claim.title ?: "Claim", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        "${claim.employee?.name ?: "Employee"} · ${claim.type ?: ""}",
+                        listOfNotNull(
+                            claim.employee?.name ?: "Employee",
+                            claim.employee?.employeeCode,
+                            claim.employee?.branch?.name,
+                            claim.type,
+                        ).joinToString(" · "),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -157,6 +184,13 @@ private fun AdminClaimCard(
                 Text("₹${claim.amount ?: 0.0}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(0.dp))
             }
+
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Voucher CLM-${(claim.id ?: "").takeLast(8).uppercase()} · Submitted ${fullDate(claim.createdAt)}",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            )
 
             Spacer(Modifier.height(8.dp))
             val (fg, bg) = statusColors(claim.status)
@@ -193,16 +227,41 @@ private fun AdminClaimCard(
                 )
             }
 
-            if (claim.status == "NEEDS_CLARIFICATION" && claim.reviewerNote != null) {
-                Spacer(Modifier.height(6.dp))
-                Text("Asked: ${claim.reviewerNote}", fontSize = 12.sp, color = StatusLeave)
-            }
-            if (claim.employeeNote != null) {
-                Spacer(Modifier.height(4.dp))
-                Text("Reply: ${claim.employeeNote}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            // Clarification conversation (approver questions + employee replies).
+            val messages = claim.messages.orEmpty()
+            if (messages.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                messages.forEach { m ->
+                    val admin = m.senderRole == "ADMIN"
+                    Text(
+                        "${if (admin) "Asked" else "Reply"} (${m.senderName ?: ""}): ${m.message ?: ""}",
+                        fontSize = 12.sp,
+                        color = if (admin) StatusLeave else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                        modifier = Modifier.padding(vertical = 2.dp),
+                    )
+                }
             }
 
-            if (open) {
+            when {
+                claim.status == "APPROVED" && claim.reviewerName != null -> {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Approved by ${claim.reviewerName} · ${fullDate(claim.reviewedAt)}",
+                        fontSize = 12.sp,
+                        color = StatusPresent,
+                    )
+                }
+                claim.status == "PAID" -> {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Approved by ${claim.reviewerName ?: "—"} · Paid by ${claim.paidByName ?: "—"} on ${fullDate(claim.paidAt)}",
+                        fontSize = 12.sp,
+                        color = StatusPresent,
+                    )
+                }
+            }
+
+            if (open && canApprove) {
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ActionButton(Icons.Filled.Check, "Approve", StatusPresent, onApprove)
@@ -210,8 +269,48 @@ private fun AdminClaimCard(
                     ActionButton(Icons.Filled.Close, "Reject", StatusOff, onReject)
                 }
             }
+
+            if (claim.status == "APPROVED" && canPay) {
+                Spacer(Modifier.height(8.dp))
+                androidx.compose.material3.Button(onClick = onPay, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Payments, contentDescription = null)
+                    Text("  Mark as Paid", fontWeight = FontWeight.SemiBold)
+                }
+            }
         }
     }
+}
+
+/** Cashier confirmation: verify the printed voucher against the on-screen details first. */
+@Composable
+private fun PayDialog(claim: ClaimDto, onConfirm: (String?) -> Unit, onDismiss: () -> Unit) {
+    var note by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Mark as paid?") },
+        text = {
+            Column {
+                Text(
+                    "₹${claim.amount ?: 0.0} — ${claim.title ?: ""}\nby ${claim.employee?.name ?: ""} (${claim.employee?.employeeCode ?: ""})",
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Check the printed voucher copy against these details before handing over the amount.",
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Payment note (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(note.ifBlank { null }) }) { Text("Paid ✓") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -242,7 +341,7 @@ private fun label(status: String?): String = when (status) {
 }
 
 private fun statusColors(status: String?): Pair<Color, Color> = when (status) {
-    "APPROVED" -> StatusPresent to StatusPresentBg
+    "APPROVED", "PAID" -> StatusPresent to StatusPresentBg
     "PENDING" -> StatusHalf to StatusHalfBg
     "REJECTED" -> StatusOff to StatusOffBg
     "NEEDS_CLARIFICATION" -> StatusLeave to StatusLeaveBg

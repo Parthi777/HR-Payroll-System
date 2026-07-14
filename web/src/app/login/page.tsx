@@ -41,6 +41,7 @@ export default function LoginPage() {
   function finishLogin(res: LoginResponse) {
     localStorage.setItem('token', res.token);
     localStorage.setItem('adminName', res.name);
+    localStorage.setItem('adminRole', res.role);
     router.push('/dashboard');
   }
 

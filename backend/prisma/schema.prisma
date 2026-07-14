@@ -11,10 +11,10 @@
 //   LeaveType       : CL | SL | EL | LOP | HALF_DAY
 //   LeaveStatus     : PENDING | APPROVED | REJECTED | CANCELLED
 //   ClaimType       : TRAVEL | FOOD | MEDICAL | ACCOMMODATION | OTHER
-//   ClaimStatus     : PENDING | APPROVED | REJECTED | NEEDS_CLARIFICATION
+//   ClaimStatus     : PENDING | APPROVED | REJECTED | NEEDS_CLARIFICATION | PAID
 //   PayslipStatus   : DRAFT | FINALIZED | SENT | PAID
 //   WAStatus        : QUEUED | SENT | DELIVERED | READ | FAILED
-//   AdminRole       : SUPER_ADMIN | HR_MANAGER | BRANCH_MANAGER | PAYROLL_ADMIN
+//   AdminRole       : SUPER_ADMIN | HR_MANAGER | BRANCH_MANAGER | PAYROLL_ADMIN | CASHIER
 
 generator client {
   provider = "prisma-client-js"
@@ -189,16 +189,36 @@ model Claim {
   documentUrl    String?
   status         String  @default("PENDING") // ClaimStatus
   reviewedBy     String? // admin id who acted
+  reviewedAt     DateTime? // when the approve/reject decision was made
   reviewerNote   String? // admin note: rejection reason OR clarification question
   employeeNote   String? // employee's reply when resubmitting after clarification
+  paidBy         String? // admin (cashier) id who disbursed the amount
+  paidAt         DateTime?
+  paidNote       String? // cashier note at disbursement
 
-  employee Employee @relation(fields: [employeeId], references: [id])
+  employee Employee       @relation(fields: [employeeId], references: [id])
+  messages ClaimMessage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([employeeId])
   @@index([status])
+}
+
+// Clarification conversation on a claim: approver questions + employee replies.
+model ClaimMessage {
+  id         String   @id @default(cuid())
+  claimId    String
+  senderRole String // "ADMIN" | "EMPLOYEE"
+  senderId   String // adminId or employeeId
+  senderName String // denormalised for display
+  message    String
+  createdAt  DateTime @default(now())
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
 }
 
 model LeaveBalance {

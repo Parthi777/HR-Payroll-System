@@ -13,6 +13,13 @@ class ClaimRepository @Inject constructor(
 ) {
     suspend fun myClaims(): List<ClaimDto> = api.myClaims().claims
 
+    /** Text reply to the approver's clarification question (claim goes back to PENDING). */
+    suspend fun reply(id: String, message: String): ClaimDto? =
+        api.replyClaim(id, mapOf("message" to message)).claim
+
+    /** Raw bytes of the printable A5 voucher PDF. */
+    suspend fun voucherPdf(id: String): ByteArray = api.claimVoucher(id).bytes()
+
     suspend fun submit(
         type: String,
         title: String,

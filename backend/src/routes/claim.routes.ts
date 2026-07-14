@@ -6,11 +6,15 @@ import { AppError } from '../utils/AppError.js';
 import {
   createClaim,
   resubmitClaim,
+  replyToClaim,
   listMyClaims,
   listClaims,
+  getClaim,
   actOnClaim,
+  payClaim,
   claimStats,
 } from '../services/claim/claim.service.js';
+import { generateClaimVoucherPdf } from '../services/claim/claim-voucher-pdf.service.js';
 import { getDriveFileStream } from '../services/storage/drive.service.js';
 import { getSignedSelfieUrl } from '../services/storage/storage.service.js';
 
@@ -98,14 +102,43 @@ export async function claimRoutes(app: FastifyInstance) {
     return { claim };
   });
 
-  // Photo/PDF: owner or any admin may view.
+  // Employee replies in the clarification thread (text only; back to PENDING).
+  app.post('/claims/:id/reply', { preHandler: authenticate }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { message } = (req.body as { message?: string }) ?? {};
+    const claim = await replyToClaim(app.prisma, req.user.sub, id, message ?? '');
+    return { claim };
+  });
+
+  // Full claim detail (employee: own claims; admin: branch-scoped) incl. message thread.
+  app.get('/claims/:id', { preHandler: authenticate }, async (req) => {
+    const { id } = req.params as { id: string };
+    const claim = await getClaim(app.prisma, id, req.user);
+    return { claim };
+  });
+
+  // Printable A5 voucher (half A4). Owner or any admin (branch-scoped) may download.
+  app.get('/claims/:id/voucher', { preHandler: authenticate }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const claim = await getClaim(app.prisma, id, req.user);
+    const pdf = await generateClaimVoucherPdf(claim);
+    return reply
+      .type('application/pdf')
+      .header('Content-Disposition', `inline; filename="claim-voucher-${claim.id.slice(-8)}.pdf"`)
+      .send(pdf);
+  });
+
+  // Photo/PDF: owner or any admin (branch-scoped) may view.
   app.get('/claims/:id/file', { preHandler: authenticate }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const { which } = req.query as { which?: string };
-    const claim = await app.prisma.claim.findUnique({ where: { id } });
+    const claim = await app.prisma.claim.findUnique({ where: { id }, include: { employee: { select: { branchId: true } } } });
     if (!claim) throw AppError.notFound('Claim');
     if (req.user.role === 'EMPLOYEE' && claim.employeeId !== req.user.sub) {
       throw new AppError('Forbidden', 403);
+    }
+    if (req.user.role !== 'EMPLOYEE' && req.user.branchId && claim.employee.branchId !== req.user.branchId) {
+      throw new AppError('This claim belongs to another branch', 403);
     }
     return which === 'pdf'
       ? serveClaimFile(req, reply, claim.documentFileId, claim.documentUrl)
@@ -113,35 +146,47 @@ export async function claimRoutes(app: FastifyInstance) {
   });
 
   // ── Admin ──
-  const adminGuard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN');
+  // Viewing: all admin roles incl. the cashier. Approval decisions: managers only.
+  // Disbursement (mark paid): cashier / payroll admin / super admin.
+  // An admin with a branchId on their account only sees that branch's claims.
+  const viewGuard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER');
+  const approveGuard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN');
+  const payGuard = requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN', 'CASHIER');
 
-  app.get('/admin/claims', { preHandler: adminGuard }, async (req) => {
+  app.get('/admin/claims', { preHandler: viewGuard }, async (req) => {
     const { status } = req.query as { status?: string };
-    const claims = await listClaims(app.prisma, status);
+    const claims = await listClaims(app.prisma, status, req.user.branchId);
     return { claims };
   });
 
-  app.get('/admin/claims/stats', { preHandler: adminGuard }, async () => {
-    return claimStats(app.prisma);
+  app.get('/admin/claims/stats', { preHandler: viewGuard }, async (req) => {
+    return claimStats(app.prisma, req.user.branchId);
   });
 
-  app.patch('/admin/claims/:id/approve', { preHandler: adminGuard }, async (req) => {
+  app.patch('/admin/claims/:id/approve', { preHandler: approveGuard }, async (req) => {
     const { id } = req.params as { id: string };
-    const claim = await actOnClaim(app.prisma, req.user.sub, id, 'APPROVED');
+    const claim = await actOnClaim(app.prisma, req.user.sub, id, 'APPROVED', undefined, req.user.branchId);
     return { claim };
   });
 
-  app.patch('/admin/claims/:id/reject', { preHandler: adminGuard }, async (req) => {
+  app.patch('/admin/claims/:id/reject', { preHandler: approveGuard }, async (req) => {
     const { id } = req.params as { id: string };
     const { note } = (req.body as { note?: string }) ?? {};
-    const claim = await actOnClaim(app.prisma, req.user.sub, id, 'REJECTED', note);
+    const claim = await actOnClaim(app.prisma, req.user.sub, id, 'REJECTED', note, req.user.branchId);
     return { claim };
   });
 
-  app.patch('/admin/claims/:id/clarify', { preHandler: adminGuard }, async (req) => {
+  app.patch('/admin/claims/:id/clarify', { preHandler: approveGuard }, async (req) => {
     const { id } = req.params as { id: string };
     const { note } = (req.body as { note?: string }) ?? {};
-    const claim = await actOnClaim(app.prisma, req.user.sub, id, 'NEEDS_CLARIFICATION', note);
+    const claim = await actOnClaim(app.prisma, req.user.sub, id, 'NEEDS_CLARIFICATION', note, req.user.branchId);
+    return { claim };
+  });
+
+  app.patch('/admin/claims/:id/pay', { preHandler: payGuard }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { note } = (req.body as { note?: string }) ?? {};
+    const claim = await payClaim(app.prisma, req.user.sub, id, note, req.user.branchId);
     return { claim };
   });
 }

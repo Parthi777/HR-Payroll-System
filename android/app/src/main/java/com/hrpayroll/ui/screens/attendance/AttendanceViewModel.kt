@@ -25,6 +25,9 @@ data class AttendanceUiState(
     val records: List<AttendanceRecordUi> = emptyList(),
     /** True until the first successful network load; the UI shows sample data meanwhile. */
     val usingSampleData: Boolean = true,
+    /** Today's state — drives which of the Check-In / Check-Out buttons is enabled. */
+    val todayCheckIn: String? = null, // "09:02 AM" or null
+    val todayCheckOut: String? = null,
 )
 
 @HiltViewModel
@@ -61,7 +64,28 @@ class AttendanceViewModel @Inject constructor(
                     // Backend not reachable yet — keep sample data, surface the reason.
                     _uiState.value = _uiState.value.copy(isLoading = false, error = it.message)
                 }
+            loadToday()
         }
     }
 
+    /** One check-in and one check-out per day — reflect today's record in the buttons. */
+    private suspend fun loadToday() {
+        runCatching { repository.today() }
+            .onSuccess { today ->
+                _uiState.value = _uiState.value.copy(
+                    todayCheckIn = formatIsoTime(today.checkIn),
+                    todayCheckOut = formatIsoTime(today.checkOut),
+                )
+            }
+            .onFailure { /* keep whatever we had; buttons stay enabled */ }
+    }
+
+    /** ISO instant → "09:02 AM" in the device timezone (null passes through). */
+    private fun formatIsoTime(iso: String?): String? = iso?.let {
+        runCatching {
+            java.time.format.DateTimeFormatter.ofPattern("hh:mm a")
+                .withZone(java.time.ZoneId.systemDefault())
+                .format(java.time.Instant.parse(it))
+        }.getOrDefault(it)
+    }
 }

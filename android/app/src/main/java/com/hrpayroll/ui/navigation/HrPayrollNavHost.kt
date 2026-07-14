@@ -49,7 +49,7 @@ object Routes {
     const val LOGIN = "login"
     const val HOME = "home"
     const val ATTENDANCE = "attendance"
-    const val CAMERA = "camera"
+    const val CAMERA = "camera/{mode}" // mode: checkin | checkout
     const val SHIFT = "shift"
     const val LEAVE = "leave"
     const val CLAIMS = "claims"
@@ -66,6 +66,9 @@ object Routes {
 
 /** Build the claim submit route; pass "new" for a fresh claim or a claim id to resubmit. */
 fun claimSubmitRoute(claimId: String): String = "claim_submit/$claimId"
+
+/** Selfie camera route for the given attendance action ("checkin" | "checkout"). */
+fun cameraRoute(mode: String): String = "camera/$mode"
 
 private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
 
@@ -86,14 +89,23 @@ private val adminTabs = listOf(
 )
 
 @Composable
-fun HrPayrollNavHost() {
+fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compose.hiltViewModel()) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
+    // Admin tabs depend on the signed-in role: cashiers get Dashboard + Claims only,
+    // Users is SUPER_ADMIN-only. Re-read each recomposition (role is set at login).
+    val role = navViewModel.role()
+    val visibleAdminTabs = when (role) {
+        "CASHIER" -> adminTabs.filter { it.route == Routes.ADMIN_DASHBOARD || it.route == Routes.ADMIN_CLAIMS }
+        "SUPER_ADMIN" -> adminTabs
+        else -> adminTabs.filter { it.route != Routes.ADMIN_USERS }
+    }
+
     // Pick the tab set for the active section (employee vs admin); null = no bottom bar.
     val tabs = when (currentRoute) {
-        in adminTabs.map { it.route } -> adminTabs
+        in adminTabs.map { it.route } -> visibleAdminTabs
         in employeeTabs.map { it.route } -> employeeTabs
         else -> null
     }
@@ -142,14 +154,20 @@ fun HrPayrollNavHost() {
             // Employee
             composable(Routes.HOME) {
                 HomeScreen(
-                    onCheckIn = { navController.navigate(Routes.CAMERA) },
+                    onCheckIn = { navController.navigate(cameraRoute("checkin")) },
                     onPayslip = { navController.navigate(Routes.PAYSLIP) },
                 )
             }
             composable(Routes.ATTENDANCE) {
-                AttendanceScreen(onCheckIn = { navController.navigate(Routes.CAMERA) })
+                AttendanceScreen(
+                    onCheckIn = { navController.navigate(cameraRoute("checkin")) },
+                    onCheckOut = { navController.navigate(cameraRoute("checkout")) },
+                )
             }
-            composable(Routes.CAMERA) {
+            composable(
+                Routes.CAMERA,
+                arguments = listOf(navArgument("mode") { type = NavType.StringType }),
+            ) {
                 CameraCaptureScreen(
                     onDone = { navController.popBackStack() },
                     onCancel = { navController.popBackStack() },

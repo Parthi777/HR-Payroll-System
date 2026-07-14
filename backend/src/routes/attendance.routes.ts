@@ -110,9 +110,10 @@ export async function attendanceRoutes(app: FastifyInstance) {
   );
 
   // Dashboard overview cards (matches the web DashboardStats contract).
+  // CASHIER included so the mobile admin landing tab works for cashier accounts.
   app.get(
     '/admin/dashboard/stats',
-    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') },
+    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'CASHIER') },
     async () => {
       const { start, end } = todayRange();
       const where = { date: { gte: start, lt: end } };

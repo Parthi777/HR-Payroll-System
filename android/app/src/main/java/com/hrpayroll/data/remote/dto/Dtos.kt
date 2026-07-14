@@ -145,7 +145,23 @@ data class PerformanceRowDto(
 
 // ── Claims ──
 @JsonClass(generateAdapter = true)
-data class ClaimEmployeeDto(val name: String? = null, val employeeCode: String? = null)
+data class BranchNameDto(val name: String? = null)
+
+@JsonClass(generateAdapter = true)
+data class ClaimEmployeeDto(
+    val name: String? = null,
+    val employeeCode: String? = null,
+    val branch: BranchNameDto? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class ClaimMessageDto(
+    val id: String? = null,
+    val senderRole: String? = null, // ADMIN | EMPLOYEE
+    val senderName: String? = null,
+    val message: String? = null,
+    val createdAt: String? = null,
+)
 
 @JsonClass(generateAdapter = true)
 data class ClaimDto(
@@ -157,12 +173,18 @@ data class ClaimDto(
     val status: String? = null,
     val reviewerNote: String? = null,
     val employeeNote: String? = null,
+    val reviewerName: String? = null,
+    val reviewedAt: String? = null,
+    val paidByName: String? = null,
+    val paidAt: String? = null,
+    val paidNote: String? = null,
     val photoFileId: String? = null,
     val documentFileId: String? = null,
     val photoUrl: String? = null,
     val documentUrl: String? = null,
     val createdAt: String? = null,
     val employee: ClaimEmployeeDto? = null, // present on admin listings
+    val messages: List<ClaimMessageDto>? = null, // clarification thread
 )
 
 @JsonClass(generateAdapter = true)

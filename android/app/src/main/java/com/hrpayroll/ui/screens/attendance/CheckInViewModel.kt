@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.attendance
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.repository.AttendanceRepository
@@ -18,11 +19,15 @@ data class CheckInUiState(
     val error: String? = null,
 )
 
-/** Uploads the captured selfie + GPS to the backend check-in endpoint. */
+/** Uploads the captured selfie + GPS to the check-in or check-out endpoint
+ *  (mode comes from the navigation route: camera/checkin | camera/checkout). */
 @HiltViewModel
 class CheckInViewModel @Inject constructor(
     private val repository: AttendanceRepository,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    val isCheckOut: Boolean = savedStateHandle.get<String>("mode") == "checkout"
 
     private val _uiState = MutableStateFlow(CheckInUiState())
     val uiState: StateFlow<CheckInUiState> = _uiState.asStateFlow()
@@ -31,9 +36,16 @@ class CheckInViewModel @Inject constructor(
         if (_uiState.value.isSubmitting) return
         viewModelScope.launch {
             _uiState.value = CheckInUiState(isSubmitting = true)
-            runCatching { repository.checkIn(selfie, lat, lng, accuracy) }
+            runCatching {
+                if (isCheckOut) repository.checkOut(selfie, lat, lng)
+                else repository.checkIn(selfie, lat, lng, accuracy)
+            }
                 .onSuccess { _uiState.value = CheckInUiState(success = true, resultStatus = it.status) }
-                .onFailure { _uiState.value = CheckInUiState(error = it.message ?: "Check-in failed") }
+                .onFailure {
+                    _uiState.value = CheckInUiState(
+                        error = it.message ?: if (isCheckOut) "Check-out failed" else "Check-in failed",
+                    )
+                }
         }
     }
 

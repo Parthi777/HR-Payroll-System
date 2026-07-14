@@ -19,6 +19,7 @@ import com.hrpayroll.data.remote.dto.PayslipListResponse
 import com.hrpayroll.data.remote.dto.PerformanceRowDto
 import com.hrpayroll.data.remote.dto.ScheduleResponse
 import okhttp3.MultipartBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Multipart
@@ -28,6 +29,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 /** Retrofit interface mapping the backend REST API (see CLAUDE.md API Endpoints). */
 interface HrApi {
@@ -110,6 +112,14 @@ interface HrApi {
     @POST("claims/{id}/resubmit")
     suspend fun resubmitClaim(@Path("id") id: String, @Part parts: List<MultipartBody.Part>): ClaimCreatedResponse
 
+    @POST("claims/{id}/reply")
+    suspend fun replyClaim(@Path("id") id: String, @Body body: Map<String, String>): ClaimCreatedResponse
+
+    // Printable A5 voucher PDF (half of an A4 sheet).
+    @Streaming
+    @GET("claims/{id}/voucher")
+    suspend fun claimVoucher(@Path("id") id: String): ResponseBody
+
     // ── Claims (admin) ──
     @GET("admin/claims")
     suspend fun adminClaims(@Query("status") status: String?): ClaimListResponse
@@ -122,6 +132,9 @@ interface HrApi {
 
     @PATCH("admin/claims/{id}/clarify")
     suspend fun clarifyClaim(@Path("id") id: String, @Body body: Map<String, String>): ClaimCreatedResponse
+
+    @PATCH("admin/claims/{id}/pay")
+    suspend fun payClaim(@Path("id") id: String, @Body body: Map<String, String>): ClaimCreatedResponse
 
     // ── User access (SUPER_ADMIN) ──
     @GET("admin/users")

@@ -4,22 +4,24 @@ import bcrypt from 'bcrypt';
 import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 
-const ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN'] as const;
+const ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER'] as const;
 
 const createSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
   role: z.enum(ROLES),
   password: z.string().min(8),
+  branchId: z.string().nullable().optional(), // set = account only sees that branch's claims
 });
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   role: z.enum(ROLES).optional(),
   password: z.string().min(8).optional(),
   isActive: z.boolean().optional(),
+  branchId: z.string().nullable().optional(),
 });
 
-const safeSelect = { id: true, name: true, email: true, role: true, isActive: true, createdAt: true };
+const safeSelect = { id: true, name: true, email: true, role: true, branchId: true, isActive: true, createdAt: true };
 
 /**
  * User-access management: admin/manager accounts that can sign in to the web app

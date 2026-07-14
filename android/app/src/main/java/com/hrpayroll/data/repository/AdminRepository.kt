@@ -20,6 +20,8 @@ class AdminRepository @Inject constructor(
     suspend fun approveClaim(id: String) = api.approveClaim(id)
     suspend fun rejectClaim(id: String, note: String) = api.rejectClaim(id, mapOf("note" to note))
     suspend fun clarifyClaim(id: String, note: String) = api.clarifyClaim(id, mapOf("note" to note))
+    suspend fun payClaim(id: String, note: String?) =
+        api.payClaim(id, if (note.isNullOrBlank()) emptyMap() else mapOf("note" to note))
 
     // User access (SUPER_ADMIN)
     suspend fun adminUsers(): List<AdminUserDto> = api.adminUsers().admins
