@@ -6,6 +6,9 @@ import com.hrpayroll.data.remote.dto.ClaimDto
 import com.hrpayroll.data.remote.dto.DashboardStatsDto
 import com.hrpayroll.data.remote.dto.LiveAttendanceRowDto
 import com.hrpayroll.data.remote.dto.PerformanceRowDto
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 
 /** Admin-facing reads + actions: dashboard, live feed, performance, claims approval. */
@@ -22,6 +25,20 @@ class AdminRepository @Inject constructor(
     suspend fun clarifyClaim(id: String, note: String) = api.clarifyClaim(id, mapOf("note" to note))
     suspend fun payClaim(id: String, note: String?) =
         api.payClaim(id, if (note.isNullOrBlank()) emptyMap() else mapOf("note" to note))
+
+    // Employee onboarding + face enrollment
+    suspend fun employees() = api.adminEmployees().employees
+    suspend fun createEmployee(body: Map<String, Any>) = api.createEmployee(body)
+    suspend fun enrollFace(id: String, photo: ByteArray) = api.enrollFace(
+        id,
+        MultipartBody.Part.createFormData("photo", "face.jpg", photo.toRequestBody("image/jpeg".toMediaType())),
+    )
+
+    // Master data for the Add-Employee form
+    suspend fun branches() = api.branches().branches
+    suspend fun departments() = api.departments().departments
+    suspend fun designations() = api.designations().designations
+    suspend fun shifts() = api.shifts().shifts
 
     // User access (SUPER_ADMIN)
     suspend fun adminUsers(): List<AdminUserDto> = api.adminUsers().admins

@@ -25,12 +25,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hrpayroll.ui.theme.BrandGradient
 
-/** Rounded gradient app-bar used on every screen in the reference design. */
+/** Rounded gradient app-bar used on every screen in the reference design.
+ *  Optional [trailingIcon] renders a frosted action button at the top-right
+ *  (e.g. logout on dashboards, admin-accounts shortcut on People). */
 @Composable
 fun BrandHeader(
     title: String,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    trailingDescription: String? = null,
+    onTrailing: (() -> Unit)? = null,
 ) {
     Box(
         modifier = modifier
@@ -55,6 +60,20 @@ fun BrandHeader(
                     contentDescription = "Back",
                     tint = Color.White,
                 )
+            }
+        }
+        if (trailingIcon != null && onTrailing != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 16.dp)
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.18f))
+                    .clickable { onTrailing() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(trailingIcon, contentDescription = trailingDescription, tint = Color.White)
             }
         }
         Text(

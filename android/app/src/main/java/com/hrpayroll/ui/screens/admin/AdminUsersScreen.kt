@@ -53,7 +53,10 @@ import com.hrpayroll.ui.theme.StatusPresentBg
 
 /** User access control (SUPER_ADMIN): admins/managers for web + mobile admin mode. */
 @Composable
-fun AdminUsersScreen(viewModel: AdminUsersViewModel = hiltViewModel()) {
+fun AdminUsersScreen(
+    onBack: (() -> Unit)? = null,
+    viewModel: AdminUsersViewModel = hiltViewModel(),
+) {
     val state by viewModel.uiState.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
 
@@ -71,7 +74,7 @@ fun AdminUsersScreen(viewModel: AdminUsersViewModel = hiltViewModel()) {
     ) { pad ->
         Box(modifier = Modifier.fillMaxSize().padding(pad).background(MaterialTheme.colorScheme.background)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                BrandHeader(title = "User Access")
+                BrandHeader(title = "User Access", onBack = onBack)
                 Spacer(Modifier.height(8.dp))
 
                 if (!state.isSuperAdmin) {

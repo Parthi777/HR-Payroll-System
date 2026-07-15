@@ -8,10 +8,10 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -22,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -31,6 +33,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.hrpayroll.ui.screens.admin.AdminClaimsScreen
 import com.hrpayroll.ui.screens.admin.AdminDashboardScreen
+import com.hrpayroll.ui.screens.admin.AdminEmployeesScreen
 import com.hrpayroll.ui.screens.admin.AdminUsersScreen
 import com.hrpayroll.ui.screens.admin.LiveAttendanceScreen
 import com.hrpayroll.ui.screens.admin.PerformanceScreen
@@ -61,7 +64,8 @@ object Routes {
     const val ADMIN_LIVE = "admin_live"
     const val ADMIN_PERFORMANCE = "admin_performance"
     const val ADMIN_CLAIMS = "admin_claims"
-    const val ADMIN_USERS = "admin_users"
+    const val ADMIN_PEOPLE = "admin_people"
+    const val ADMIN_USERS = "admin_users" // pushed from People (SUPER_ADMIN)
 }
 
 /** Build the claim submit route; pass "new" for a fresh claim or a claim id to resubmit. */
@@ -82,10 +86,10 @@ private val employeeTabs = listOf(
 
 private val adminTabs = listOf(
     BottomTab(Routes.ADMIN_DASHBOARD, "Dashboard", Icons.Filled.Dashboard),
-    BottomTab(Routes.ADMIN_LIVE, "Live", Icons.Filled.Groups),
+    BottomTab(Routes.ADMIN_LIVE, "Live", Icons.Filled.Sensors),
     BottomTab(Routes.ADMIN_CLAIMS, "Claims", Icons.Filled.ReceiptLong),
-    BottomTab(Routes.ADMIN_PERFORMANCE, "Performance", Icons.Filled.Assessment),
-    BottomTab(Routes.ADMIN_USERS, "Users", Icons.Filled.ManageAccounts),
+    BottomTab(Routes.ADMIN_PERFORMANCE, "Reports", Icons.Filled.Assessment),
+    BottomTab(Routes.ADMIN_PEOPLE, "People", Icons.Filled.Groups),
 )
 
 @Composable
@@ -94,13 +98,12 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Admin tabs depend on the signed-in role: cashiers get Dashboard + Claims only,
-    // Users is SUPER_ADMIN-only. Re-read each recomposition (role is set at login).
+    // Admin tabs depend on the signed-in role: cashiers get Dashboard + Claims only.
+    // (Admin-account management lives inside People, gated to SUPER_ADMIN there.)
     val role = navViewModel.role()
     val visibleAdminTabs = when (role) {
         "CASHIER" -> adminTabs.filter { it.route == Routes.ADMIN_DASHBOARD || it.route == Routes.ADMIN_CLAIMS }
-        "SUPER_ADMIN" -> adminTabs
-        else -> adminTabs.filter { it.route != Routes.ADMIN_USERS }
+        else -> adminTabs
     }
 
     // Pick the tab set for the active section (employee vs admin); null = no bottom bar.
@@ -113,7 +116,8 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
     Scaffold(
         bottomBar = {
             if (tabs != null) {
-                NavigationBar(containerColor = Color.White) {
+                // Cleaner bar: label only under the active tab, subtle inactive icons.
+                NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
                     tabs.forEach { tab ->
                         NavigationBarItem(
                             selected = currentRoute == tab.route,
@@ -125,10 +129,19 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
                                 }
                             },
                             icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
+                            label = {
+                                Text(
+                                    tab.label,
+                                    fontSize = 11.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                )
+                            },
+                            alwaysShowLabel = false,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = BrandIndigo,
                                 selectedTextColor = BrandIndigo,
+                                unselectedIconColor = Color(0xFF9B99AE),
+                                unselectedTextColor = Color(0xFF9B99AE),
                                 indicatorColor = Color(0xFFEFEEFB),
                             ),
                         )
@@ -210,7 +223,12 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
             composable(Routes.ADMIN_LIVE) { LiveAttendanceScreen() }
             composable(Routes.ADMIN_CLAIMS) { AdminClaimsScreen() }
             composable(Routes.ADMIN_PERFORMANCE) { PerformanceScreen() }
-            composable(Routes.ADMIN_USERS) { AdminUsersScreen() }
+            composable(Routes.ADMIN_PEOPLE) {
+                AdminEmployeesScreen(onOpenUsers = { navController.navigate(Routes.ADMIN_USERS) })
+            }
+            composable(Routes.ADMIN_USERS) {
+                AdminUsersScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
 }

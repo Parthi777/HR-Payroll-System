@@ -194,6 +194,43 @@ data class ClaimListResponse(val claims: List<ClaimDto> = emptyList())
 @JsonClass(generateAdapter = true)
 data class ClaimCreatedResponse(val claim: ClaimDto? = null)
 
+// ── Admin: employee onboarding + face enrollment ──
+@JsonClass(generateAdapter = true)
+data class AdminEmployeeDto(
+    val id: String? = null,
+    val employeeCode: String? = null,
+    val name: String? = null,
+    val phone: String? = null,
+    val salary: Double? = null,
+    val status: String? = null,
+    val faceTemplateId: String? = null, // non-null = face enrolled
+    val branch: BranchNameDto? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class EmployeeListResponse(val employees: List<AdminEmployeeDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class EmployeeCreatedResponse(val employee: AdminEmployeeDto? = null)
+
+@JsonClass(generateAdapter = true)
+data class EnrollFaceResponse(val enrolled: Boolean? = null)
+
+@JsonClass(generateAdapter = true)
+data class MasterItemDto(val id: String? = null, val name: String? = null)
+
+@JsonClass(generateAdapter = true)
+data class BranchListResponse(val branches: List<MasterItemDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class DepartmentListResponse(val departments: List<MasterItemDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class DesignationListResponse(val designations: List<MasterItemDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class ShiftListResponse(val shifts: List<MasterItemDto> = emptyList())
+
 // ── Admin user-access management ──
 @JsonClass(generateAdapter = true)
 data class AdminUserDto(

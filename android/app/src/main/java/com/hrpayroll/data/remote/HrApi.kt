@@ -7,9 +7,17 @@ import com.hrpayroll.data.remote.dto.ApplyLeaveRequest
 import com.hrpayroll.data.remote.dto.AttendanceDto
 import com.hrpayroll.data.remote.dto.AttendanceHistoryDto
 import com.hrpayroll.data.remote.dto.BalanceListResponse
+import com.hrpayroll.data.remote.dto.BranchListResponse
 import com.hrpayroll.data.remote.dto.ClaimCreatedResponse
 import com.hrpayroll.data.remote.dto.ClaimListResponse
 import com.hrpayroll.data.remote.dto.DashboardStatsDto
+import com.hrpayroll.data.remote.dto.DepartmentListResponse
+import com.hrpayroll.data.remote.dto.DesignationListResponse
+import com.hrpayroll.data.remote.dto.EmployeeCreatedResponse
+import com.hrpayroll.data.remote.dto.EmployeeListResponse
+import com.hrpayroll.data.remote.dto.EnrollFaceResponse
+import com.hrpayroll.data.remote.dto.MasterItemDto
+import com.hrpayroll.data.remote.dto.ShiftListResponse
 import com.hrpayroll.data.remote.dto.LeaveCreatedResponse
 import com.hrpayroll.data.remote.dto.LeaveListResponse
 import com.hrpayroll.data.remote.dto.LiveAttendanceRowDto
@@ -135,6 +143,30 @@ interface HrApi {
 
     @PATCH("admin/claims/{id}/pay")
     suspend fun payClaim(@Path("id") id: String, @Body body: Map<String, String>): ClaimCreatedResponse
+
+    // ── Employees (admin onboarding + face enrollment) ──
+    @GET("admin/employees")
+    suspend fun adminEmployees(): EmployeeListResponse
+
+    @POST("admin/employees")
+    suspend fun createEmployee(@Body body: Map<String, @JvmSuppressWildcards Any>): EmployeeCreatedResponse
+
+    @Multipart
+    @POST("admin/employees/{id}/enroll-face")
+    suspend fun enrollFace(@Path("id") id: String, @Part photo: MultipartBody.Part): EnrollFaceResponse
+
+    // Master data (Add-Employee form dropdowns)
+    @GET("admin/branches")
+    suspend fun branches(): BranchListResponse
+
+    @GET("admin/departments")
+    suspend fun departments(): DepartmentListResponse
+
+    @GET("admin/designations")
+    suspend fun designations(): DesignationListResponse
+
+    @GET("shifts")
+    suspend fun shifts(): ShiftListResponse
 
     // ── User access (SUPER_ADMIN) ──
     @GET("admin/users")

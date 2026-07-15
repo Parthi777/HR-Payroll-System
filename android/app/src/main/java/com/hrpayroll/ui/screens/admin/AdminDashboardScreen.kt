@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +22,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,10 +44,32 @@ fun AdminDashboardScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val s: DashboardStatsDto = state.stats ?: DashboardStatsDto()
+    var confirmLogout by remember { mutableStateOf(false) }
+
+    if (confirmLogout) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmLogout = false },
+            title = { Text("Log out?") },
+            text = { Text("You will need your admin email and password to sign in again.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmLogout = false
+                    viewModel.logout()
+                    onLogout()
+                }) { Text("Log out") }
+            },
+            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Cancel") } },
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            BrandHeader(title = "Admin Dashboard")
+            BrandHeader(
+                title = "Admin Dashboard",
+                trailingIcon = Icons.AutoMirrored.Filled.Logout,
+                trailingDescription = "Log out",
+                onTrailing = { confirmLogout = true },
+            )
 
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -82,11 +109,20 @@ fun AdminDashboardScreen(
                     Text(it, color = Color(0xFFE11D48), fontSize = 13.sp)
                 }
 
-                Spacer(Modifier.height(24.dp))
-                TextButton(onClick = { viewModel.logout(); onLogout() }) {
-                    Text("Log out", color = Color(0xFFE11D48), fontWeight = FontWeight.SemiBold)
-                }
-                Spacer(Modifier.height(24.dp))
+                // App details footer
+                Spacer(Modifier.height(28.dp))
+                val server = com.hrpayroll.BuildConfig.API_BASE_URL
+                    .removePrefix("https://").removePrefix("http://").trimEnd('/')
+                    .removeSuffix("/api").removeSuffix("api")
+                Text(
+                    "HR & Payroll · v${com.hrpayroll.BuildConfig.VERSION_NAME}\nServer: $server",
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(20.dp))
             }
         }
     }
