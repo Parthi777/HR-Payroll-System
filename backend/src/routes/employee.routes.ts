@@ -5,7 +5,7 @@ import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
-import { enrollFace, isFaceMatchEnabled } from '../services/ai/face.service.js';
+import { enrollFace, removeFace, isFaceMatchEnabled } from '../services/ai/face.service.js';
 import { isS3Enabled, uploadImage } from '../services/storage/storage.service.js';
 
 const createEmployeeSchema = z.object({
@@ -68,10 +68,22 @@ export async function employeeRoutes(app: FastifyInstance) {
   app.post('/:id/enroll-face', async (req) => {
     const { id } = req.params as { id: string };
     if (!isFaceMatchEnabled()) throw new AppError('Face recognition is not configured (set AWS keys)', 503);
+    const existing = await app.prisma.employee.findUnique({ where: { id }, select: { faceTemplateId: true } });
+    if (!existing) throw AppError.notFound('Employee');
     const data = await req.file();
     if (!data) throw new AppError('No image uploaded', 400);
     const buffer = await data.toBuffer();
     const { faceId } = await enrollFace(buffer, id);
+
+    // Re-enrollment: drop the previous face so the collection doesn't accumulate
+    // stale templates. Best-effort — the new face is already indexed.
+    if (existing.faceTemplateId && existing.faceTemplateId !== faceId) {
+      try {
+        await removeFace(existing.faceTemplateId);
+      } catch (err) {
+        req.log.warn({ err, faceId: existing.faceTemplateId }, 'Failed to remove old face template');
+      }
+    }
 
     // Keep the enrolled photo — it doubles as the employee's profile picture (/me/photo).
     let faceTemplateUrl: string;
