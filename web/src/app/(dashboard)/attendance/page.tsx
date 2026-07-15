@@ -19,14 +19,7 @@ interface PendingApproval {
   hasSelfie: boolean;
 }
 
-// Rendered immediately; replaced by live data once the backend responds.
-const sampleRows: LiveAttendanceRow[] = [
-  { id: '1', name: 'Ravi Kumar', branch: 'Bhavani', checkIn: '09:02 AM', checkOut: null, status: 'Present' },
-  { id: '2', name: 'Priya S', branch: 'Erode', checkIn: '09:18 AM', checkOut: null, status: 'Late' },
-  { id: '3', name: 'Arjun M', branch: 'Salem', checkIn: null, checkOut: null, status: 'Absent' },
-  { id: '4', name: 'Divya R', branch: 'Bhavani', checkIn: '08:55 AM', checkOut: '06:10 PM', status: 'Present' },
-  { id: '5', name: 'Karthik V', branch: 'Erode', checkIn: null, checkOut: null, status: 'On Leave' },
-];
+const noRows: LiveAttendanceRow[] = [];
 
 const chipClass: Record<string, string> = {
   Present: 'chip-present',
@@ -36,13 +29,13 @@ const chipClass: Record<string, string> = {
 };
 
 export default function AttendancePage() {
-  const { data: rows, isLive } = useLiveAttendance(sampleRows);
+  const { data: rows, isLive } = useLiveAttendance(noRows);
 
   return (
     <div className="space-y-6">
       <PageHero title="Live Attendance" subtitle="Real-time check-in feed across all branches">
         <span className={`chip ${isLive ? 'chip-present' : 'chip-half'}`}>
-          {isLive ? '● Live' : 'Sample data'}
+          {isLive ? '● Live' : 'Offline'}
         </span>
         <button className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 hover:bg-white/25">
           <Filter className="h-4 w-4" /> Filter
@@ -68,6 +61,13 @@ export default function AttendancePage() {
                 </tr>
               </thead>
               <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-10 text-center text-muted-foreground">
+                      {isLive ? 'No check-ins yet today' : 'Waiting for live data…'}
+                    </td>
+                  </tr>
+                )}
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
                     <td className="px-6 py-4 font-medium">{r.name}</td>

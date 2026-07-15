@@ -41,7 +41,7 @@ export default function DashboardPage() {
           <p className="text-sm text-muted-foreground">Live overview across all branches</p>
         </div>
         <span className={`chip ${isLive ? 'chip-present' : 'chip-half'}`}>
-          {isLive ? '● Live' : 'Sample data'}
+          {isLive ? '● Live' : 'Offline'}
         </span>
       </div>
 
