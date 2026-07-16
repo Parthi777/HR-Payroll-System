@@ -4,7 +4,7 @@ import path from 'path';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { markCheckIn, markCheckOut, decideAttendanceApproval } from '../services/attendance/attendance.service.js';
-import { getSignedSelfieUrl } from '../services/storage/storage.service.js';
+import { getObjectBytes } from '../services/storage/storage.service.js';
 
 /** Parse the selfie file + lat/lng/accuracy fields from a multipart request (any part order). */
 async function parseCheckinParts(req: FastifyRequest) {
@@ -223,9 +223,18 @@ export async function attendanceRoutes(app: FastifyInstance) {
   // ── Out-of-geofence check-in approvals (HR / admin) ──
   const approvalGuard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER');
 
-  app.get('/admin/attendance/approvals', { preHandler: approvalGuard }, async () => {
+  app.get('/admin/attendance/approvals', { preHandler: approvalGuard }, async (req) => {
+    // Branch managers only see their own reports' pending check-ins.
+    const where: { approvalStatus: string; employeeId?: { in: string[] } } = { approvalStatus: 'PENDING' };
+    if (req.user.role === 'BRANCH_MANAGER') {
+      const reports = await app.prisma.employee.findMany({
+        where: { reportingManagerId: req.user.sub },
+        select: { id: true },
+      });
+      where.employeeId = { in: reports.map((r) => r.id) };
+    }
     const rows = await app.prisma.attendance.findMany({
-      where: { approvalStatus: 'PENDING' },
+      where,
       orderBy: { checkIn: 'desc' },
       include: { employee: { include: { branch: true } } },
     });
@@ -262,6 +271,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
       const abs = path.resolve(process.cwd(), att.checkInSelfie.replace(/^\//, ''));
       return reply.type('image/jpeg').send(await fs.readFile(abs));
     }
-    return reply.redirect(await getSignedSelfieUrl(att.checkInSelfie));
+    // Stream through the API rather than redirecting to a signed S3 URL —
+    // browser fetch() can't follow that redirect cross-origin (S3 has no CORS).
+    return reply.type('image/jpeg').send(await getObjectBytes(att.checkInSelfie));
   });
 }

@@ -30,7 +30,7 @@ export async function geofenceRoutes(app: FastifyInstance) {
       .object({
         geofenceLat: z.number().min(-90).max(90).optional(),
         geofenceLng: z.number().min(-180).max(180).optional(),
-        geofenceRadius: z.number().min(20).max(10000).optional(), // meters
+        geofenceRadius: z.number().min(0.5).max(10000).optional(), // meters (0.5m ≈ 1.6ft — owner wants very tight fences)
         strictMode: z.boolean().optional(),
       })
       .parse(req.body);
