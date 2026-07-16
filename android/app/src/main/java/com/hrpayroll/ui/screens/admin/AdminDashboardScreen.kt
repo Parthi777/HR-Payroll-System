@@ -72,6 +72,12 @@ fun AdminDashboardScreen(
             )
 
             Column(modifier = Modifier.padding(16.dp)) {
+                NotificationsCard(
+                    notifications = state.notifications,
+                    unread = state.unread,
+                    onSeen = viewModel::markNotificationsRead,
+                )
+
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Today's Overview",
@@ -154,6 +160,52 @@ private fun StatCard(data: StatCardData, modifier: Modifier = Modifier) {
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
+        }
+    }
+}
+
+
+/** Claims-workflow notifications: new claims to approve / approved claims to pay.
+ *  Hidden when empty; "Mark read" clears the unread badge. */
+@Composable
+private fun NotificationsCard(
+    notifications: List<com.hrpayroll.data.remote.dto.NotificationDto>,
+    unread: Int,
+    onSeen: () -> Unit,
+) {
+    if (notifications.isEmpty()) return
+    androidx.compose.material3.Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
+        shape = MaterialTheme.shapes.medium,
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (unread > 0) "Notifications ($unread new)" else "Notifications",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (unread > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.weight(1f))
+                if (unread > 0) TextButton(onClick = onSeen) { Text("Mark read", fontSize = 12.sp) }
+            }
+            notifications.take(5).forEach { n ->
+                Column(Modifier.padding(vertical = 5.dp)) {
+                    Text(
+                        (if (n.type == "CLAIM_APPROVED") "\u2713 " else "\u25CF ") + (n.title ?: ""),
+                        fontSize = 13.sp,
+                        fontWeight = if (n.isRead == false) FontWeight.Bold else FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        n.body ?: "",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    )
+                }
+            }
         }
     }
 }

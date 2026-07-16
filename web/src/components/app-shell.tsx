@@ -21,7 +21,65 @@ import {
   Menu,
   X,
 } from 'lucide-react';
+import useSWR from 'swr';
+import { fetcher, api } from '@/lib/api';
 import { LogoutButton } from '@/components/logout-button';
+
+interface Notif { id: string; type: string; title: string; body: string; isRead: boolean; createdAt: string }
+
+/** Live notification bell: polls every 30s; opening marks all read. */
+function NotificationBell() {
+  const { data, mutate } = useSWR<{ notifications: Notif[]; unread: number }>(
+    '/admin/notifications', fetcher, { refreshInterval: 30_000, shouldRetryOnError: false },
+  );
+  const [open, setOpen] = useState(false);
+  const unread = data?.unread ?? 0;
+  const items = data?.notifications ?? [];
+
+  async function toggle() {
+    const opening = !open;
+    setOpen(opening);
+    if (opening && unread > 0) {
+      try { await api('/admin/notifications/read', { method: 'PATCH' }); await mutate(); } catch { /* ignore */ }
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={toggle} className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground">
+        <Bell className="h-[18px] w-[18px]" />
+        {unread > 0 && (
+          <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white">
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-50 mt-2 w-80 rounded-2xl border border-border bg-card p-2 shadow-brand">
+            <div className="px-3 py-2 text-sm font-bold">Notifications</div>
+            {items.length === 0 && <div className="px-3 pb-3 text-sm text-muted-foreground">Nothing yet.</div>}
+            <div className="max-h-80 overflow-y-auto">
+              {items.map((n) => (
+                <Link key={n.id} href="/claims" onClick={() => setOpen(false)} className="block rounded-xl px-3 py-2 hover:bg-muted/50">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${n.type === 'CLAIM_APPROVED' ? 'bg-emerald-500' : 'bg-brand-600'}`} />
+                    <span className="truncate text-sm font-semibold">{n.title}</span>
+                  </div>
+                  <div className="truncate pl-3.5 text-xs text-muted-foreground">{n.body}</div>
+                  <div className="pl-3.5 text-[10px] text-muted-foreground/70">
+                    {new Date(n.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -128,10 +186,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="ml-auto flex items-center gap-3">
-            <button className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground">
-              <Bell className="h-[18px] w-[18px]" />
-              <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-destructive" />
-            </button>
+            <NotificationBell />
             <LogoutButton />
             <div className="hidden items-center gap-3 sm:flex">
               <div className="h-9 w-9 rounded-full brand-gradient" />

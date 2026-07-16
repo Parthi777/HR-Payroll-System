@@ -228,6 +228,22 @@ data class BranchListResponse(val branches: List<MasterItemDto> = emptyList())
 data class ManagerListResponse(val managers: List<MasterItemDto> = emptyList())
 
 @JsonClass(generateAdapter = true)
+data class NotificationDto(
+    val id: String? = null,
+    val type: String? = null,
+    val title: String? = null,
+    val body: String? = null,
+    val isRead: Boolean? = null,
+    val createdAt: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class NotificationListResponse(
+    val notifications: List<NotificationDto> = emptyList(),
+    val unread: Int? = null,
+)
+
+@JsonClass(generateAdapter = true)
 data class AppVersionResponse(
     val available: Boolean? = null,
     val versionCode: Int? = null,

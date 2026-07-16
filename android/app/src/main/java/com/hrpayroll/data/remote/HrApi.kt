@@ -3,6 +3,7 @@ package com.hrpayroll.data.remote
 import com.hrpayroll.data.remote.dto.AdminLoginResponse
 import com.hrpayroll.data.remote.dto.AppVersionResponse
 import com.hrpayroll.data.remote.dto.ManagerListResponse
+import com.hrpayroll.data.remote.dto.NotificationListResponse
 import com.hrpayroll.data.remote.dto.AdminUserListResponse
 import com.hrpayroll.data.remote.dto.AdminUserResponse
 import com.hrpayroll.data.remote.dto.ApplyLeaveRequest
@@ -152,6 +153,12 @@ interface HrApi {
     suspend fun enrollFace(@Path("id") id: String, @Part photo: MultipartBody.Part): EnrollFaceResponse
 
     // Master data (Add-Employee form dropdowns)
+    // In-app notifications (admin/cashier): claims to approve / approved claims to pay.
+    @GET("admin/notifications")
+    suspend fun notifications(): NotificationListResponse
+    @retrofit2.http.PATCH("admin/notifications/read")
+    suspend fun markNotificationsRead(): Map<String, Boolean>
+
     // Self-update check (public) — compares against BuildConfig.VERSION_CODE at launch.
     @GET("app/version")
     suspend fun appVersion(): AppVersionResponse

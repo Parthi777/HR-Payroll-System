@@ -281,6 +281,20 @@ model Payslip {
   @@unique([employeeId, month, year])
 }
 
+// In-app notifications for admins/cashiers (claims workflow, branch-scoped).
+model Notification {
+  id        String   @id @default(cuid())
+  adminId   String // recipient AdminUser
+  type      String // CLAIM_SUBMITTED | CLAIM_APPROVED
+  title     String
+  body      String
+  claimId   String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([adminId, isRead])
+}
+
 model WhatsAppLog {
   id           String    @id @default(cuid())
   employeeId   String?

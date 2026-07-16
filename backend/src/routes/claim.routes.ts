@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { notifyAdmins, approverIds, cashierIds } from '../services/notification.service.js';
 import {
   createClaim,
   resubmitClaim,
@@ -80,6 +81,19 @@ export async function claimRoutes(app: FastifyInstance) {
       photo,
       pdf,
     );
+    // Notify the employee's approver(s) — reporting manager, or branch admins.
+    const emp = await app.prisma.employee.findUnique({
+      where: { id: req.user.sub },
+      select: { name: true, branchId: true, reportingManagerId: true },
+    });
+    if (emp) {
+      await notifyAdmins(app.prisma, await approverIds(app.prisma, emp), {
+        type: 'CLAIM_SUBMITTED',
+        title: 'New claim to approve',
+        body: `${emp.name}: ${fields.title} — Rs.${amount.toLocaleString('en-IN')}`,
+        claimId: claim.id,
+      });
+    }
     return { claim };
   });
 
@@ -99,6 +113,18 @@ export async function claimRoutes(app: FastifyInstance) {
       photo,
       pdf,
     );
+    const emp = await app.prisma.employee.findUnique({
+      where: { id: req.user.sub },
+      select: { name: true, branchId: true, reportingManagerId: true },
+    });
+    if (emp) {
+      await notifyAdmins(app.prisma, await approverIds(app.prisma, emp), {
+        type: 'CLAIM_SUBMITTED',
+        title: 'Claim resubmitted for approval',
+        body: `${emp.name}: ${claim.title} — Rs.${claim.amount.toLocaleString('en-IN')}`,
+        claimId: claim.id,
+      });
+    }
     return { claim };
   });
 
@@ -166,6 +192,19 @@ export async function claimRoutes(app: FastifyInstance) {
   app.patch('/admin/claims/:id/approve', { preHandler: approveGuard }, async (req) => {
     const { id } = req.params as { id: string };
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'APPROVED', undefined, req.user.branchId);
+    // Approved → the branch's cashier(s) take over: check + pay.
+    const emp = await app.prisma.employee.findUnique({
+      where: { id: claim.employeeId },
+      select: { name: true, branchId: true },
+    });
+    if (emp) {
+      await notifyAdmins(app.prisma, await cashierIds(app.prisma, emp.branchId), {
+        type: 'CLAIM_APPROVED',
+        title: 'Approved claim ready to pay',
+        body: `${emp.name}: ${claim.title} — Rs.${claim.amount.toLocaleString('en-IN')}`,
+        claimId: claim.id,
+      });
+    }
     return { claim };
   });
 
