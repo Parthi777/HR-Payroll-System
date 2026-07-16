@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { AppError } from '../utils/AppError.js';
 import { dispatchWhatsApp, waTemplates } from '../services/whatsapp/whatsapp.service.js';
 
 const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -31,20 +32,39 @@ export async function leaveRoutes(app: FastifyInstance) {
     return { balances };
   });
 
-  // Admin
-  app.get('/admin/leaves/pending', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async () => {
-    const pending = await app.prisma.leave.findMany({ where: { status: 'PENDING' }, include: { employee: true } });
+  // Admin. Branch managers only see requests from employees who report to them;
+  // SUPER_ADMIN / HR_MANAGER see all.
+  app.get('/admin/leaves/pending', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async (req) => {
+    const where: { status: string; employeeId?: { in: string[] } } = { status: 'PENDING' };
+    if (req.user.role === 'BRANCH_MANAGER') {
+      const reports = await app.prisma.employee.findMany({
+        where: { reportingManagerId: req.user.sub },
+        select: { id: true },
+      });
+      where.employeeId = { in: reports.map((r) => r.id) };
+    }
+    const pending = await app.prisma.leave.findMany({ where, include: { employee: true } });
     return { pending };
   });
 
   app.patch('/admin/leaves/:id/approve', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async (req) => {
     const { id } = req.params as { id: string };
     const { note } = z.object({ note: z.string().optional() }).parse(req.body ?? {});
+    const pending = await app.prisma.leave.findUnique({ where: { id } });
+    if (!pending) throw AppError.notFound('Leave request');
+    if (pending.status !== 'PENDING') throw new AppError('This leave request was already decided', 409);
     const leave = await app.prisma.leave.update({
       where: { id },
       data: { status: 'APPROVED', approvedBy: req.user.sub, approverNote: note },
       include: { employee: true },
     });
+    // Deduct from the year's balance for balance-tracked types (CL — also SL/EL if ever used).
+    if (['CL', 'SL', 'EL'].includes(leave.type)) {
+      await app.prisma.leaveBalance.updateMany({
+        where: { employeeId: leave.employeeId, type: leave.type, year: leave.fromDate.getFullYear() },
+        data: { used: { increment: leave.days } },
+      });
+    }
     await dispatchWhatsApp(app.prisma, {
       phone: leave.employee.phone,
       employeeId: leave.employeeId,
@@ -55,9 +75,43 @@ export async function leaveRoutes(app: FastifyInstance) {
     return { leave };
   });
 
+  // CL balance management (web admin). Company policy uses CL only — no SL/EL.
+  app.get('/admin/leaves/balances', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async () => {
+    const year = new Date().getFullYear();
+    const employees = await app.prisma.employee.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, name: true, employeeCode: true },
+      orderBy: { employeeCode: 'asc' },
+    });
+    const rows = await app.prisma.leaveBalance.findMany({ where: { year, type: 'CL' } });
+    const byEmployee = new Map(rows.map((b) => [b.employeeId, b]));
+    return {
+      year,
+      balances: employees.map((e) => {
+        const b = byEmployee.get(e.id);
+        return { employeeId: e.id, name: e.name, employeeCode: e.employeeCode, total: b?.total ?? 0, used: b?.used ?? 0 };
+      }),
+    };
+  });
+
+  app.put('/admin/leaves/balances/:employeeId', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
+    const { employeeId } = req.params as { employeeId: string };
+    const { total } = z.object({ total: z.number().min(0).max(365) }).parse(req.body);
+    const year = new Date().getFullYear();
+    const balance = await app.prisma.leaveBalance.upsert({
+      where: { employeeId_type_year: { employeeId, type: 'CL', year } },
+      update: { total },
+      create: { employeeId, type: 'CL', year, total, used: 0 },
+    });
+    return { balance };
+  });
+
   app.patch('/admin/leaves/:id/reject', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async (req) => {
     const { id } = req.params as { id: string };
     const { note } = z.object({ note: z.string() }).parse(req.body);
+    const pending = await app.prisma.leave.findUnique({ where: { id } });
+    if (!pending) throw AppError.notFound('Leave request');
+    if (pending.status !== 'PENDING') throw new AppError('This leave request was already decided', 409);
     const leave = await app.prisma.leave.update({
       where: { id },
       data: { status: 'REJECTED', approvedBy: req.user.sub, approverNote: note },

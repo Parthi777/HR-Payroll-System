@@ -12,7 +12,7 @@
 //   LeaveStatus     : PENDING | APPROVED | REJECTED | CANCELLED
 //   ClaimType       : TRAVEL | FOOD | MEDICAL | ACCOMMODATION | OTHER
 //   ClaimStatus     : PENDING | APPROVED | REJECTED | NEEDS_CLARIFICATION | PAID
-//   PayslipStatus   : DRAFT | FINALIZED | SENT | PAID
+//   PayslipStatus   : DRAFT | FINALIZED | WITHHELD | SENT | PAID
 //   WAStatus        : QUEUED | SENT | DELIVERED | READ | FAILED
 //   AdminRole       : SUPER_ADMIN | HR_MANAGER | BRANCH_MANAGER | PAYROLL_ADMIN | CASHIER
 
@@ -44,6 +44,7 @@ model Employee {
   deviceId        String? // Device fingerprint binding
   driveFolderId   String? // Google Drive folder id holding this employee's claim files
   passwordHash    String? // bcrypt; set by admin at creation — employee logs in with phone + password
+  reportingManagerId String? // AdminUser id — approvals (leave / outside check-in) route to this manager
   status          String  @default("ACTIVE") // EmployeeStatus
   joiningDate     DateTime
   salary          Float
@@ -247,6 +248,15 @@ model Payslip {
   presentDays     Int
   absentDays      Int
   lopDays         Float
+  // OT & Sunday-duty metrics (owner policy: >10h/day accrues OT; 10 OT hours = 1 day's pay)
+  otHours         Float  @default(0)
+  otDays          Float  @default(0)
+  otPay           Float  @default(0)
+  sundayDays      Int    @default(0)
+  sundayPay       Float  @default(0)
+  // Late-punch discipline: count of LATE days; pay date shifts / slip withheld per policy
+  lateDays        Int       @default(0)
+  payDate         DateTime?
   basicSalary     Float
   hra             Float
   da              Float

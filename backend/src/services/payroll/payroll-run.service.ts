@@ -11,16 +11,27 @@ import { calculatePF, calculateESI } from './payroll.service.js';
  *  - Working a Sunday (any hours, even a partial shift) earns one EXTRA full
  *    day's salary on top of the paid weekly-off.
  *  - Overtime: duty time beyond OT_DAILY_THRESHOLD_HOURS (10) in a day
- *    accumulates as OT hours; every OT_HOURS_PER_DAY (10) OT hours in the month
- *    pays one extra full day (50 OT hours → 5 OT days).
+ *    accumulates as OT hours; every OT_HOURS_PER_DAY (10) OT hours pays one
+ *    extra day, pro-rated (15 OT hours → 1.5 days, 20 → 2 days).
  *  - Out-of-geofence check-ins count only once HR approves them (PENDING /
  *    REJECTED attendance is not paid; rejected days are marked ABSENT).
  *  - Late marking uses the shift grace period (default 15 min) at check-in.
+ *  - Late-punch discipline (configurable via PAYROLL_* env vars): salary is
+ *    normally dated the 5th of the next month; LATE_SHIFT_AT (5) or more late
+ *    punches moves it to the 8th; more than LATE_WITHHOLD_OVER (8) late punches
+ *    WITHHOLDS the slip — the amounts are still computed and visible, but the
+ *    employee PDF is blocked until HR releases it.
  */
 const MONTH_DIVISOR = 30;
 const CL_PER_YEAR = 12;
 const OT_DAILY_THRESHOLD_HOURS = 10;
 const OT_HOURS_PER_DAY = 10;
+
+// Late-punch policy — env-overridable so the rule can be tuned without a code change.
+const LATE_SHIFT_AT = Number(process.env.PAYROLL_LATE_SHIFT_AT ?? 5); // ≥ this many lates → pay on the late day
+const LATE_WITHHOLD_OVER = Number(process.env.PAYROLL_LATE_WITHHOLD_OVER ?? 8); // > this many lates → withhold slip
+const PAY_DAY_NORMAL = Number(process.env.PAYROLL_PAY_DAY ?? 5); // day of next month
+const PAY_DAY_LATE = Number(process.env.PAYROLL_PAY_DAY_LATE ?? 8);
 
 const DAY_MS = 86_400_000;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -83,6 +94,7 @@ export async function runMonthlyPayroll(
     let lopDays = 0;
     let sundayWorkedDays = 0; // each pays one EXTRA day
     let otMinutes = 0;
+    let lateDays = 0; // late punches this month (discipline policy)
 
     for (let dn = 1; dn <= daysInMonth; dn++) {
       const d = new Date(year, month - 1, dn);
@@ -94,6 +106,7 @@ export async function runMonthlyPayroll(
       if (attPaid && att!.workingMinutes) {
         otMinutes += Math.max(0, att!.workingMinutes - OT_DAILY_THRESHOLD_HOURS * 60);
       }
+      if (attPaid && att!.status === 'LATE') lateDays += 1;
 
       const isOffDay = d.getDay() === 0 || holidaySet.has(dayKey(d));
       if (isOffDay) {
@@ -132,12 +145,14 @@ export async function runMonthlyPayroll(
       absentDays += 1;
     }
 
-    const otDays = Math.floor(otMinutes / 60 / OT_HOURS_PER_DAY);
-    const extraDays = sundayWorkedDays + otDays;
+    const otHours = round2(otMinutes / 60);
+    const otDays = round2(otHours / OT_HOURS_PER_DAY); // pro-rated: 15h → 1.5 days
 
     const perDay = emp.salary / MONTH_DIVISOR;
     const basePay = perDay * paidDays;
-    const extraPay = perDay * extraDays;
+    const otPay = round2(perDay * otDays);
+    const sundayPay = round2(perDay * sundayWorkedDays);
+    const extraPay = otPay + sundayPay;
 
     // Standard structure split on base pay; Sunday-work + OT pay goes into
     // Other Allowances so the payslip shows it as an earning on top.
@@ -151,10 +166,24 @@ export async function runMonthlyPayroll(
     const esi = calculateESI(grossSalary); // 0.75% if gross <= ₹21,000
     const netSalary = round2(Math.max(0, grossSalary - pf - esi));
 
+    // Late-punch policy: pay date shifts at LATE_SHIFT_AT lates; slip withheld
+    // beyond LATE_WITHHOLD_OVER. `month` is 1-based, so Date(year, month, d)
+    // lands on day d of the FOLLOWING month (July salary → Aug 5/8).
+    const payDay = lateDays >= LATE_SHIFT_AT ? PAY_DAY_LATE : PAY_DAY_NORMAL;
+    const payDate = new Date(year, month, payDay);
+    const withheld = lateDays > LATE_WITHHOLD_OVER;
+
     const fields = {
       presentDays: Math.round(presentDays),
       absentDays,
       lopDays,
+      lateDays,
+      payDate,
+      otHours,
+      otDays,
+      otPay,
+      sundayDays: sundayWorkedDays,
+      sundayPay,
       basicSalary: earnedBasic,
       hra: earnedHra,
       da: earnedDa,
@@ -166,7 +195,7 @@ export async function runMonthlyPayroll(
       tdsDeduction: 0,
       otherDeductions: 0,
       netSalary,
-      status: 'FINALIZED',
+      status: withheld ? 'WITHHELD' : 'FINALIZED',
     };
 
     await prisma.payslip.upsert({
