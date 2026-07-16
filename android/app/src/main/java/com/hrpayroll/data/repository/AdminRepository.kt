@@ -36,6 +36,7 @@ class AdminRepository @Inject constructor(
 
     // Master data for the Add-Employee form
     suspend fun branches() = api.branches().branches
+    suspend fun managers() = api.managers().managers
     suspend fun departments() = api.departments().departments
     suspend fun designations() = api.designations().designations
     suspend fun shifts() = api.shifts().shifts

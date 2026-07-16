@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.hrpayroll.ui.components.UpdatePrompt
 import com.hrpayroll.ui.navigation.HrPayrollNavHost
 import com.hrpayroll.ui.theme.HrPayrollTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -16,6 +17,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             HrPayrollTheme {
                 HrPayrollNavHost()
+                UpdatePrompt() // self-update dialog when a newer APK is published
             }
         }
     }

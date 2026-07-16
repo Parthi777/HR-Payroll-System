@@ -79,6 +79,8 @@ data class PayslipDto(
     val esiDeduction: Double? = null,
     val netSalary: Double? = null,
     val status: String? = null,
+    val lateDays: Int? = null,
+    val payDate: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -221,6 +223,17 @@ data class MasterItemDto(val id: String? = null, val name: String? = null)
 
 @JsonClass(generateAdapter = true)
 data class BranchListResponse(val branches: List<MasterItemDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class ManagerListResponse(val managers: List<MasterItemDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class AppVersionResponse(
+    val available: Boolean? = null,
+    val versionCode: Int? = null,
+    val versionName: String? = null,
+    val url: String? = null,
+)
 
 @JsonClass(generateAdapter = true)
 data class DepartmentListResponse(val departments: List<MasterItemDto> = emptyList())

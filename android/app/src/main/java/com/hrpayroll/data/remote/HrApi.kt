@@ -1,6 +1,8 @@
 package com.hrpayroll.data.remote
 
 import com.hrpayroll.data.remote.dto.AdminLoginResponse
+import com.hrpayroll.data.remote.dto.AppVersionResponse
+import com.hrpayroll.data.remote.dto.ManagerListResponse
 import com.hrpayroll.data.remote.dto.AdminUserListResponse
 import com.hrpayroll.data.remote.dto.AdminUserResponse
 import com.hrpayroll.data.remote.dto.ApplyLeaveRequest
@@ -156,6 +158,12 @@ interface HrApi {
     suspend fun enrollFace(@Path("id") id: String, @Part photo: MultipartBody.Part): EnrollFaceResponse
 
     // Master data (Add-Employee form dropdowns)
+    // Self-update check (public) — compares against BuildConfig.VERSION_CODE at launch.
+    @GET("app/version")
+    suspend fun appVersion(): AppVersionResponse
+
+    @GET("admin/employees/managers")
+    suspend fun managers(): ManagerListResponse
     @GET("admin/branches")
     suspend fun branches(): BranchListResponse
 

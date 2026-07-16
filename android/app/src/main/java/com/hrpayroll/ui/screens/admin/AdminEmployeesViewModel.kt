@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.admin
 
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.local.TokenStore
@@ -21,6 +22,7 @@ data class AdminEmployeesUiState(
     val departments: List<MasterItemDto> = emptyList(),
     val designations: List<MasterItemDto> = emptyList(),
     val shifts: List<MasterItemDto> = emptyList(),
+    val managers: List<MasterItemDto> = emptyList(),
     val saving: Boolean = false,
     /** Employee id whose face photo is uploading. */
     val enrollingId: String? = null,
@@ -54,6 +56,7 @@ class AdminEmployeesViewModel @Inject constructor(
             val deD = async { runCatching { repository.departments() }.getOrDefault(emptyList()) }
             val dgD = async { runCatching { repository.designations() }.getOrDefault(emptyList()) }
             val shD = async { runCatching { repository.shifts() }.getOrDefault(emptyList()) }
+            val mgD = async { runCatching { repository.managers() }.getOrDefault(emptyList()) }
             val emp = empD.await()
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
@@ -63,6 +66,7 @@ class AdminEmployeesViewModel @Inject constructor(
                 departments = deD.await(),
                 designations = dgD.await(),
                 shifts = shD.await(),
+                managers = mgD.await(),
             )
         }
     }
@@ -77,6 +81,7 @@ class AdminEmployeesViewModel @Inject constructor(
         departmentId: String,
         designationId: String,
         shiftId: String,
+        reportingManagerId: String?,
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(saving = true, error = null, createdOk = false)
@@ -91,13 +96,14 @@ class AdminEmployeesViewModel @Inject constructor(
                 put("shiftId", shiftId)
                 put("joiningDate", java.time.LocalDate.now().toString())
                 if (password.isNotBlank()) put("password", password)
+                if (reportingManagerId != null) put("reportingManagerId", reportingManagerId)
             }
             runCatching { repository.createEmployee(body) }
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(saving = false, createdOk = true, notice = "$name onboarded ✓")
                     refresh()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(saving = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(saving = false, error = it.userMessage()) }
         }
     }
 
@@ -110,7 +116,7 @@ class AdminEmployeesViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(enrollingId = null, notice = "Face enrolled ✓")
                     refresh()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(enrollingId = null, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(enrollingId = null, error = it.userMessage()) }
         }
     }
 

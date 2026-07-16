@@ -46,10 +46,9 @@ import com.hrpayroll.ui.theme.StatusOffBg
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.ui.theme.StatusPresentBg
 
+// Company policy: Casual Leave only (no SL/EL), plus LOP and half day.
 private val LEAVE_TYPES = listOf(
     "CL" to "Casual Leave",
-    "SL" to "Sick Leave",
-    "EL" to "Earned Leave",
     "LOP" to "Loss of Pay",
     "HALF_DAY" to "Half Day",
 )
@@ -91,11 +90,7 @@ fun LeaveScreen(viewModel: LeaveViewModel = hiltViewModel()) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        BalancePill("CL", balance("CL"), Modifier.weight(1f))
-                        BalancePill("SL", balance("SL"), Modifier.weight(1f))
-                        BalancePill("EL", balance("EL"), Modifier.weight(1f))
-                    }
+                    BalancePill("Casual Leave remaining", balance("CL"), Modifier.fillMaxWidth())
                     Spacer(Modifier.height(20.dp))
 
                     Text("Apply for Leave", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)

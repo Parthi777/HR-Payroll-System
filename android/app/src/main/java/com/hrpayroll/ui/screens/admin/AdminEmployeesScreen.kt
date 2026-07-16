@@ -110,7 +110,9 @@ fun AdminEmployeesScreen(
     }
 
     fun launchCamera(employeeId: String) {
-        val file = File(context.cacheDir, "face-enroll.jpg")
+        // Unique file per capture — a reused name can upload the PREVIOUS
+        // employee's photo if the camera ever fails to overwrite it.
+        val file = File(context.cacheDir, "face-enroll-${System.currentTimeMillis()}.jpg")
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         cameraUri = uri
         cameraTarget = employeeId
@@ -203,8 +205,8 @@ fun AdminEmployeesScreen(
     if (showAdd) {
         AddEmployeeDialog(
             state = state,
-            onCreate = { name, code, phone, salary, pwd, br, de, dg, sh ->
-                viewModel.create(name, code, phone, salary, pwd, br, de, dg, sh)
+            onCreate = { name, code, phone, salary, pwd, br, de, dg, sh, mg ->
+                viewModel.create(name, code, phone, salary, pwd, br, de, dg, sh, mg)
             },
             onDismiss = { showAdd = false },
         )
@@ -282,6 +284,7 @@ private fun AddEmployeeDialog(
     onCreate: (
         name: String, code: String, phone: String, salary: Double, password: String,
         branchId: String, departmentId: String, designationId: String, shiftId: String,
+        reportingManagerId: String?,
     ) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -294,6 +297,7 @@ private fun AddEmployeeDialog(
     var department by remember { mutableStateOf<MasterItemDto?>(state.departments.firstOrNull()) }
     var designation by remember { mutableStateOf<MasterItemDto?>(state.designations.firstOrNull()) }
     var shift by remember { mutableStateOf<MasterItemDto?>(state.shifts.firstOrNull()) }
+    var manager by remember { mutableStateOf<MasterItemDto?>(null) }
     var localError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -340,6 +344,8 @@ private fun AddEmployeeDialog(
                 MasterDropdown("Designation", state.designations, designation) { designation = it }
                 Spacer(Modifier.height(8.dp))
                 MasterDropdown("Shift", state.shifts, shift) { shift = it }
+                Spacer(Modifier.height(8.dp))
+                MasterDropdown("Reporting manager (approvals)", state.managers, manager) { manager = it }
 
                 (localError ?: state.error)?.let {
                     Spacer(Modifier.height(8.dp))
@@ -359,7 +365,7 @@ private fun AddEmployeeDialog(
                         localError = "Create branch/department/designation/shift on the web first"
                     } else {
                         localError = null
-                        onCreate(name.trim(), code.trim(), phone.trim(), sal, password, br, de, dg, sh)
+                        onCreate(name.trim(), code.trim(), phone.trim(), sal, password, br, de, dg, sh, manager?.id)
                     }
                 },
             ) {

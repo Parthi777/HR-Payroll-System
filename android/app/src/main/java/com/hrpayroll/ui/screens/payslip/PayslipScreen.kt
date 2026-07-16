@@ -76,6 +76,34 @@ private fun PayslipContent(slip: PayslipDto) {
     )
     Spacer(Modifier.height(12.dp))
 
+    // Late-punch policy: slip withheld beyond the late limit; otherwise show pay date.
+    if (slip.status == "WITHHELD") {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE4E6)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        ) {
+            Text(
+                "Salary slip withheld — ${slip.lateDays ?: 0} late punches this month. Please contact HR.",
+                modifier = Modifier.padding(14.dp),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFFE11D48),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+    } else if (slip.payDate != null) {
+        Text(
+            "Salary date: ${slip.payDate.take(10)}" +
+                if ((slip.lateDays ?: 0) >= 5) "  ·  moved from 5th (${slip.lateDays} late punches)" else "",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+        )
+        Spacer(Modifier.height(12.dp))
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
