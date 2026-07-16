@@ -189,18 +189,38 @@ export default function GeofencePage() {
             <div>
               <div className="mb-1 flex items-center justify-between text-sm">
                 <span className="font-medium">Geofence radius</span>
-                <span className="text-muted-foreground">{draft.radius} m</span>
+                <span className="text-muted-foreground">
+                  {Math.round(draft.radius * 3.28084)} ft ({draft.radius.toFixed(1)} m)
+                </span>
               </div>
-              <input
-                type="range"
-                min={20}
-                max={2000}
-                step={10}
-                value={draft.radius}
-                onChange={(e) => setDraft({ ...draft, radius: parseInt(e.target.value) })}
-                className="w-full accent-brand-600"
-              />
-              <div className="flex justify-between text-[11px] text-muted-foreground"><span>20 m</span><span>2 km</span></div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={3}
+                  max={3300}
+                  step={1}
+                  value={Math.round(draft.radius * 3.28084)}
+                  onChange={(e) => setDraft({ ...draft, radius: Number((parseInt(e.target.value) / 3.28084).toFixed(2)) })}
+                  className="w-full accent-brand-600"
+                />
+                <input
+                  type="number"
+                  min={3}
+                  max={33000}
+                  value={Math.round(draft.radius * 3.28084)}
+                  onChange={(e) => {
+                    const ft = Number(e.target.value);
+                    if (Number.isFinite(ft) && ft >= 3) setDraft({ ...draft, radius: Number((ft / 3.28084).toFixed(2)) });
+                  }}
+                  className="h-9 w-24 rounded-lg border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                />
+                <span className="text-xs text-muted-foreground">ft</span>
+              </div>
+              <div className="flex justify-between text-[11px] text-muted-foreground"><span>3 ft</span><span>3,300 ft (~1 km)</span></div>
+              <p className="mt-1 text-[11px] text-amber-600">
+                Note: phone GPS is typically accurate to ±15–50 ft. A fence under ~50 ft may reject genuine
+                check-ins standing at the door — 150–300 ft is a safe strict-mode radius.
+              </p>
             </div>
 
             <label className="flex cursor-pointer items-center gap-3 text-sm">
@@ -237,7 +257,7 @@ export default function GeofencePage() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-semibold">{b.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      {b.address} · {b.geofenceLat.toFixed(4)}, {b.geofenceLng.toFixed(4)} · radius {b.geofenceRadius}m
+                      {b.address} · {b.geofenceLat.toFixed(4)}, {b.geofenceLng.toFixed(4)} · radius {Math.round(b.geofenceRadius * 3.28084)} ft
                     </div>
                   </div>
                   <span className={`chip ${b.strictMode ? 'chip-off' : 'chip-present'}`}>{b.strictMode ? 'Strict' : 'Soft'}</span>

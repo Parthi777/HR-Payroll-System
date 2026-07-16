@@ -13,7 +13,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      // Only claim JSON when we actually send a body — Fastify rejects
+      // an empty body with a JSON content-type (e.g. bodyless PATCH).
+      ...(options.body != null ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },

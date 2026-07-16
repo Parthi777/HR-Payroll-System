@@ -14,6 +14,13 @@ interface Payslip {
   pfDeduction: number;
   esiDeduction: number;
   presentDays: number;
+  otHours?: number;
+  otDays?: number;
+  otPay?: number;
+  sundayDays?: number;
+  sundayPay?: number;
+  lateDays?: number;
+  payDate?: string | null;
   status: string;
   employee?: { name: string; employeeCode: string } | null;
 }
@@ -36,6 +43,8 @@ export default function PayrollPage() {
   const totalGross = payslips.reduce((s, p) => s + p.grossSalary, 0);
   const totalDed = payslips.reduce((s, p) => s + p.pfDeduction + p.esiDeduction, 0);
   const totalNet = payslips.reduce((s, p) => s + p.netSalary, 0);
+  const totalOtHours = payslips.reduce((s, p) => s + (p.otHours ?? 0), 0);
+  const totalOtPay = payslips.reduce((s, p) => s + (p.otPay ?? 0) + (p.sundayPay ?? 0), 0);
 
   async function run() {
     setRunning(true);
@@ -72,10 +81,11 @@ export default function PayrollPage() {
         </button>
       </PageHero>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <Card><CardContent className="p-5"><div className="text-2xl font-bold">{inr(totalGross)}</div><div className="text-xs text-muted-foreground">Gross Payout</div></CardContent></Card>
         <Card><CardContent className="p-5"><div className="text-2xl font-bold text-rose-600">{inr(totalDed)}</div><div className="text-xs text-muted-foreground">Deductions</div></CardContent></Card>
         <Card><CardContent className="p-5"><div className="text-2xl font-bold text-emerald-600">{inr(totalNet)}</div><div className="text-xs text-muted-foreground">Net Payout</div></CardContent></Card>
+        <Card><CardContent className="p-5"><div className="text-2xl font-bold text-indigo-600">{inr(totalOtPay)}</div><div className="text-xs text-muted-foreground">OT + Sunday Pay · {totalOtHours.toFixed(1)}h OT</div></CardContent></Card>
         <Card><CardContent className="p-5"><div className="text-2xl font-bold">{payslips.length}</div><div className="text-xs text-muted-foreground">Payslips</div></CardContent></Card>
       </div>
 
@@ -94,6 +104,11 @@ export default function PayrollPage() {
                   <tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="px-6 py-3 font-medium">Employee</th>
                     <th className="px-6 py-3 font-medium">Present</th>
+                    <th className="px-6 py-3 font-medium">Late</th>
+                    <th className="px-6 py-3 font-medium">Pay Date</th>
+                    <th className="px-6 py-3 font-medium">OT</th>
+                    <th className="px-6 py-3 font-medium">Sunday</th>
+                    <th className="px-6 py-3 font-medium">OT + Sun Pay</th>
                     <th className="px-6 py-3 font-medium">Gross</th>
                     <th className="px-6 py-3 font-medium">Deductions</th>
                     <th className="px-6 py-3 font-medium">Net</th>
@@ -103,8 +118,28 @@ export default function PayrollPage() {
                 <tbody>
                   {payslips.map((p) => (
                     <tr key={p.id} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
-                      <td className="px-6 py-4 font-medium">{p.employee?.name ?? '—'}</td>
+                      <td className="px-6 py-4 font-medium">
+                        {p.employee?.name ?? '—'}
+                        {p.status === 'WITHHELD' && <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">WITHHELD</span>}
+                      </td>
                       <td className="px-6 py-4">{p.presentDays}d</td>
+                      <td className="px-6 py-4">
+                        {(p.lateDays ?? 0) > 0
+                          ? <span className={(p.lateDays ?? 0) >= 5 ? 'font-semibold text-rose-600' : 'text-amber-600'}>{p.lateDays}d</span>
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-6 py-4">
+                        {p.payDate
+                          ? new Date(p.payDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-6 py-4">
+                        {(p.otHours ?? 0) > 0
+                          ? <span title={`${p.otHours}h OT → ${p.otDays} day(s) pay`}>{p.otHours}h <span className="text-xs text-muted-foreground">({p.otDays}d)</span></span>
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-6 py-4">{(p.sundayDays ?? 0) > 0 ? `${p.sundayDays}d` : <span className="text-muted-foreground">—</span>}</td>
+                      <td className="px-6 py-4 text-indigo-600">{((p.otPay ?? 0) + (p.sundayPay ?? 0)) > 0 ? inr((p.otPay ?? 0) + (p.sundayPay ?? 0)) : <span className="text-muted-foreground">—</span>}</td>
                       <td className="px-6 py-4">{inr(p.grossSalary)}</td>
                       <td className="px-6 py-4 text-rose-600">- {inr(p.pfDeduction + p.esiDeduction)}</td>
                       <td className="px-6 py-4 font-semibold text-emerald-600">{inr(p.netSalary)}</td>
@@ -124,6 +159,14 @@ export default function PayrollPage() {
           )}
         </CardContent>
       </Card>
+
+      <p className="text-xs text-muted-foreground">
+        Salary policy: per-day = monthly ÷ 30 · OT counts only beyond 10 hours/day · every 10 OT hours
+        pays 1 extra day (15h → 1.5 days, 20h → 2 days) · Sunday duty pays +1 full day on top of the
+        paid weekly-off · CL paid up to the yearly quota, then LOP · salary dated the 5th of next month,
+        moved to the 8th at 5+ late punches · more than 8 late punches withholds the slip (amounts still
+        computed; employee sees &quot;contact HR&quot;).
+      </p>
     </div>
   );
 }

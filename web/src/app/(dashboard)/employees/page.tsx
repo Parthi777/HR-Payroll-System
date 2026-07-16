@@ -21,6 +21,7 @@ interface EmployeeRow {
   designationId: string;
   shiftId: string;
   joiningDate: string;
+  reportingManagerId?: string | null;
   branch?: { name: string } | null;
 }
 interface Named { id: string; name: string }
@@ -105,6 +106,7 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
   const { data: dp } = useSWR<{ departments: Named[] }>('/admin/departments', fetcher, { shouldRetryOnError: false });
   const { data: dg } = useSWR<{ designations: Named[] }>('/admin/designations', fetcher, { shouldRetryOnError: false });
   const { data: sh } = useSWR<{ shifts: Named[] }>('/shifts', fetcher, { shouldRetryOnError: false });
+  const { data: mg } = useSWR<{ managers: (Named & { role: string })[] }>('/admin/employees/managers', fetcher, { shouldRetryOnError: false });
   const editing = !!employee;
 
   const [f, setF] = useState({
@@ -119,6 +121,7 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
     departmentId: employee?.departmentId ?? '',
     designationId: employee?.designationId ?? '',
     shiftId: employee?.shiftId ?? '',
+    reportingManagerId: employee?.reportingManagerId ?? '',
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -145,6 +148,7 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
         email: f.email || undefined,
         password: f.password || undefined,
         salary: Number(f.salary),
+        reportingManagerId: f.reportingManagerId || null,
       });
       if (editing) await api(`/admin/employees/${employee!.id}`, { method: 'PUT', body });
       else await api('/admin/employees', { method: 'POST', body });
@@ -188,6 +192,10 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
           <select className={input} value={f.designationId} onChange={(e) => set('designationId', e.target.value)}>
             <option value="">Designation *</option>
             {dg?.designations.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+          <select className={`${input} col-span-2`} value={f.reportingManagerId} onChange={(e) => set('reportingManagerId', e.target.value)} title="Leave/outside check-in approvals route to this manager">
+            <option value="">Reporting manager (approvals) — none</option>
+            {mg?.managers.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.role.replace('_', ' ')}</option>)}
           </select>
         </div>
         {err && <p className="mt-3 text-sm text-destructive">{err}</p>}
