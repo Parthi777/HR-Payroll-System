@@ -316,19 +316,6 @@ model GeofenceViolation {
 // ─────────────────────────────────────────────────────────────
 // Auth / OTP / RBAC / Audit
 // ─────────────────────────────────────────────────────────────
-
-model OtpCode {
-  id        String   @id @default(cuid())
-  phone     String
-  codeHash  String // bcrypt hash of the 6-digit code (never store plaintext)
-  expiresAt DateTime
-  consumed  Boolean  @default(false)
-  attempts  Int      @default(0)
-  createdAt DateTime @default(now())
-
-  @@index([phone])
-}
-
 model AdminUser {
   id           String  @id @default(cuid())
   name         String

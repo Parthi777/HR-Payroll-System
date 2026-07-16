@@ -55,7 +55,6 @@ async function main() {
   deleted.payslips = (await prisma.payslip.deleteMany()).count;
   deleted.geofenceViolations = (await prisma.geofenceViolation.deleteMany()).count;
   deleted.whatsappLogs = (await prisma.whatsAppLog.deleteMany()).count;
-  deleted.otpCodes = (await prisma.otpCode.deleteMany()).count;
   deleted.auditLogs = (await prisma.auditLog.deleteMany()).count;
   deleted.employees = (await prisma.employee.deleteMany()).count;
   deleted.branches = (await prisma.branch.deleteMany()).count;

@@ -44,12 +44,6 @@ import retrofit2.http.Streaming
 /** Retrofit interface mapping the backend REST API (see CLAUDE.md API Endpoints). */
 interface HrApi {
 
-    @POST("auth/send-otp")
-    suspend fun sendOtp(@Body body: Map<String, String>): OtpResponse
-
-    @POST("auth/verify-otp")
-    suspend fun verifyOtp(@Body body: Map<String, String>): OtpResponse
-
     @POST("auth/employee-login")
     suspend fun employeeLogin(@Body body: Map<String, String>): OtpResponse
 

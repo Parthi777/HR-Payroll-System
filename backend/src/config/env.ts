@@ -11,9 +11,6 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
-  // Dev-only fixed OTP so check-in can be tested without an SMS provider wired.
-  DEV_FIXED_OTP: z.string().optional(),
-
   JWT_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
 

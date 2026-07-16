@@ -1,64 +1,7 @@
 import bcrypt from 'bcrypt';
 import type { PrismaClient } from '@prisma/client';
 import { AppError } from '../../utils/AppError.js';
-import { env } from '../../config/env.js';
 import { normalizePhone } from '../../utils/phone.js';
-
-const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_OTP_ATTEMPTS = 5;
-
-/**
- * Generate a 6-digit OTP, store only its bcrypt hash, return the plaintext so the
- * caller can dispatch it (SMS/WhatsApp) — or, in dev, surface it directly.
- */
-export async function createOtp(prisma: PrismaClient, phone: string): Promise<string> {
-  const code = env.DEV_FIXED_OTP ?? String(Math.floor(100000 + Math.random() * 900000));
-  const codeHash = await bcrypt.hash(code, 10);
-  await prisma.otpCode.create({
-    data: { phone, codeHash, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
-  });
-  return code;
-}
-
-/** Verify an OTP and return the matching employee. Throws on any failure. */
-export async function verifyOtp(prisma: PrismaClient, phone: string, otp: string) {
-  // TEMP (dev only): OTP disabled — a blank OTP logs in by phone alone. Auto-off
-  // in production (NODE_ENV=production). Remove this block to restore OTP login.
-  if (env.NODE_ENV !== 'production' && otp.trim() === '') {
-    const employee = await prisma.employee.findUnique({ where: { phone } });
-    if (!employee) throw new AppError(`No employee registered for ${phone}`, 404);
-    return employee;
-  }
-
-  // Dev convenience: when a fixed OTP is configured (no SMS provider), accept it
-  // directly — independent of send-otp rate limits, the 5-min expiry, or consumption.
-  // Removed automatically in production where DEV_FIXED_OTP is unset.
-  if (env.DEV_FIXED_OTP && otp === env.DEV_FIXED_OTP) {
-    const employee = await prisma.employee.findUnique({ where: { phone } });
-    if (!employee) throw new AppError(`No employee registered for ${phone}`, 404);
-    return employee;
-  }
-
-  const record = await prisma.otpCode.findFirst({
-    where: { phone, consumed: false },
-    orderBy: { createdAt: 'desc' },
-  });
-  if (!record) throw AppError.unauthorized('No OTP requested for this number');
-  if (record.expiresAt < new Date()) throw AppError.unauthorized('OTP expired');
-  if (record.attempts >= MAX_OTP_ATTEMPTS) throw AppError.unauthorized('Too many attempts — request a new OTP');
-
-  const ok = await bcrypt.compare(otp, record.codeHash);
-  if (!ok) {
-    await prisma.otpCode.update({ where: { id: record.id }, data: { attempts: record.attempts + 1 } });
-    throw AppError.unauthorized('Invalid OTP');
-  }
-
-  await prisma.otpCode.update({ where: { id: record.id }, data: { consumed: true } });
-
-  const employee = await prisma.employee.findUnique({ where: { phone } });
-  if (!employee) throw new AppError(`No employee registered for ${phone}`, 404);
-  return employee;
-}
 
 /** Employee login with phone + password (password is set by the admin at creation). */
 export async function employeeLogin(prisma: PrismaClient, phone: string, password: string) {
