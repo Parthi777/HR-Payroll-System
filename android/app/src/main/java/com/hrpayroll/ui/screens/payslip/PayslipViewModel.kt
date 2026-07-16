@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.payslip
 
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.remote.dto.PayslipDto
@@ -32,7 +33,7 @@ class PayslipViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             runCatching { repository.myPayslips() }
                 .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false, payslips = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage()) }
         }
     }
 }

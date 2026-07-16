@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.admin
 
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.local.TokenStore
@@ -40,14 +41,14 @@ class AdminUsersViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             runCatching { repository.adminUsers() }
                 .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false, admins = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage()) }
         }
     }
 
     fun setActive(id: String, active: Boolean) {
         viewModelScope.launch {
             runCatching { repository.setAdminActive(id, active) }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.userMessage()) }
             refresh()
         }
     }
@@ -57,7 +58,7 @@ class AdminUsersViewModel @Inject constructor(
             runCatching { repository.createAdminUser(name, email, role, password) }
                 .onSuccess { refresh(); onDone(true) }
                 .onFailure {
-                    _uiState.value = _uiState.value.copy(error = it.message)
+                    _uiState.value = _uiState.value.copy(error = it.userMessage())
                     onDone(false)
                 }
         }

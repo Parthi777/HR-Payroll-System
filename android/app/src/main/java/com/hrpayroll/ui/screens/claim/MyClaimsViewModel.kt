@@ -1,6 +1,7 @@
 package com.hrpayroll.ui.screens.claim
 
 import android.content.Context
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.remote.dto.ClaimDto
@@ -42,7 +43,7 @@ class MyClaimsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             runCatching { repository.myClaims() }
                 .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false, claims = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage()) }
         }
     }
 
@@ -57,7 +58,7 @@ class MyClaimsViewModel @Inject constructor(
                     refresh()
                 }
                 .onFailure {
-                    _uiState.value = _uiState.value.copy(replyingId = null, error = it.message)
+                    _uiState.value = _uiState.value.copy(replyingId = null, error = it.userMessage())
                 }
         }
     }
@@ -75,7 +76,7 @@ class MyClaimsViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(downloadingId = null, notice = "Voucher saved to $path")
                 }
                 .onFailure {
-                    _uiState.value = _uiState.value.copy(downloadingId = null, error = it.message ?: "Download failed")
+                    _uiState.value = _uiState.value.copy(downloadingId = null, error = it.userMessage("Download failed"))
                 }
         }
     }

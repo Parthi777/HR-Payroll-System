@@ -1,6 +1,7 @@
 package com.hrpayroll.ui.screens.claim
 
 import androidx.lifecycle.SavedStateHandle
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.repository.ClaimRepository
@@ -74,7 +75,7 @@ class ClaimSubmitViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             runCatching { block() }
                 .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false, done = true) }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message ?: "Submit failed") }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Submit failed")) }
         }
     }
 }

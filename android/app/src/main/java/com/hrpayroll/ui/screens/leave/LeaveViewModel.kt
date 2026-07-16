@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.leave
 
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.remote.dto.ApplyLeaveRequest
@@ -42,7 +43,7 @@ class LeaveViewModel @Inject constructor(
             }.onSuccess { (balances, leaves) ->
                 _uiState.value = _uiState.value.copy(isLoading = false, balances = balances, myLeaves = leaves)
             }.onFailure {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = it.message)
+                _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage())
             }
         }
     }
@@ -59,7 +60,7 @@ class LeaveViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(isSubmitting = false, message = "Leave applied ✓")
                     refresh()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isSubmitting = false, error = it.message ?: "Failed to apply") }
+                .onFailure { _uiState.value = _uiState.value.copy(isSubmitting = false, error = it.userMessage("Failed to apply")) }
         }
     }
 }

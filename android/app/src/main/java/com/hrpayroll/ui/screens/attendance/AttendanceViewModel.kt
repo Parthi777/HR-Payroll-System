@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.attendance
 
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.repository.AttendanceRepository
@@ -64,7 +65,7 @@ class AttendanceViewModel @Inject constructor(
                 }
                 .onFailure {
                     // Backend not reachable yet — keep sample data, surface the reason.
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = it.message)
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage())
                 }
             loadToday()
         }

@@ -1,6 +1,7 @@
 package com.hrpayroll.ui.screens.attendance
 
 import androidx.lifecycle.SavedStateHandle
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.repository.AttendanceRepository
@@ -43,7 +44,7 @@ class CheckInViewModel @Inject constructor(
                 .onSuccess { _uiState.value = CheckInUiState(success = true, resultStatus = it.status) }
                 .onFailure {
                     _uiState.value = CheckInUiState(
-                        error = it.message ?: if (isCheckOut) "Check-out failed" else "Check-in failed",
+                        error = it.userMessage(if (isCheckOut) "Check-out failed" else "Check-in failed"),
                     )
                 }
         }

@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.admin
 
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.BuildConfig
@@ -57,7 +58,7 @@ class AdminClaimsViewModel @Inject constructor(
             val status = _uiState.value.filter.takeIf { it != "ALL" }
             runCatching { repository.claims(status) }
                 .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false, claims = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage()) }
         }
     }
 
@@ -68,7 +69,7 @@ class AdminClaimsViewModel @Inject constructor(
 
     private fun act(block: suspend () -> Unit) {
         viewModelScope.launch {
-            runCatching { block() }.onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+            runCatching { block() }.onFailure { _uiState.value = _uiState.value.copy(error = it.userMessage()) }
             refresh()
         }
     }

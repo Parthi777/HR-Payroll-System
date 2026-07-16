@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.admin
 
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.remote.dto.LiveAttendanceRowDto
@@ -32,7 +33,7 @@ class LiveAttendanceViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             runCatching { repository.liveAttendance() }
                 .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false, rows = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage()) }
         }
     }
 }

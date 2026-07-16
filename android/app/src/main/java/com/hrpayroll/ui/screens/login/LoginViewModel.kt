@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.login
 
+import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.repository.AuthRepository
@@ -56,7 +57,7 @@ class LoginViewModel @Inject constructor(
                         error = if (ok) null else "Login failed",
                     )
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message ?: "Login failed") }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Login failed")) }
         }
     }
 
@@ -81,7 +82,7 @@ class LoginViewModel @Inject constructor(
                         error = if (ok) null else "Login failed",
                     )
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message ?: "Login failed") }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Login failed")) }
         }
     }
 
@@ -97,7 +98,7 @@ class LoginViewModel @Inject constructor(
                 .onSuccess { devOtp ->
                     _uiState.value = _uiState.value.copy(isLoading = false, phase = LoginPhase.OTP, devOtp = devOtp)
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message ?: "Failed to send OTP") }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Failed to send OTP")) }
         }
     }
 
@@ -113,7 +114,7 @@ class LoginViewModel @Inject constructor(
                 .onSuccess { ok ->
                     _uiState.value = _uiState.value.copy(isLoading = false, loggedIn = ok, error = if (ok) null else "Login failed")
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message ?: "Invalid OTP") }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Invalid OTP")) }
         }
     }
 
