@@ -3,12 +3,13 @@ package com.hrpayroll.ui.theme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-// Brand palette — matches the HR & Payroll UI reference (indigo/violet gradient).
-val BrandViolet = Color(0xFF6C5CE7)
-val BrandIndigo = Color(0xFF5B4FC4)
-val BrandIndigoDark = Color(0xFF463AA8)
-val BrandLavender = Color(0xFFEFEEFB)
-val BrandSurface = Color(0xFFF7F6FC)
+// Brand palette — airy HR UI reference: royal blue accents on a soft pastel wash.
+val BrandViolet = Color(0xFF4A69FF) // gradient top (lighter royal blue)
+val BrandIndigo = Color(0xFF2F55F4) // primary royal blue
+val BrandIndigoDark = Color(0xFF1F3BD6)
+val BrandLavender = Color(0xFFE7ECFF) // selected chip / nav indicator tint
+val BrandSurface = Color(0xFFF4F5F1) // soft warm-grey screen background
+val Ink = Color(0xFF1C1B2E) // primary dark text on pale surfaces
 
 // Status colors (attendance + claim chips) — see docs/design-system.md
 val StatusPresent = Color(0xFF16A34A)
@@ -25,7 +26,12 @@ val StatusPaidBg = Color(0xFFE0F2FE)
 val MoneyGreen = Color(0xFF16A34A)
 val DeductRed = Color(0xFFE11D48)
 
-// Signature top-to-bottom header gradient used across screens.
+// Saturated blue gradient — hero cards, login backdrop, anything with white text on it.
 val BrandGradient = Brush.verticalGradient(
     colors = listOf(BrandViolet, BrandIndigo, BrandIndigoDark),
+)
+
+// Soft pastel wash (pale lemon → mint → cool grey) behind headers, per the reference.
+val SoftWash = Brush.linearGradient(
+    colors = listOf(Color(0xFFF6F6E7), Color(0xFFEAF1E4), Color(0xFFF2F4F6)),
 )

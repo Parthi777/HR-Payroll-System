@@ -19,69 +19,77 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hrpayroll.ui.theme.BrandGradient
+import com.hrpayroll.ui.theme.Ink
+import com.hrpayroll.ui.theme.SoftWash
 
-/** Rounded gradient app-bar used on every screen in the reference design.
- *  Optional [trailingIcon] renders a frosted action button at the top-right
- *  (e.g. logout on dashboards, admin-accounts shortcut on People). */
+/** Floating white circular icon button — the reference design's nav/action affordance. */
+@Composable
+fun CircleIconButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .shadow(6.dp, CircleShape, spotColor = Color(0x33203070))
+            .clip(CircleShape)
+            .background(Color.White)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = Ink)
+    }
+}
+
+/** Soft pastel header used on every screen: dark bold title over the pale wash,
+ *  floating white circle buttons for back / trailing action (reference design). */
 @Composable
 fun BrandHeader(
     title: String,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
-    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    trailingIcon: ImageVector? = null,
     trailingDescription: String? = null,
     onTrailing: (() -> Unit)? = null,
 ) {
+    val hasButtons = onBack != null || (trailingIcon != null && onTrailing != null)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
-            .background(BrandGradient)
-            .padding(horizontal = 16.dp)
-            .height(140.dp),
+            .background(SoftWash)
+            .padding(horizontal = 20.dp)
+            .height(if (hasButtons) 136.dp else 108.dp),
     ) {
         if (onBack != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.18f))
-                    .clickable { onBack() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White,
-                )
-            }
+            CircleIconButton(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp),
+                onClick = onBack,
+            )
         }
         if (trailingIcon != null && onTrailing != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 16.dp)
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.18f))
-                    .clickable { onTrailing() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(trailingIcon, contentDescription = trailingDescription, tint = Color.White)
-            }
+            CircleIconButton(
+                icon = trailingIcon,
+                contentDescription = trailingDescription,
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp),
+                onClick = onTrailing,
+            )
         }
         Text(
             text = title,
-            color = Color.White,
-            fontSize = 22.sp,
+            color = Ink,
+            fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 18.dp),
         )
     }
 }
@@ -106,6 +114,30 @@ fun StatusChip(
             text = text,
             color = contentColor,
             fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/** Reference-style stat pill: filled royal blue (white text) or plain white (dark text).
+ *  e.g. Worked [105h] · Salary Tracked [200h]. */
+@Composable
+fun StatPill(
+    text: String,
+    filled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (filled) com.hrpayroll.ui.theme.BrandIndigo else Color.White)
+            .padding(horizontal = 22.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = if (filled) Color.White else Ink,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
         )
     }
