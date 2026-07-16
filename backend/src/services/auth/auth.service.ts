@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import type { PrismaClient } from '@prisma/client';
 import { AppError } from '../../utils/AppError.js';
 import { env } from '../../config/env.js';
+import { normalizePhone } from '../../utils/phone.js';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_OTP_ATTEMPTS = 5;
@@ -61,7 +62,10 @@ export async function verifyOtp(prisma: PrismaClient, phone: string, otp: string
 
 /** Employee login with phone + password (password is set by the admin at creation). */
 export async function employeeLogin(prisma: PrismaClient, phone: string, password: string) {
-  const employee = await prisma.employee.findUnique({ where: { phone } });
+  // Accept the number with or without +91 / spaces — stored numbers are E.164.
+  const employee = await prisma.employee.findFirst({
+    where: { phone: { in: [phone.trim(), normalizePhone(phone)] } },
+  });
   // Same generic error whether the phone or password is wrong, or no password is set yet.
   if (!employee || !employee.passwordHash) throw AppError.unauthorized('Invalid phone or password');
   const ok = await bcrypt.compare(password, employee.passwordHash);
