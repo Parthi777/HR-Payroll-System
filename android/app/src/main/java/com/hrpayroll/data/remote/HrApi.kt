@@ -153,6 +153,9 @@ interface HrApi {
     suspend fun enrollFace(@Path("id") id: String, @Part photo: MultipartBody.Part): EnrollFaceResponse
 
     // Master data (Add-Employee form dropdowns)
+    @POST("me/fcm-token")
+    suspend fun registerFcmToken(@Body body: Map<String, String>): Map<String, Boolean>
+
     // In-app notifications (admin/cashier): claims to approve / approved claims to pay.
     @GET("admin/notifications")
     suspend fun notifications(): NotificationListResponse

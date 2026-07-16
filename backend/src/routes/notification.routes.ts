@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { requireRole } from '../middleware/auth.js';
+import { z } from 'zod';
+import { authenticate, requireRole } from '../middleware/auth.js';
 
 /** In-app notifications for admins & cashiers (web bell + mobile dashboard). */
 export async function notificationRoutes(app: FastifyInstance) {
@@ -15,6 +16,17 @@ export async function notificationRoutes(app: FastifyInstance) {
       app.prisma.notification.count({ where: { adminId: req.user.sub, isRead: false } }),
     ]);
     return { notifications, unread };
+  });
+
+  // Register this device's FCM push token (admins and employees alike).
+  app.post('/me/fcm-token', { preHandler: authenticate }, async (req) => {
+    const { token } = z.object({ token: z.string().min(10) }).parse(req.body);
+    if (req.user.role === 'EMPLOYEE') {
+      await app.prisma.employee.update({ where: { id: req.user.sub }, data: { fcmToken: token } });
+    } else {
+      await app.prisma.adminUser.update({ where: { id: req.user.sub }, data: { fcmToken: token } });
+    }
+    return { ok: true };
   });
 
   app.patch('/admin/notifications/read', { preHandler: guard }, async (req) => {

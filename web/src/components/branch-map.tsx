@@ -57,14 +57,23 @@ function FlyToMe({ me }: { me: { lat: number; lng: number; ts: number } | null }
   return null;
 }
 
-/** Free OSM geocoding — search a place/address and jump the pin there. */
+/** Free geocoding — Nominatim for exact names, then Photon as a typo-tolerant
+ *  fallback (e.g. "kavindapadi" → Kavandapady), biased to India. */
 async function geocode(query: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=${encodeURIComponent(query)}`,
+      { headers: { Accept: 'application/json' } },
+    );
+    const results = (await res.json()) as { lat: string; lon: string }[];
+    if (results[0]) return { lat: Number(results[0].lat), lng: Number(results[0].lon) };
+  } catch { /* fall through to Photon */ }
   const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=${encodeURIComponent(query)}`,
-    { headers: { Accept: 'application/json' } },
+    `https://photon.komoot.io/api/?limit=1&lang=en&bbox=68.1,6.5,97.4,35.7&q=${encodeURIComponent(query)}`,
   );
-  const results = (await res.json()) as { lat: string; lon: string }[];
-  return results[0] ? { lat: Number(results[0].lat), lng: Number(results[0].lon) } : null;
+  const geo = (await res.json()) as { features?: { geometry?: { coordinates?: [number, number] } }[] };
+  const c = geo.features?.[0]?.geometry?.coordinates;
+  return c ? { lat: c[1], lng: c[0] } : null;
 }
 
 export default function BranchMap({

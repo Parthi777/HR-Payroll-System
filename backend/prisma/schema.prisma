@@ -47,6 +47,7 @@ model Employee {
   reportingManagerId String? // AdminUser id — approvals (leave / outside check-in) route to this manager
   pfEnabled       Boolean @default(false) // PF deduction applies to this employee
   esiEnabled      Boolean @default(false) // ESI deduction applies to this employee
+  fcmToken        String? // FCM device token for push notifications
   status          String  @default("ACTIVE") // EmployeeStatus
   joiningDate     DateTime
   salary          Float
@@ -345,6 +346,7 @@ model AdminUser {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  fcmToken  String? // FCM device token for push notifications
 }
 
 model AuditLog {

@@ -21,6 +21,11 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    /** Register this device for push after login (no-op server-side until Firebase is wired). */
+    suspend fun registerFcmToken(token: String) {
+        api.registerFcmToken(mapOf("token" to token))
+    }
+
     /** Admin login (email + password). Stores the JWT + role; reports if a token was issued. */
     suspend fun adminLogin(email: String, password: String): Boolean {
         val res = api.adminLogin(mapOf("email" to email.trim(), "password" to password))

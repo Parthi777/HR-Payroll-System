@@ -50,6 +50,7 @@ class LoginViewModel @Inject constructor(
                         isLoading = false, loggedIn = ok, isAdmin = ok,
                         error = if (ok) null else "Login failed",
                     )
+                    if (ok) registerPush()
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Login failed")) }
         }
@@ -75,9 +76,19 @@ class LoginViewModel @Inject constructor(
                         isLoading = false, loggedIn = ok, isAdmin = false,
                         error = if (ok) null else "Login failed",
                     )
+                    if (ok) registerPush()
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Login failed")) }
         }
     }
 
+
+    /** Fire-and-forget: register this device's FCM token (skipped when Firebase is absent). */
+    private fun registerPush() {
+        runCatching {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token.addOnSuccessListener { t ->
+                viewModelScope.launch { runCatching { authRepository.registerFcmToken(t) } }
+            }
+        }
+    }
 }

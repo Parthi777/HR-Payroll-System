@@ -32,6 +32,11 @@ android {
 
         // Injected into BuildConfig — override API_BASE_URL in local.properties (LAN IP for a physical device)
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        // Firebase (push) — set in local.properties once the Firebase app exists; blank = push disabled.
+        buildConfigField("String", "FIREBASE_APP_ID", "\"${localProps.getProperty("FIREBASE_APP_ID") ?: ""}\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"${localProps.getProperty("FIREBASE_API_KEY") ?: ""}\"")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${localProps.getProperty("FIREBASE_PROJECT_ID") ?: ""}\"")
+        buildConfigField("String", "FIREBASE_SENDER_ID", "\"${localProps.getProperty("FIREBASE_SENDER_ID") ?: ""}\"")
         manifestPlaceholders["MAPS_API_KEY"] = "YOUR_GOOGLE_MAPS_KEY"
     }
 
