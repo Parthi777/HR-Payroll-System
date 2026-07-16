@@ -28,22 +28,20 @@ const fmtDate = (d: Date | null) =>
   d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '-';
 
 interface Col { key: string; label: string; w: number; align?: 'right' | 'left'; }
+// Owner policy: no HRA/DA split — salary + OT/Sunday extra only.
 const COLS: Col[] = [
-  { key: 'emp', label: 'Employee', w: 128 },
-  { key: 'presentDays', label: 'Days', w: 30, align: 'right' },
-  { key: 'lateDays', label: 'Late', w: 28, align: 'right' },
-  { key: 'otHours', label: 'OT h', w: 32, align: 'right' },
-  { key: 'extra', label: 'OT+Sun', w: 52, align: 'right' },
-  { key: 'basicSalary', label: 'Basic', w: 55, align: 'right' },
-  { key: 'hra', label: 'HRA', w: 50, align: 'right' },
-  { key: 'da', label: 'DA', w: 48, align: 'right' },
-  { key: 'otherAllowances', label: 'Other', w: 55, align: 'right' },
-  { key: 'grossSalary', label: 'Gross', w: 60, align: 'right' },
-  { key: 'pfDeduction', label: 'PF', w: 45, align: 'right' },
-  { key: 'esiDeduction', label: 'ESI', w: 42, align: 'right' },
-  { key: 'netSalary', label: 'Net (Rs.)', w: 62, align: 'right' },
-  { key: 'payDate', label: 'Pay Date', w: 50 },
-  { key: 'status', label: '', w: 30 },
+  { key: 'emp', label: 'Employee', w: 184 },
+  { key: 'presentDays', label: 'Days', w: 34, align: 'right' },
+  { key: 'lateDays', label: 'Late', w: 32, align: 'right' },
+  { key: 'otHours', label: 'OT h', w: 36, align: 'right' },
+  { key: 'basicSalary', label: 'Salary', w: 78, align: 'right' },
+  { key: 'extra', label: 'OT+Sun', w: 66, align: 'right' },
+  { key: 'grossSalary', label: 'Gross', w: 78, align: 'right' },
+  { key: 'pfDeduction', label: 'PF', w: 56, align: 'right' },
+  { key: 'esiDeduction', label: 'ESI', w: 54, align: 'right' },
+  { key: 'netSalary', label: 'Net (Rs.)', w: 78, align: 'right' },
+  { key: 'payDate', label: 'Pay Date', w: 56 },
+  { key: 'status', label: '', w: 32 },
 ];
 
 /** Landscape A4 salary register: one row per employee + totals, for accounts/bank use. */
@@ -115,9 +113,6 @@ export function generateSalaryRegisterPdf(month: number, year: number, rows: Reg
       emp: `TOTAL (${rows.length})`,
       extra: rs(sum((r) => r.otPay + r.sundayPay)),
       basicSalary: rs(sum((r) => r.basicSalary)),
-      hra: rs(sum((r) => r.hra)),
-      da: rs(sum((r) => r.da)),
-      otherAllowances: rs(sum((r) => r.otherAllowances)),
       grossSalary: rs(sum((r) => r.grossSalary)),
       pfDeduction: rs(sum((r) => r.pfDeduction)),
       esiDeduction: rs(sum((r) => r.esiDeduction)),

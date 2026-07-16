@@ -205,8 +205,8 @@ fun AdminEmployeesScreen(
     if (showAdd) {
         AddEmployeeDialog(
             state = state,
-            onCreate = { name, code, phone, salary, pwd, br, de, dg, sh, mg ->
-                viewModel.create(name, code, phone, salary, pwd, br, de, dg, sh, mg)
+            onCreate = { name, code, phone, salary, pwd, br, de, dg, sh, mg, pf, esi ->
+                viewModel.create(name, code, phone, salary, pwd, br, de, dg, sh, mg, pf, esi)
             },
             onDismiss = { showAdd = false },
         )
@@ -284,7 +284,7 @@ private fun AddEmployeeDialog(
     onCreate: (
         name: String, code: String, phone: String, salary: Double, password: String,
         branchId: String, departmentId: String, designationId: String, shiftId: String,
-        reportingManagerId: String?,
+        reportingManagerId: String?, pfEnabled: Boolean, esiEnabled: Boolean,
     ) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -298,6 +298,8 @@ private fun AddEmployeeDialog(
     var designation by remember { mutableStateOf<MasterItemDto?>(state.designations.firstOrNull()) }
     var shift by remember { mutableStateOf<MasterItemDto?>(state.shifts.firstOrNull()) }
     var manager by remember { mutableStateOf<MasterItemDto?>(null) }
+    var pfEnabled by remember { mutableStateOf(false) }
+    var esiEnabled by remember { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -346,6 +348,14 @@ private fun AddEmployeeDialog(
                 MasterDropdown("Shift", state.shifts, shift) { shift = it }
                 Spacer(Modifier.height(8.dp))
                 MasterDropdown("Reporting manager (approvals)", state.managers, manager) { manager = it }
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = pfEnabled, onCheckedChange = { pfEnabled = it })
+                    Text("PF deduction", fontSize = 13.sp)
+                    Spacer(Modifier.height(0.dp).weight(0.1f))
+                    androidx.compose.material3.Checkbox(checked = esiEnabled, onCheckedChange = { esiEnabled = it })
+                    Text("ESI deduction", fontSize = 13.sp)
+                }
 
                 (localError ?: state.error)?.let {
                     Spacer(Modifier.height(8.dp))
@@ -365,7 +375,7 @@ private fun AddEmployeeDialog(
                         localError = "Create branch/department/designation/shift on the web first"
                     } else {
                         localError = null
-                        onCreate(name.trim(), code.trim(), phone.trim(), sal, password, br, de, dg, sh, manager?.id)
+                        onCreate(name.trim(), code.trim(), phone.trim(), sal, password, br, de, dg, sh, manager?.id, pfEnabled, esiEnabled)
                     }
                 },
             ) {

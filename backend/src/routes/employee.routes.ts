@@ -22,6 +22,8 @@ const createEmployeeSchema = z.object({
   joiningDate: z.coerce.date(),
   salary: z.number().positive(),
   reportingManagerId: z.string().nullable().optional(), // AdminUser id — approvals route to this manager
+  pfEnabled: z.boolean().optional(), // PF deduction applies (only some employees)
+  esiEnabled: z.boolean().optional(),
   password: z.string().min(4).optional(), // employee's app login password (phone + password)
   status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(), // app-access control
 });

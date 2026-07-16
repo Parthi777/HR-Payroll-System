@@ -125,20 +125,19 @@ private fun PayslipContent(slip: PayslipDto) {
     SectionCard(
         "Earnings",
         listOf(
-            "Basic Salary" to money(slip.basicSalary),
-            "HRA" to money(slip.hra),
-            "DA" to money(slip.da),
-            "Other Allowances" to money(slip.otherAllowances),
+            "Salary (earned)" to money(slip.basicSalary),
+            "OT + Sunday pay" to money(slip.otherAllowances),
         ),
         deduction = false,
     )
     Spacer(Modifier.height(12.dp))
+    // Only some employees have PF/ESI — show just the ones that apply.
     SectionCard(
         "Deductions",
-        listOf(
-            "PF" to money(slip.pfDeduction),
-            "ESI" to money(slip.esiDeduction),
-        ),
+        listOfNotNull(
+            slip.pfDeduction?.takeIf { it > 0 }?.let { "PF" to money(it) },
+            slip.esiDeduction?.takeIf { it > 0 }?.let { "ESI" to money(it) },
+        ).ifEmpty { listOf("No deductions" to "—") },
         deduction = true,
     )
     Spacer(Modifier.height(16.dp))

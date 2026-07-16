@@ -22,6 +22,8 @@ interface EmployeeRow {
   shiftId: string;
   joiningDate: string;
   reportingManagerId?: string | null;
+  pfEnabled?: boolean;
+  esiEnabled?: boolean;
   branch?: { name: string } | null;
 }
 interface Named { id: string; name: string }
@@ -122,6 +124,8 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
     designationId: employee?.designationId ?? '',
     shiftId: employee?.shiftId ?? '',
     reportingManagerId: employee?.reportingManagerId ?? '',
+    pfEnabled: employee?.pfEnabled ?? false,
+    esiEnabled: employee?.esiEnabled ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -197,6 +201,14 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
             <option value="">Reporting manager (approvals) — none</option>
             {mg?.managers.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.role.replace('_', ' ')}</option>)}
           </select>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input type="checkbox" checked={f.pfEnabled} onChange={(e) => setF((p) => ({ ...p, pfEnabled: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
+            PF deduction applies
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input type="checkbox" checked={f.esiEnabled} onChange={(e) => setF((p) => ({ ...p, esiEnabled: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
+            ESI deduction applies
+          </label>
         </div>
         {err && <p className="mt-3 text-sm text-destructive">{err}</p>}
         <div className="mt-5 flex justify-end gap-2">

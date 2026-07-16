@@ -58,19 +58,22 @@ export function generatePayslipPdf(p: PayslipPdfData): Promise<Buffer> {
 
     // Two columns: earnings (left) / deductions (right)
     const colW = 230;
+    // No HRA/DA structure split (owner policy) — salary + OT/Sunday extra only.
     const earnings: [string, number][] = [
-      ['Basic Salary', p.basicSalary],
-      ['HRA', p.hra],
-      ['DA', p.da],
-      ['Other Allowances', p.otherAllowances],
+      ['Salary (earned)', p.basicSalary],
+      ['OT + Sunday pay', p.otherAllowances],
     ];
-    const deductions: [string, number][] = [
-      ['Provident Fund (PF)', p.pfDeduction],
-      ['ESI', p.esiDeduction],
-      ['Professional Tax', p.ptDeduction],
-      ['TDS', p.tdsDeduction],
-      ['Other', p.otherDeductions],
-    ];
+    // Only show deductions that actually apply to this employee.
+    const deductions: [string, number][] = (
+      [
+        ['Provident Fund (PF)', p.pfDeduction],
+        ['ESI', p.esiDeduction],
+        ['Professional Tax', p.ptDeduction],
+        ['TDS', p.tdsDeduction],
+        ['Other', p.otherDeductions],
+      ] as [string, number][]
+    ).filter(([, v]) => v > 0);
+    if (deductions.length === 0) deductions.push(['No deductions', 0]);
 
     const renderColumn = (x: number, title: string, rows: [string, number][], total: [string, number]) => {
       let yy = y;

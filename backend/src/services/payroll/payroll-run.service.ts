@@ -154,16 +154,17 @@ export async function runMonthlyPayroll(
     const sundayPay = round2(perDay * sundayWorkedDays);
     const extraPay = otPay + sundayPay;
 
-    // Standard structure split on base pay; Sunday-work + OT pay goes into
-    // Other Allowances so the payslip shows it as an earning on top.
-    const earnedBasic = round2(basePay * 0.5);
-    const earnedHra = round2(basePay * 0.2);
-    const earnedDa = round2(basePay * 0.15);
-    const earnedOther = round2(basePay * 0.15 + extraPay);
-    const grossSalary = round2(earnedBasic + earnedHra + earnedDa + earnedOther);
+    // Owner policy: NO salary-structure split (no HRA/DA lines) — the payslip
+    // carries the earned salary + OT/Sunday extra as-is. PF/ESI apply only to
+    // employees flagged for them (pfEnabled / esiEnabled).
+    const earnedBasic = round2(basePay); // total earned salary for the month
+    const earnedHra = 0;
+    const earnedDa = 0;
+    const earnedOther = round2(extraPay); // OT + Sunday-duty pay
+    const grossSalary = round2(earnedBasic + earnedOther);
 
-    const pf = calculatePF(earnedBasic); // 12% of earned basic, capped ₹1800
-    const esi = calculateESI(grossSalary); // 0.75% if gross <= ₹21,000
+    const pf = emp.pfEnabled ? calculatePF(earnedBasic) : 0; // 12%, capped ₹1800
+    const esi = emp.esiEnabled ? calculateESI(grossSalary) : 0; // 0.75% if gross <= ₹21,000
     const netSalary = round2(Math.max(0, grossSalary - pf - esi));
 
     // Late-punch policy: pay date shifts at LATE_SHIFT_AT lates; slip withheld

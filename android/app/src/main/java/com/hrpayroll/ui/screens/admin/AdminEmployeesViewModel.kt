@@ -82,6 +82,8 @@ class AdminEmployeesViewModel @Inject constructor(
         designationId: String,
         shiftId: String,
         reportingManagerId: String?,
+        pfEnabled: Boolean,
+        esiEnabled: Boolean,
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(saving = true, error = null, createdOk = false)
@@ -97,6 +99,8 @@ class AdminEmployeesViewModel @Inject constructor(
                 put("joiningDate", java.time.LocalDate.now().toString())
                 if (password.isNotBlank()) put("password", password)
                 if (reportingManagerId != null) put("reportingManagerId", reportingManagerId)
+                put("pfEnabled", pfEnabled)
+                put("esiEnabled", esiEnabled)
             }
             runCatching { repository.createEmployee(body) }
                 .onSuccess {

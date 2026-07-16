@@ -45,6 +45,8 @@ model Employee {
   driveFolderId   String? // Google Drive folder id holding this employee's claim files
   passwordHash    String? // bcrypt; set by admin at creation — employee logs in with phone + password
   reportingManagerId String? // AdminUser id — approvals (leave / outside check-in) route to this manager
+  pfEnabled       Boolean @default(false) // PF deduction applies to this employee
+  esiEnabled      Boolean @default(false) // ESI deduction applies to this employee
   status          String  @default("ACTIVE") // EmployeeStatus
   joiningDate     DateTime
   salary          Float

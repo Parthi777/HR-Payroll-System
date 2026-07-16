@@ -86,13 +86,13 @@ export default function PayrollPage() {
     downloadCsv(
       `salary-${tag}.csv`,
       ['Code', 'Name', 'Present', 'Absent', 'LOP', 'Late', 'Pay Date', 'OT Hours', 'OT Days', 'OT Pay', 'Sunday Days', 'Sunday Pay',
-        'Basic', 'HRA', 'DA', 'Other Allowances', 'Gross', 'PF', 'ESI', 'PT', 'TDS', 'Other Deductions', 'Net Salary', 'Status'],
+        'Salary (earned)', 'Gross', 'PF', 'ESI', 'Net Salary', 'Status'],
       payslips.map((p) => [
         p.employee?.employeeCode, p.employee?.name, p.presentDays, p.absentDays, p.lopDays, p.lateDays,
         p.payDate ? new Date(p.payDate).toLocaleDateString('en-GB') : '',
         p.otHours, p.otDays, p.otPay, p.sundayDays, p.sundayPay,
-        p.basicSalary, p.hra, p.da, p.otherAllowances, p.grossSalary,
-        p.pfDeduction, p.esiDeduction, p.ptDeduction, p.tdsDeduction, p.otherDeductions, p.netSalary, p.status,
+        p.basicSalary, p.grossSalary,
+        p.pfDeduction, p.esiDeduction, p.netSalary, p.status,
       ]),
     );
   }
@@ -214,7 +214,8 @@ export default function PayrollPage() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        Salary policy: per-day = monthly ÷ 30 · OT counts only beyond 10 hours/day · every 10 OT hours
+        Salary policy: no HRA/DA split — total salary only · PF/ESI deducted only for employees flagged
+        on the Employees form · per-day = monthly ÷ 30 · OT counts only beyond 10 hours/day · every 10 OT hours
         pays 1 extra day (15h → 1.5 days, 20h → 2 days) · Sunday duty pays +1 full day on top of the
         paid weekly-off · CL paid up to the yearly quota, then LOP · salary dated the 5th of next month,
         moved to the 8th at 5+ late punches · more than 8 late punches withholds the slip (amounts still
