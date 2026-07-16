@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { AppError } from '../../utils/AppError.js';
 import { checkGeofence } from '../geofence/geofence.service.js';
-import { verifyFace } from '../ai/face.service.js';
+import { verifyFace, isFaceMatchEnabled } from '../ai/face.service.js';
 import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
 import { isS3Enabled, uploadImage } from '../storage/storage.service.js';
 
@@ -37,6 +37,34 @@ async function saveSelfie(buf: Buffer, employeeId: string): Promise<string> {
   return `/uploads/${name}`;
 }
 
+/**
+ * Strict face gate: attendance requires an enrolled face, and the selfie must
+ * match the logged-in employee at/above the configured threshold — otherwise
+ * the request is rejected. Skipped only when AWS isn't configured (local dev),
+ * so the app still runs with zero setup. Returns the match score to store.
+ */
+async function requireFaceMatch(
+  faceTemplateId: string | null,
+  selfie: Buffer | null,
+  employeeId: string,
+): Promise<number | null> {
+  if (!isFaceMatchEnabled()) return null;
+  if (!faceTemplateId) {
+    throw new AppError('Your face is not enrolled yet. Ask your admin to enroll it before you can mark attendance.', 403);
+  }
+  if (!selfie) throw new AppError('A selfie is required to mark attendance', 400);
+  const fm = await verifyFace(selfie, employeeId);
+  if (!fm.matched) {
+    throw new AppError(
+      fm.matchedEmployeeId && fm.matchedEmployeeId !== employeeId
+        ? 'This selfie matches a different employee — attendance must be marked with your own face.'
+        : `Face not recognised (${fm.score}% match). Try again facing the camera in good light.`,
+      403,
+    );
+  }
+  return fm.score;
+}
+
 export interface MarkResult {
   id: string;
   status: string;
@@ -68,8 +96,14 @@ export async function markCheckIn(
   if (!employee) throw AppError.notFound('Employee not found');
 
   const geo = checkGeofence({ lat, lng }, employee.branch, accuracy);
-  // Out-of-zone selfie check-ins are accepted but held for HR/admin approval —
-  // they don't count for payroll until approved (rejected → marked absent).
+  // Strict-mode branches hard-block outside check-ins. Soft-mode branches accept
+  // them but hold for HR/admin approval — unpaid until approved (rejected → absent).
+  if (geo.status === 'OUTSIDE' && employee.branch.strictMode) {
+    throw new AppError(
+      `You are ${Math.round(geo.distance)}m away from ${employee.branch.name}. Move inside the branch area to check in.`,
+      403,
+    );
+  }
   const approvalStatus = geo.status === 'OUTSIDE' ? 'PENDING' : null;
 
   const today = startOfToday();
@@ -82,36 +116,17 @@ export async function markCheckIn(
   const lateAfter = shiftStartToday(employee.shift.startTime).getTime() + (employee.shift.gracePeriod ?? 0) * 60_000;
   const status = now.getTime() > lateAfter ? 'LATE' : 'PRESENT';
 
+  // Identity gate before any side effects: enrolled face + selfie must match
+  // the logged-in employee, or the check-in is rejected outright.
+  const faceMatchScore = await requireFaceMatch(employee.faceTemplateId, selfie, employeeId);
+
   const selfieUrl = selfie ? await saveSelfie(selfie, employeeId) : null;
 
-  // AWS Rekognition face match (no-op + null score when AWS isn't configured).
-  // Per CLAUDE.md a mismatch flags for HR review but never blocks attendance.
-  let faceMatchScore: number | null = null;
-  let faceFlagReason: string | null = null;
-  if (selfie) {
-    const fm = await verifyFace(selfie, employeeId);
-    if (fm.enabled) {
-      faceMatchScore = fm.score;
-      if (!fm.matched) {
-        faceFlagReason =
-          fm.matchedEmployeeId && fm.matchedEmployeeId !== employeeId
-            ? `Face mismatch — selfie matched a different employee (${fm.score}%)`
-            : `Face not recognised (${fm.score}%)`;
-      }
-    }
-  }
-
   const geoFlagged = geo.status !== 'INSIDE';
-  const flagged = geoFlagged || faceFlagReason !== null;
-  const flagReason =
-    [
-      geoFlagged
-        ? `Geofence ${geo.status} — ${Math.round(geo.distance)}m from ${employee.branch.name}${approvalStatus ? ' (awaiting HR approval)' : ''}`
-        : null,
-      faceFlagReason,
-    ]
-      .filter(Boolean)
-      .join('; ') || null;
+  const flagged = geoFlagged;
+  const flagReason = geoFlagged
+    ? `Geofence ${geo.status} — ${Math.round(geo.distance)}m from ${employee.branch.name}${approvalStatus ? ' (awaiting HR approval)' : ''}`
+    : null;
 
   // Log a geofence violation row when the check-in is outside/borderline the zone.
   if (geoFlagged) {
@@ -168,6 +183,24 @@ export async function markCheckOut(
   });
   if (!existing?.checkIn) throw new AppError('No check-in found for today', 409);
   if (existing.checkOut) throw new AppError('Already checked out today', 409);
+
+  // Same identity gate as check-in — nobody can check out on a colleague's behalf.
+  const employee = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    include: { branch: true },
+  });
+  await requireFaceMatch(employee?.faceTemplateId ?? null, selfie, employeeId);
+
+  // Strict-mode branches also block outside check-outs (same rule as check-in).
+  if (employee?.branch.strictMode) {
+    const geo = checkGeofence({ lat, lng }, employee.branch);
+    if (geo.status === 'OUTSIDE') {
+      throw new AppError(
+        `You are ${Math.round(geo.distance)}m away from ${employee.branch.name}. Move inside the branch area to check out.`,
+        403,
+      );
+    }
+  }
 
   const now = new Date();
   const workingMinutes = Math.round((now.getTime() - existing.checkIn.getTime()) / 60_000);

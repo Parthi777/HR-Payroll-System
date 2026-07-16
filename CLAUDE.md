@@ -585,7 +585,7 @@ Employee sends "SLIP"   → Bot sends latest payslip PDF
 - **Verification:** On each selfie → compare against enrolled template → confidence score
 - **Threshold:** Accept if score ≥ 85 (configurable in admin settings)
 - **Liveness:** ML Kit Face Detection on Android (blink detection, 3D depth check)
-- **Fallback:** If face match fails, flag for manual review; do NOT block attendance
+- **Strict gate (since 2026-07-15):** check-in/out require an enrolled face AND the selfie must match the logged-in employee at/above threshold — otherwise rejected with 403. Gate is skipped only when AWS creds are absent (local dev).
 
 ### 2. Geofence AI Logic
 ```
@@ -796,7 +796,7 @@ When working in this repo, Claude should:
 |---|---|
 | No internet on check-in | Store in Room DB, sync via WorkManager when connected |
 | GPS unavailable | Block check-in, show "Enable GPS" prompt |
-| Face match fails | Allow attendance but flag for HR review; send alert to manager |
+| Face not enrolled / match fails | Block check-in/out with 403 and a clear message (strict since 2026-07-15) |
 | Employee checks in from home | Geofence will flag; HR to investigate |
 | Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days |
 | Same employee multiple devices | Block — only registered device allowed (device fingerprint) |
