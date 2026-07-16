@@ -4,6 +4,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { runMonthlyPayroll } from '../services/payroll/payroll-run.service.js';
 import { generatePayslipPdf } from '../services/payroll/payslip-pdf.service.js';
+import { generateSalaryRegisterPdf } from '../services/payroll/salary-register-pdf.service.js';
 
 /** Fetch a payslip (with employee+branch) and stream it as a PDF. */
 async function streamPayslipPdf(app: FastifyInstance, reply: FastifyReply, id: string) {
@@ -36,6 +37,44 @@ export async function payrollRoutes(app: FastifyInstance) {
       orderBy: { netSalary: 'desc' },
     });
     return { payslips };
+  });
+
+  // Full-month salary register PDF (all employees, earnings + deductions + OT + totals).
+  app.get('/admin/payroll/register/:month/:year/pdf', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN', 'HR_MANAGER') }, async (req, reply) => {
+    const { month, year } = req.params as { month: string; year: string };
+    const payslips = await app.prisma.payslip.findMany({
+      where: { month: Number(month), year: Number(year) },
+      include: { employee: { select: { name: true, employeeCode: true, branch: { select: { name: true } } } } },
+      orderBy: { employee: { employeeCode: 'asc' } },
+    });
+    if (payslips.length === 0) throw AppError.notFound('No payslips for that month — run payroll first');
+    const pdf = await generateSalaryRegisterPdf(
+      Number(month),
+      Number(year),
+      payslips.map((p) => ({
+        employeeCode: p.employee.employeeCode,
+        name: p.employee.name,
+        branch: p.employee.branch?.name ?? '-',
+        presentDays: p.presentDays,
+        lateDays: p.lateDays,
+        otHours: p.otHours,
+        otPay: p.otPay,
+        sundayPay: p.sundayPay,
+        basicSalary: p.basicSalary,
+        hra: p.hra,
+        da: p.da,
+        otherAllowances: p.otherAllowances,
+        grossSalary: p.grossSalary,
+        pfDeduction: p.pfDeduction,
+        esiDeduction: p.esiDeduction,
+        netSalary: p.netSalary,
+        payDate: p.payDate,
+        status: p.status,
+      })),
+    );
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition', `attachment; filename="salary-register-${month}-${year}.pdf"`);
+    return reply.send(pdf);
   });
 
   app.get('/admin/payroll/preview/:month/:year', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN') }, async (req) => {

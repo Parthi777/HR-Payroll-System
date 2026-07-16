@@ -11,9 +11,18 @@ interface Payslip {
   id: string;
   netSalary: number;
   grossSalary: number;
+  basicSalary?: number;
+  hra?: number;
+  da?: number;
+  otherAllowances?: number;
   pfDeduction: number;
   esiDeduction: number;
+  ptDeduction?: number;
+  tdsDeduction?: number;
+  otherDeductions?: number;
   presentDays: number;
+  absentDays?: number;
+  lopDays?: number;
   otHours?: number;
   otDays?: number;
   otPay?: number;
@@ -27,6 +36,18 @@ interface Payslip {
 
 const now = new Date();
 const inr = (n: number) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+/** Client-side CSV download — opens directly in Excel. */
+function downloadCsv(filename: string, header: string[], rows: (string | number | null | undefined)[][]) {
+  const esc = (v: string | number | null | undefined) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [header.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function PayrollPage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -59,6 +80,22 @@ export default function PayrollPage() {
   }
 
   const monthName = new Date(year, month - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const tag = `${year}-${String(month).padStart(2, '0')}`;
+
+  function exportExcel() {
+    downloadCsv(
+      `salary-${tag}.csv`,
+      ['Code', 'Name', 'Present', 'Absent', 'LOP', 'Late', 'Pay Date', 'OT Hours', 'OT Days', 'OT Pay', 'Sunday Days', 'Sunday Pay',
+        'Basic', 'HRA', 'DA', 'Other Allowances', 'Gross', 'PF', 'ESI', 'PT', 'TDS', 'Other Deductions', 'Net Salary', 'Status'],
+      payslips.map((p) => [
+        p.employee?.employeeCode, p.employee?.name, p.presentDays, p.absentDays, p.lopDays, p.lateDays,
+        p.payDate ? new Date(p.payDate).toLocaleDateString('en-GB') : '',
+        p.otHours, p.otDays, p.otPay, p.sundayDays, p.sundayPay,
+        p.basicSalary, p.hra, p.da, p.otherAllowances, p.grossSalary,
+        p.pfDeduction, p.esiDeduction, p.ptDeduction, p.tdsDeduction, p.otherDeductions, p.netSalary, p.status,
+      ]),
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -78,6 +115,22 @@ export default function PayrollPage() {
           className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90 disabled:opacity-60"
         >
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Run Payroll
+        </button>
+        <button
+          onClick={exportExcel}
+          disabled={payslips.length === 0}
+          title="Download all employees' salary details as a spreadsheet"
+          className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 hover:bg-white/25 disabled:opacity-50"
+        >
+          <FileDown className="h-4 w-4" /> Excel
+        </button>
+        <button
+          onClick={() => apiDownload(`/admin/payroll/register/${month}/${year}/pdf`, `salary-register-${tag}.pdf`).catch((e) => alert(e instanceof Error ? e.message : 'Download failed'))}
+          disabled={payslips.length === 0}
+          title="Download the monthly salary register as PDF"
+          className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 hover:bg-white/25 disabled:opacity-50"
+        >
+          <FileDown className="h-4 w-4" /> PDF
         </button>
       </PageHero>
 
