@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { pushToEmployee } from '../services/push.service.js';
 import { dispatchWhatsApp, waTemplates } from '../services/whatsapp/whatsapp.service.js';
 
 const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -65,6 +66,7 @@ export async function leaveRoutes(app: FastifyInstance) {
         data: { used: { increment: leave.days } },
       });
     }
+    await pushToEmployee(app.prisma, leave.employeeId, 'Leave approved \u2713', `${leave.type} ${fmtDate(leave.fromDate)}\u2013${fmtDate(leave.toDate)} (${leave.days} day/s) approved.`);
     await dispatchWhatsApp(app.prisma, {
       phone: leave.employee.phone,
       employeeId: leave.employeeId,
@@ -117,6 +119,7 @@ export async function leaveRoutes(app: FastifyInstance) {
       data: { status: 'REJECTED', approvedBy: req.user.sub, approverNote: note },
       include: { employee: true },
     });
+    await pushToEmployee(app.prisma, leave.employeeId, 'Leave rejected', `${fmtDate(leave.fromDate)}\u2013${fmtDate(leave.toDate)} \u2014 ${note}`);
     await dispatchWhatsApp(app.prisma, {
       phone: leave.employee.phone,
       employeeId: leave.employeeId,

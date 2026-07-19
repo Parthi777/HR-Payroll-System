@@ -2,6 +2,7 @@ package com.hrpayroll.data.remote
 
 import com.hrpayroll.data.remote.dto.AdminLoginResponse
 import com.hrpayroll.data.remote.dto.AppVersionResponse
+import com.hrpayroll.data.remote.dto.AttendanceCalendarResponse
 import com.hrpayroll.data.remote.dto.ManagerListResponse
 import com.hrpayroll.data.remote.dto.NotificationListResponse
 import com.hrpayroll.data.remote.dto.AdminUserListResponse
@@ -153,6 +154,12 @@ interface HrApi {
     suspend fun enrollFace(@Path("id") id: String, @Part photo: MultipartBody.Part): EnrollFaceResponse
 
     // Master data (Add-Employee form dropdowns)
+    @GET("attendance/calendar")
+    suspend fun attendanceCalendar(
+        @retrofit2.http.Query("month") month: Int,
+        @retrofit2.http.Query("year") year: Int,
+    ): AttendanceCalendarResponse
+
     @POST("me/fcm-token")
     suspend fun registerFcmToken(@Body body: Map<String, String>): Map<String, Boolean>
 

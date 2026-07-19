@@ -1,6 +1,10 @@
 package com.hrpayroll.ui.screens.attendance
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -147,6 +151,14 @@ fun AttendanceScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
+                        item {
+                            MonthCalendar(
+                                month = state.calMonth,
+                                year = state.calYear,
+                                calendar = state.calendar,
+                                onShift = viewModel::shiftMonth,
+                            )
+                        }
                         items(records) { record -> RecordRow(record) }
                     }
                 }
@@ -270,5 +282,108 @@ private fun RecordRow(record: AttendanceRecordUi) {
             }
             StatusChip(text = record.status, contentColor = fg, containerColor = bg)
         }
+    }
+}
+
+
+private val CAL_MONTHS = arrayOf("", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+
+private fun dayColors(status: String?): Pair<Color, Color> = when (status) {
+    "PRESENT" -> Color(0xFF16A34A) to Color(0xFFDCFCE7)
+    "LATE" -> Color(0xFFB45309) to Color(0xFFFEF3C7)
+    "HALF_DAY" -> Color(0xFF0284C7) to Color(0xFFE0F2FE)
+    "ABSENT" -> Color(0xFFE11D48) to Color(0xFFFFE4E6)
+    "LEAVE" -> Color(0xFF4F46E5) to Color(0xFFE0E7FF)
+    "PENDING_APPROVAL" -> Color(0xFFB45309) to Color(0xFFFFF7ED)
+    "OFF" -> Color(0xFF64748B) to Color(0xFFF1F5F9)
+    else -> Color(0xFFB6B6C3) to Color(0xFFF7F7FA) // FUTURE
+}
+
+/** Month view of the employee's own attendance — present/absent at a glance. */
+@Composable
+private fun MonthCalendar(
+    month: Int,
+    year: Int,
+    calendar: com.hrpayroll.data.remote.dto.AttendanceCalendarResponse?,
+    onShift: (Int) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.IconButton(onClick = { onShift(-1) }) {
+                Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous month")
+            }
+            Text(
+                "${CAL_MONTHS.getOrElse(month) { "" }} $year",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                modifier = Modifier.weight(1f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            androidx.compose.material3.IconButton(onClick = { onShift(1) }) {
+                Icon(Icons.Filled.ChevronRight, contentDescription = "Next month")
+            }
+        }
+
+        // Weekday header (Sun-first to match weekday indexes from the backend).
+        Row(modifier = Modifier.fillMaxWidth()) {
+            listOf("S", "M", "T", "W", "T", "F", "S").forEach {
+                Text(
+                    it,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+
+        val days = calendar?.days ?: emptyList()
+        if (days.isEmpty()) {
+            CircularProgressIndicator(Modifier.padding(20.dp).size(22.dp), strokeWidth = 2.dp)
+        } else {
+            val firstWeekday = days.firstOrNull()?.weekday ?: 0
+            val cells: List<com.hrpayroll.data.remote.dto.CalendarDayDto?> =
+                List(firstWeekday) { null } + days
+            cells.chunked(7).forEach { week ->
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    week.forEach { d ->
+                        Box(modifier = Modifier.weight(1f).padding(2.dp), contentAlignment = Alignment.Center) {
+                            if (d != null) {
+                                val (fg, bg) = dayColors(d.status)
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(androidx.compose.foundation.shape.CircleShape)
+                                        .background(bg),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("${d.day}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = fg)
+                                }
+                            }
+                        }
+                    }
+                    repeat(7 - week.size) { Box(Modifier.weight(1f)) }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            // Legend + month summary
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LegendDot(Color(0xFF16A34A), "Present ${calendar?.summary?.present ?: 0}")
+                LegendDot(Color(0xFFB45309), "Late ${calendar?.summary?.late ?: 0}")
+                LegendDot(Color(0xFFE11D48), "Absent ${calendar?.summary?.absent ?: 0}")
+                LegendDot(Color(0xFF4F46E5), "Leave ${calendar?.summary?.leave ?: 0}")
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+    }
+}
+
+@Composable
+private fun LegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(color))
+        Text("  $label", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
     }
 }

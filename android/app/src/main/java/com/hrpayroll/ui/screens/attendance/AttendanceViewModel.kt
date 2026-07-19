@@ -3,6 +3,7 @@ package com.hrpayroll.ui.screens.attendance
 import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hrpayroll.data.remote.dto.AttendanceCalendarResponse
 import com.hrpayroll.data.repository.AttendanceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +32,10 @@ data class AttendanceUiState(
     val todayCheckOut: String? = null,
     val todayMinutes: Int? = null, // worked minutes once checked out
     val todayApproval: String? = null, // PENDING = outside geofence, awaiting HR
+    /** Month calendar (present/absent view). */
+    val calMonth: Int = java.time.LocalDate.now().monthValue,
+    val calYear: Int = java.time.LocalDate.now().year,
+    val calendar: AttendanceCalendarResponse? = null,
 )
 
 @HiltViewModel
@@ -43,6 +48,24 @@ class AttendanceViewModel @Inject constructor(
 
     init {
         loadHistory()
+        loadCalendar()
+    }
+
+    fun loadCalendar() {
+        viewModelScope.launch {
+            val st = _uiState.value
+            runCatching { repository.calendar(st.calMonth, st.calYear) }
+                .onSuccess { _uiState.value = _uiState.value.copy(calendar = it) }
+        }
+    }
+
+    /** Move the calendar one month back/forward (delta = -1 or +1). */
+    fun shiftMonth(delta: Int) {
+        val st = _uiState.value
+        val d = java.time.LocalDate.of(st.calYear, st.calMonth, 1).plusMonths(delta.toLong())
+        if (d > java.time.LocalDate.now().withDayOfMonth(1)) return // no future months
+        _uiState.value = st.copy(calMonth = d.monthValue, calYear = d.year, calendar = null)
+        loadCalendar()
     }
 
     fun loadHistory() {

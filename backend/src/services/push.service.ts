@@ -50,6 +50,12 @@ export async function sendPush(tokens: string[], title: string, body: string): P
   }
 }
 
+/** Push to one employee's registered device (claim/leave status updates). */
+export async function pushToEmployee(prisma: PrismaClient, employeeId: string, title: string, body: string): Promise<void> {
+  const emp = await prisma.employee.findUnique({ where: { id: employeeId }, select: { fcmToken: true } });
+  if (emp?.fcmToken) await sendPush([emp.fcmToken], title, body);
+}
+
 /** Push to admins by id — looks up their registered device tokens. */
 export async function pushToAdmins(prisma: PrismaClient, adminIds: string[], title: string, body: string): Promise<void> {
   if (adminIds.length === 0) return;

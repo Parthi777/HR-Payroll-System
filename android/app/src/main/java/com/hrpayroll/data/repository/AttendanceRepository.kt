@@ -28,4 +28,6 @@ class AttendanceRepository @Inject constructor(
     suspend fun today(): AttendanceDto = api.today()
 
     suspend fun history(): List<AttendanceHistoryDto> = api.history()
+
+    suspend fun calendar(month: Int, year: Int) = api.attendanceCalendar(month, year)
 }

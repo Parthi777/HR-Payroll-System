@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { authenticate, requireRole } from '../middleware/auth.js';
@@ -219,6 +220,62 @@ export async function attendanceRoutes(app: FastifyInstance) {
       return { id, overridden: true };
     },
   );
+
+  // Employee: month-view calendar — one status per day (present/late/half/absent/
+  // leave/off/pending), so staff can verify their own attendance and raise issues.
+  app.get('/attendance/calendar', { preHandler: authenticate }, async (req) => {
+    const { month, year } = z
+      .object({ month: z.coerce.number().min(1).max(12), year: z.coerce.number() })
+      .parse(req.query);
+    const employeeId = req.user.sub;
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    const [atts, leaves, holidays] = await Promise.all([
+      app.prisma.attendance.findMany({ where: { employeeId, date: { gte: start, lt: end } } }),
+      app.prisma.leave.findMany({
+        where: { employeeId, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
+      }),
+      app.prisma.holiday.findMany({ where: { date: { gte: start, lt: end } } }),
+    ]);
+    const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const attByDay = new Map(atts.map((a) => [key(a.date), a]));
+    const holidaySet = new Set(holidays.map((h) => key(h.date)));
+    const now = new Date();
+
+    const days = [];
+    const summary = { present: 0, late: 0, half: 0, absent: 0, leave: 0 };
+    for (let dn = 1; dn <= daysInMonth; dn++) {
+      const d = new Date(year, month - 1, dn);
+      const att = attByDay.get(key(d));
+      const counted = att && att.checkIn && (att.approvalStatus == null || att.approvalStatus === 'APPROVED');
+      const isOff = d.getDay() === 0 || holidaySet.has(key(d));
+      let status: string;
+      if (att?.approvalStatus === 'PENDING') {
+        status = 'PENDING_APPROVAL';
+      } else if (counted && (att!.status === 'PRESENT' || att!.status === 'LATE' || att!.status === 'HALF_DAY')) {
+        status = att!.status;
+        if (att!.status === 'PRESENT') summary.present += 1;
+        else if (att!.status === 'LATE') { summary.late += 1; summary.present += 1; }
+        else summary.half += 1;
+      } else if (isOff) {
+        status = 'OFF';
+      } else if (
+        leaves.some((lv) => lv.fromDate <= new Date(year, month - 1, dn, 23, 59, 59) && lv.toDate >= d)
+      ) {
+        status = 'LEAVE';
+        summary.leave += 1;
+      } else if (d > now) {
+        status = 'FUTURE';
+      } else {
+        status = 'ABSENT';
+        summary.absent += 1;
+      }
+      days.push({ day: dn, weekday: d.getDay(), status, checkIn: fmtTime(att?.checkIn ?? null), checkOut: fmtTime(att?.checkOut ?? null) });
+    }
+    return { month, year, days, summary };
+  });
 
   // ── Out-of-geofence check-in approvals (HR / admin) ──
   const approvalGuard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER');
