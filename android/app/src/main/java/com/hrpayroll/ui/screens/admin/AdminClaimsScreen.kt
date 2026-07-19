@@ -281,11 +281,26 @@ private fun AdminClaimCard(
             }
 
             if (open && canApprove) {
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionButton(Icons.Filled.Check, "Approve", StatusPresent, onApprove)
-                    ActionButton(Icons.Filled.HelpOutline, "Clarify", StatusLeave, onClarify)
-                    ActionButton(Icons.Filled.Close, "Reject", StatusOff, onReject)
+                Spacer(Modifier.height(10.dp))
+                // Clearly-labeled decisions — icon-only buttons were being missed.
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.Button(
+                        onClick = onApprove,
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = StatusPresent),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+                    ) { Text("Approve", fontSize = 12.sp, maxLines = 1, fontWeight = FontWeight.SemiBold) }
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = onClarify,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+                    ) { Text("Clarify", fontSize = 12.sp, maxLines = 1) }
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = onReject,
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = StatusOff),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+                    ) { Text("Reject", fontSize = 12.sp, maxLines = 1) }
                 }
             }
 
