@@ -189,7 +189,12 @@ fun CameraCaptureScreen(
                                     onSaved = { file ->
                                         fetchLocation(context) { lat, lng, acc ->
                                             capturing = false
-                                            viewModel.submit(file, lat, lng, acc)
+                                            // (0,0) = no GPS fix — submitting would look ~8,600km away.
+                                            if (lat == 0.0 && lng == 0.0) {
+                                                localError = "Couldn't read your location. Switch ON Location/GPS, wait a few seconds, and try again."
+                                            } else {
+                                                viewModel.submit(file, lat, lng, acc)
+                                            }
                                         }
                                     },
                                     onError = { msg -> capturing = false; localError = msg },

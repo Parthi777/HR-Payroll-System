@@ -95,6 +95,12 @@ export async function markCheckIn(
   });
   if (!employee) throw AppError.notFound('Employee not found');
 
+  // (0,0) means the phone had no GPS fix — reject with a human message instead
+  // of computing an absurd distance to Null Island.
+  if (lat === 0 && lng === 0) {
+    throw new AppError('Your phone did not send a location. Switch ON Location/GPS, wait a few seconds, and try again.', 400);
+  }
+
   const geo = checkGeofence({ lat, lng }, employee.branch, accuracy);
   // Strict-mode branches hard-block outside check-ins. Soft-mode branches accept
   // them but hold for HR/admin approval — unpaid until approved (rejected → absent).
@@ -190,6 +196,10 @@ export async function markCheckOut(
     include: { branch: true },
   });
   await requireFaceMatch(employee?.faceTemplateId ?? null, selfie, employeeId);
+
+  if (lat === 0 && lng === 0) {
+    throw new AppError('Your phone did not send a location. Switch ON Location/GPS, wait a few seconds, and try again.', 400);
+  }
 
   // Strict-mode branches also block outside check-outs (same rule as check-in).
   if (employee?.branch.strictMode) {
