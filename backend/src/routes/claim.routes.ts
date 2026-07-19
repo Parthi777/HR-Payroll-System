@@ -192,6 +192,8 @@ export async function claimRoutes(app: FastifyInstance) {
   app.patch('/admin/claims/:id/approve', { preHandler: approveGuard }, async (req) => {
     const { id } = req.params as { id: string };
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'APPROVED', undefined, req.user.branchId);
+    // Decision made → clear the "to approve" notification for every approver.
+    await app.prisma.notification.deleteMany({ where: { claimId: id, type: 'CLAIM_SUBMITTED' } });
     // Approved → the branch's cashier(s) take over: check + pay.
     const emp = await app.prisma.employee.findUnique({
       where: { id: claim.employeeId },
@@ -212,6 +214,7 @@ export async function claimRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { note } = (req.body as { note?: string }) ?? {};
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'REJECTED', note, req.user.branchId);
+    await app.prisma.notification.deleteMany({ where: { claimId: id, type: 'CLAIM_SUBMITTED' } });
     return { claim };
   });
 
@@ -219,6 +222,7 @@ export async function claimRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { note } = (req.body as { note?: string }) ?? {};
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'NEEDS_CLARIFICATION', note, req.user.branchId);
+    await app.prisma.notification.deleteMany({ where: { claimId: id, type: 'CLAIM_SUBMITTED' } });
     return { claim };
   });
 
@@ -226,6 +230,8 @@ export async function claimRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { note } = (req.body as { note?: string }) ?? {};
     const claim = await payClaim(app.prisma, req.user.sub, id, note, req.user.branchId);
+    // Paid → nothing left to act on; clear all remaining notifications for this claim.
+    await app.prisma.notification.deleteMany({ where: { claimId: id } });
     return { claim };
   });
 }

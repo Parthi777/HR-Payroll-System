@@ -48,6 +48,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.hrpayroll.data.remote.dto.ClaimDto
@@ -214,19 +218,32 @@ private fun AdminClaimCard(
                 Text(claim.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
             }
 
-            // Receipt photo (loaded with the admin's Bearer token).
+            // Receipt photo (loaded with the admin's Bearer token). Tap = full page.
             if (hasPhoto && photoUrl != null) {
                 Spacer(Modifier.height(10.dp))
+                var fullScreen by remember { mutableStateOf(false) }
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(photoUrl)
                         .apply { authToken?.let { addHeader("Authorization", "Bearer $it") } }
                         .crossfade(true)
                         .build(),
-                    contentDescription = "Receipt",
+                    contentDescription = "Receipt — tap to view full page",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1.6f).clip(RoundedCornerShape(12.dp)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1.6f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { fullScreen = true },
                 )
+                Text(
+                    "Tap the bill to view full page",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
+                if (fullScreen) {
+                    FullScreenReceipt(photoUrl, authToken) { fullScreen = false }
+                }
             }
 
             // Clarification conversation (approver questions + employee replies).
@@ -349,4 +366,56 @@ private fun statusColors(status: String?): Pair<Color, Color> = when (status) {
     "REJECTED" -> StatusOff to StatusOffBg
     "NEEDS_CLARIFICATION" -> StatusLeave to StatusLeaveBg
     else -> StatusLeave to StatusLeaveBg
+}
+
+
+/** Full-page receipt viewer: whole bill visible (fit), pinch to zoom, drag to pan. */
+@Composable
+private fun FullScreenReceipt(photoUrl: String, authToken: String?, onClose: () -> Unit) {
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0xF2000000))
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(1f, 6f)
+                        offset = if (scale > 1f) offset + pan else androidx.compose.ui.geometry.Offset.Zero
+                    }
+                },
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(photoUrl)
+                    .apply { authToken?.let { addHeader("Authorization", "Bearer $it") } }
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "Receipt full view",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y,
+                    ),
+            )
+            androidx.compose.material3.IconButton(
+                onClick = onClose,
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 34.dp, end = 12.dp),
+            ) {
+                androidx.compose.material3.Icon(
+                    androidx.compose.material.icons.Icons.Filled.Close,
+                    contentDescription = "Close",
+                    tint = Color.White,
+                )
+            }
+        }
+    }
 }

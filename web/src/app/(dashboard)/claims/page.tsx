@@ -115,13 +115,21 @@ export default function ClaimsPage() {
     }
   }
 
+  // Full-page lightbox for the bill copy (window.open gets popup-blocked after await).
+  const [viewer, setViewer] = useState<{ url: string; isPdf: boolean } | null>(null);
+
   async function viewFile(id: string, which: 'photo' | 'pdf') {
     try {
       const url = await apiBlobUrl(`/claims/${id}/file?which=${which}`);
-      window.open(url, '_blank');
+      setViewer({ url, isPdf: which === 'pdf' });
     } catch {
       alert('Could not open file');
     }
+  }
+
+  function closeViewer() {
+    if (viewer) URL.revokeObjectURL(viewer.url);
+    setViewer(null);
   }
 
   async function printVoucher(id: string) {
@@ -244,6 +252,30 @@ export default function ClaimsPage() {
         </CardContent>
       </Card>
 
+      {viewer && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-black/95" onClick={closeViewer}>
+          <div className="flex items-center justify-between p-3">
+            <a
+              href={viewer.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+            >
+              Open in new tab
+            </a>
+            <button onClick={closeViewer} className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">
+              ✕ Close
+            </button>
+          </div>
+          {viewer.isPdf ? (
+            <iframe src={viewer.url} title="Bill copy" className="w-full flex-1 bg-white" onClick={(e) => e.stopPropagation()} />
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={viewer.url} alt="Bill copy — full view" className="min-h-0 w-full flex-1 object-contain" />
+          )}
+        </div>
+      )}
       {detail && (
         <ClaimDetailDialog
           claim={detail}
