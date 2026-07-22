@@ -27,6 +27,8 @@ data class HomeUiState(
     val attendanceRate: Int = 0,
     val netSalary: Double = 0.0,
     val leaveBalance: Double = 0.0,
+    /** Per-employee photo URL (keyed by code so Coil can't serve another user's cached photo). */
+    val photoUrl: String = "",
 )
 
 @HiltViewModel
@@ -37,8 +39,6 @@ class HomeViewModel @Inject constructor(
     tokenStore: TokenStore,
 ) : ViewModel() {
 
-    /** Authenticated profile-photo URL (enrolled face photo or latest selfie). */
-    val photoUrl: String = "${BuildConfig.API_BASE_URL}me/photo"
     val authToken: String? = tokenStore.getToken()
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -79,6 +79,9 @@ class HomeViewModel @Inject constructor(
                 attendanceRate = if (denom > 0) present * 100 / denom else 0,
                 netSalary = payslipsD.await().firstOrNull()?.netSalary ?: 0.0,
                 leaveBalance = balancesD.await().sumOf { (it.total ?: 0.0) - (it.used ?: 0.0) },
+                // Unique per-employee URL — the server ignores the query, but it gives Coil a
+                // distinct cache key so employee B never sees employee A's cached photo.
+                photoUrl = me?.employeeCode?.let { "${BuildConfig.API_BASE_URL}me/photo?e=$it" } ?: "",
             )
         }
     }

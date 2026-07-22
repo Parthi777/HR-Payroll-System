@@ -124,16 +124,21 @@ fun HomeScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(46.dp))
-                        coil.compose.AsyncImage(
-                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                .data(viewModel.photoUrl)
-                                .apply { viewModel.authToken?.let { addHeader("Authorization", "Bearer $it") } }
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = "Profile photo",
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.size(86.dp).clip(CircleShape),
-                        )
+                        if (s.photoUrl.isNotBlank()) {
+                            coil.compose.AsyncImage(
+                                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                    .data(s.photoUrl)
+                                    .apply { viewModel.authToken?.let { addHeader("Authorization", "Bearer $it") } }
+                                    // Never persist to disk — a wrong photo must not survive a re-login
+                                    // on a shared phone or an employee re-enrollment.
+                                    .diskCachePolicy(coil.request.CachePolicy.DISABLED)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = "Profile photo",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(86.dp).clip(CircleShape),
+                            )
+                        }
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(s.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
