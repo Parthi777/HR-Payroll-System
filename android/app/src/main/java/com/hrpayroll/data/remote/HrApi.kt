@@ -175,6 +175,8 @@ interface HrApi {
 
     @GET("admin/employees/managers")
     suspend fun managers(): ManagerListResponse
+    @GET("admin/employees/next-code")
+    suspend fun nextEmployeeCode(): Map<String, String>
     @GET("admin/branches")
     suspend fun branches(): BranchListResponse
 

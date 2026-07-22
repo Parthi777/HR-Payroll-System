@@ -310,7 +310,7 @@ private fun AddEmployeeDialog(
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Full name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = code, onValueChange = { code = it.uppercase() }, label = { Text("Emp code *") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = code, onValueChange = { code = it.uppercase() }, label = { Text("Emp code") }, placeholder = { Text(state.nextCode.ifBlank { "auto" }) }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(
                         value = salary,
                         onValueChange = { salary = it.filter { c -> c.isDigit() || c == '.' } },
@@ -369,8 +369,8 @@ private fun AddEmployeeDialog(
                 onClick = {
                     val sal = salary.toDoubleOrNull()
                     val br = branch?.id; val de = department?.id; val dg = designation?.id; val sh = shift?.id
-                    if (name.isBlank() || code.isBlank() || phone.length < 10 || sal == null || sal <= 0) {
-                        localError = "Fill name, code, a valid phone and salary"
+                    if (name.isBlank() || phone.length < 10 || sal == null || sal <= 0) {
+                        localError = "Fill name, a valid phone and salary"
                     } else if (br == null || de == null || dg == null || sh == null) {
                         localError = "Create branch/department/designation/shift on the web first"
                     } else {

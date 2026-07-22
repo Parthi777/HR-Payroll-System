@@ -23,6 +23,7 @@ data class AdminEmployeesUiState(
     val designations: List<MasterItemDto> = emptyList(),
     val shifts: List<MasterItemDto> = emptyList(),
     val managers: List<MasterItemDto> = emptyList(),
+    val nextCode: String = "",
     val saving: Boolean = false,
     /** Employee id whose face photo is uploading. */
     val enrollingId: String? = null,
@@ -57,6 +58,7 @@ class AdminEmployeesViewModel @Inject constructor(
             val dgD = async { runCatching { repository.designations() }.getOrDefault(emptyList()) }
             val shD = async { runCatching { repository.shifts() }.getOrDefault(emptyList()) }
             val mgD = async { runCatching { repository.managers() }.getOrDefault(emptyList()) }
+            val ncD = async { runCatching { repository.nextEmployeeCode() }.getOrDefault("") }
             val emp = empD.await()
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
@@ -67,6 +69,7 @@ class AdminEmployeesViewModel @Inject constructor(
                 designations = dgD.await(),
                 shifts = shD.await(),
                 managers = mgD.await(),
+                nextCode = ncD.await(),
             )
         }
     }
@@ -89,7 +92,7 @@ class AdminEmployeesViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(saving = true, error = null, createdOk = false)
             val body = buildMap<String, Any> {
                 put("name", name)
-                put("employeeCode", code)
+                if (code.isNotBlank()) put("employeeCode", code)
                 put("phone", phone)
                 put("salary", salary)
                 put("branchId", branchId)

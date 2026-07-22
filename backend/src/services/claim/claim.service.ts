@@ -65,6 +65,18 @@ export async function createClaim(
   const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
   if (!employee) throw AppError.notFound('Employee');
 
+  // On-duty gate: a claim can only be raised on a day the employee has checked in.
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  const todayAtt = await prisma.attendance.findFirst({
+    where: { employeeId, date: { gte: dayStart, lt: dayEnd }, checkIn: { not: null } },
+  });
+  if (!todayAtt) {
+    throw new AppError('You can raise a claim only on a day you are on duty. Please check in first.', 403);
+  }
+
   const folderId = await resolveFolder(prisma, employee);
   const photoRes = photo ? await storeFile(employee, folderId, photo, 'photo') : {};
   const pdfRes = pdf ? await storeFile(employee, folderId, pdf, 'doc') : {};

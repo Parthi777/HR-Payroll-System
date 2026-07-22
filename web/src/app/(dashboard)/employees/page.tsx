@@ -109,6 +109,8 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
   const { data: dg } = useSWR<{ designations: Named[] }>('/admin/designations', fetcher, { shouldRetryOnError: false });
   const { data: sh } = useSWR<{ shifts: Named[] }>('/shifts', fetcher, { shouldRetryOnError: false });
   const { data: mg } = useSWR<{ managers: (Named & { role: string })[] }>('/admin/employees/managers', fetcher, { shouldRetryOnError: false });
+  // Suggest the next code in the series for new employees (auto-generated).
+  const { data: nc } = useSWR<{ nextCode: string }>(employee ? null : '/admin/employees/next-code', fetcher, { shouldRetryOnError: false });
   const editing = !!employee;
 
   const [f, setF] = useState({
@@ -149,6 +151,8 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
     try {
       const body = JSON.stringify({
         ...f,
+        // Blank code → server auto-generates the next in the series.
+        employeeCode: f.employeeCode.trim() || undefined,
         email: f.email || undefined,
         password: f.password || undefined,
         salary: Number(f.salary),
@@ -175,7 +179,7 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
         </div>
         <div className="grid grid-cols-2 gap-3">
           <input className={input} placeholder="Full name *" value={f.name} onChange={(e) => set('name', e.target.value)} />
-          <input className={input} placeholder="Employee code *" value={f.employeeCode} onChange={(e) => set('employeeCode', e.target.value)} />
+          <input className={input} placeholder={editing ? 'Employee code' : `Auto: ${nc?.nextCode ?? '…'} (or type one)`} value={f.employeeCode} onChange={(e) => set('employeeCode', e.target.value)} disabled={editing} />
           <input className={input} placeholder="Phone * (+91…)" value={f.phone} onChange={(e) => set('phone', e.target.value)} />
           <input className={input} placeholder="Email" value={f.email} onChange={(e) => set('email', e.target.value)} />
           <input className={input} type="password" placeholder={editing ? 'New password (blank = keep)' : 'App login password *'} value={f.password} onChange={(e) => set('password', e.target.value)} />

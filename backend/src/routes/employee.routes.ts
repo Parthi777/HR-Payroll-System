@@ -10,8 +10,25 @@ import { env } from '../config/env.js';
 import { isS3Enabled, uploadImage } from '../services/storage/storage.service.js';
 import { normalizePhone } from '../utils/phone.js';
 
+// Employee code series prefix (e.g. DHARANI001). Override with EMPLOYEE_CODE_PREFIX.
+const CODE_PREFIX = process.env.EMPLOYEE_CODE_PREFIX ?? 'DHARANI';
+const CODE_PAD = 3;
+
+/** Next free code in the series — max existing number + 1, zero-padded. */
+async function nextEmployeeCode(prisma: FastifyInstance['prisma']): Promise<string> {
+  const rows = await prisma.employee.findMany({
+    where: { employeeCode: { startsWith: CODE_PREFIX } },
+    select: { employeeCode: true },
+  });
+  const max = rows.reduce((m, r) => {
+    const n = parseInt(r.employeeCode.slice(CODE_PREFIX.length), 10);
+    return Number.isFinite(n) && n > m ? n : m;
+  }, 0);
+  return `${CODE_PREFIX}${String(max + 1).padStart(CODE_PAD, '0')}`;
+}
+
 const createEmployeeSchema = z.object({
-  employeeCode: z.string(),
+  employeeCode: z.string().optional(), // auto-generated when omitted
   name: z.string(),
   phone: z.string().min(10),
   email: z.string().email().optional(),
@@ -42,6 +59,9 @@ export async function employeeRoutes(app: FastifyInstance) {
     return { employees: employees.map(safeEmployee) };
   });
 
+  // Suggests the next code for the Add-Employee form (auto-series).
+  app.get('/next-code', async () => ({ nextCode: await nextEmployeeCode(app.prisma) }));
+
   // Managers dropdown (Add/Edit Employee) — active admins who can approve requests.
   // Static path registered alongside '/:id'; Fastify matches static segments first.
   app.get('/managers', async () => {
@@ -57,10 +77,14 @@ export async function employeeRoutes(app: FastifyInstance) {
     const { password, ...rest } = createEmployeeSchema.parse(req.body);
     rest.phone = normalizePhone(rest.phone);
 
+    // Auto-generate the code when the form leaves it blank.
+    const employeeCode = rest.employeeCode?.trim() || (await nextEmployeeCode(app.prisma));
+    rest.employeeCode = employeeCode;
+
     // Friendly duplicate checks — show the existing ID series and next free number.
     const codeDup = await app.prisma.employee.findUnique({ where: { employeeCode: rest.employeeCode } });
     if (codeDup) {
-      const prefix = rest.employeeCode.replace(/\d+$/, '') || rest.employeeCode;
+      const prefix = employeeCode.replace(/\d+$/, '') || employeeCode;
       const series = await app.prisma.employee.findMany({
         where: { employeeCode: { startsWith: prefix } },
         select: { employeeCode: true },
@@ -80,7 +104,7 @@ export async function employeeRoutes(app: FastifyInstance) {
       throw new AppError(`Phone ${rest.phone} is already registered to ${phoneDup.name} (${phoneDup.employeeCode})`, 409);
     }
 
-    const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
+    const data = { ...rest, employeeCode, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
     const employee = await app.prisma.employee.create({ data });
     return { employee: safeEmployee(employee) };
   });
