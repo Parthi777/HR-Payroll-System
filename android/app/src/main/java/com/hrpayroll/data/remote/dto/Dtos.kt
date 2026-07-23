@@ -236,6 +236,8 @@ data class DailyRowDto(
     val checkIn: String? = null,
     val checkOut: String? = null,
     val workedHours: Double? = null,
+    val geofence: String? = null, // INSIDE|OUTSIDE|BORDERLINE
+    val flagged: Boolean? = null,
 )
 
 @JsonClass(generateAdapter = true)

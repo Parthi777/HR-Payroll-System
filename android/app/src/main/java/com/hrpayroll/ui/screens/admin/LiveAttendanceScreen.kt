@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Card
@@ -153,23 +155,66 @@ fun LiveAttendanceScreen(viewModel: LiveAttendanceViewModel = hiltViewModel()) {
 
 @Composable
 private fun DailyRow(row: DailyRowDto) {
+    // Tap the row to expand full details right below the employee name.
+    var expanded by remember { mutableStateOf(false) }
     Card(
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.clickable { expanded = !expanded },
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(row.name ?: "—", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                Text("${row.employeeCode ?: ""}  ·  ${row.branch ?: ""}", fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(row.name ?: "—", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("${row.employeeCode ?: ""}  ·  ${row.branch ?: ""}", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                }
+                val (fg, bg) = statusColors(row.status)
+                StatusChip(row.status?.replace("_", " ") ?: "—", fg, bg)
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    modifier = Modifier.padding(start = 6.dp).size(20.dp),
+                )
+            }
+
+            if (expanded) {
+                Spacer(Modifier.height(10.dp))
+                androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                Spacer(Modifier.height(10.dp))
+                DetailLine("Check-In", row.checkIn ?: "—")
+                DetailLine("Check-Out", row.checkOut ?: "—")
+                DetailLine("Worked", row.workedHours?.let { "${it}h" } ?: "—")
+                DetailLine("Geofence", when (row.geofence) {
+                    "INSIDE" -> "Inside work zone \u2713"
+                    "OUTSIDE" -> "Outside work zone \u26A0"
+                    "BORDERLINE" -> "Near zone boundary"
+                    else -> "—"
+                })
+                DetailLine("Status", row.status?.replace("_", " ") ?: "—")
+                if (row.flagged == true) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("\u26A0 Flagged — check the web Live Attendance for the reason",
+                        fontSize = 12.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Medium)
+                }
+            } else {
                 Spacer(Modifier.height(4.dp))
                 Text("In ${row.checkIn ?: "—"}   ·   Out ${row.checkOut ?: "—"}", fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
             }
-            val (fg, bg) = statusColors(row.status)
-            StatusChip(row.status?.replace("_", " ") ?: "—", fg, bg)
         }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            modifier = Modifier.weight(0.4f))
+        Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(0.6f))
     }
 }
 

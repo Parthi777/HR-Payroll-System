@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -41,6 +43,7 @@ import com.hrpayroll.ui.components.BrandHeader
 import com.hrpayroll.ui.theme.BrandIndigo
 
 /** Admin home: live overview cards (GET /admin/dashboard/stats). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardScreen(
     onLogout: () -> Unit,
@@ -49,6 +52,7 @@ fun AdminDashboardScreen(
     val state by viewModel.uiState.collectAsState()
     val s: DashboardStatsDto = state.stats ?: DashboardStatsDto()
     var confirmLogout by remember { mutableStateOf(false) }
+    var showOverviewPicker by remember { mutableStateOf(false) }
 
     if (confirmLogout) {
         androidx.compose.material3.AlertDialog(
@@ -64,6 +68,26 @@ fun AdminDashboardScreen(
             },
             dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Cancel") } },
         )
+    }
+
+    if (showOverviewPicker) {
+        val pickerState = androidx.compose.material3.rememberDatePickerState(
+            initialSelectedDateMillis = state.overviewDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { showOverviewPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { ms ->
+                        viewModel.pickOverviewDate(
+                            java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate(),
+                        )
+                    }
+                    showOverviewPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showOverviewPicker = false }) { Text("Cancel") } },
+        ) { androidx.compose.material3.DatePicker(state = pickerState) }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -82,37 +106,60 @@ fun AdminDashboardScreen(
                     onSeen = viewModel::markNotificationsRead,
                 )
 
+                val isToday = state.overviewDate == java.time.LocalDate.now()
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Today's Overview",
+                        if (isToday) "Today's Overview"
+                        else "${state.overviewDate.dayOfMonth} ${DASH_MONTHS[state.overviewDate.monthValue]}",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = viewModel::refresh) { Text(if (state.isLoading) "…" else "Refresh") }
+                    if (!isToday) TextButton(onClick = { viewModel.pickOverviewDate(java.time.LocalDate.now()) }) { Text("Today") }
+                    IconButton(onClick = { showOverviewPicker = true }) {
+                        Icon(Icons.Filled.CalendarMonth, contentDescription = "Pick a date",
+                            tint = if (isToday) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f) else MaterialTheme.colorScheme.primary)
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
 
-                StatRow(
-                    StatCardData("Present Now", s.presentNow.toString(), Color(0xFF16A34A)),
-                    StatCardData("Absent", s.absent.toString(), Color(0xFFE11D48)),
-                )
-                Spacer(Modifier.height(12.dp))
-                StatRow(
-                    StatCardData("Late Arrivals", s.lateArrivals.toString(), Color(0xFFB45309)),
-                    StatCardData("On Leave", s.onLeave.toString(), Color(0xFF4F46E5)),
-                )
-                Spacer(Modifier.height(12.dp))
-                StatRow(
-                    StatCardData("Total Staff", s.totalStaff.toString(), BrandIndigo),
-                    StatCardData("Branches", s.branches.toString(), BrandIndigo),
-                )
-                Spacer(Modifier.height(12.dp))
-                StatRow(
-                    StatCardData("Pending Approvals", s.pendingApprovals.toString(), Color(0xFFB45309)),
-                    StatCardData("Attendance", "${s.attendanceRate}%", Color(0xFF16A34A)),
-                )
+                if (isToday) {
+                    StatRow(
+                        StatCardData("Present Now", s.presentNow.toString(), Color(0xFF16A34A)),
+                        StatCardData("Absent", s.absent.toString(), Color(0xFFE11D48)),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    StatRow(
+                        StatCardData("Late Arrivals", s.lateArrivals.toString(), Color(0xFFB45309)),
+                        StatCardData("On Leave", s.onLeave.toString(), Color(0xFF4F46E5)),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    StatRow(
+                        StatCardData("Total Staff", s.totalStaff.toString(), BrandIndigo),
+                        StatCardData("Branches", s.branches.toString(), BrandIndigo),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    StatRow(
+                        StatCardData("Pending Approvals", s.pendingApprovals.toString(), Color(0xFFB45309)),
+                        StatCardData("Attendance", "${s.attendanceRate}%", Color(0xFF16A34A)),
+                    )
+                } else {
+                    val d = state.daySummary
+                    StatRow(
+                        StatCardData("Present", (d?.present ?: 0).toString(), Color(0xFF16A34A)),
+                        StatCardData("Late", (d?.late ?: 0).toString(), Color(0xFFB45309)),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    StatRow(
+                        StatCardData("Absent", (d?.absent ?: 0).toString(), Color(0xFFE11D48)),
+                        StatCardData("Total Staff", (d?.total ?: 0).toString(), BrandIndigo),
+                    )
+                    if (state.dayLoading) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Loading…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                    }
+                }
 
                 state.error?.let {
                     Spacer(Modifier.height(16.dp))

@@ -4,7 +4,9 @@ import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.remote.dto.DashboardStatsDto
+import com.hrpayroll.data.remote.dto.DailySummaryDto
 import com.hrpayroll.data.remote.dto.NotificationDto
+import java.time.LocalDate
 import com.hrpayroll.data.repository.AdminRepository
 import com.hrpayroll.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,6 +36,10 @@ data class AdminDashboardUiState(
     val filterYear: Int = java.time.LocalDate.now().year,
     val monthSummary: MonthSummary? = null,
     val monthLoading: Boolean = false,
+    /** Overview date picker: today = live stats; any other date = that day's summary. */
+    val overviewDate: LocalDate = LocalDate.now(),
+    val daySummary: DailySummaryDto? = null,
+    val dayLoading: Boolean = false,
 )
 
 @HiltViewModel
@@ -66,6 +72,21 @@ class AdminDashboardViewModel @Inject constructor(
                     )
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(monthLoading = false) }
+        }
+    }
+
+    /** Pick a date for the overview: today shows live stats, past dates show that day's summary. */
+    fun pickOverviewDate(date: LocalDate) {
+        _uiState.value = _uiState.value.copy(overviewDate = date)
+        if (date == LocalDate.now()) {
+            _uiState.value = _uiState.value.copy(daySummary = null)
+            return
+        }
+        _uiState.value = _uiState.value.copy(dayLoading = true)
+        viewModelScope.launch {
+            runCatching { repository.dailyReport(date.toString()) }
+                .onSuccess { _uiState.value = _uiState.value.copy(dayLoading = false, daySummary = it.summary) }
+                .onFailure { _uiState.value = _uiState.value.copy(dayLoading = false, daySummary = null) }
         }
     }
 
