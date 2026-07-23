@@ -6,7 +6,7 @@ import { fetcher, api, apiUpload } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent } from '@/components/ui/card';
 import { PasswordInput } from '@/components/password-input';
-import { UserPlus, Loader2, X, ScanFace, Check, Pencil, Trash2, Upload, KeyRound } from 'lucide-react';
+import { UserPlus, Loader2, X, ScanFace, Check, Pencil, Trash2, Upload, KeyRound, Search } from 'lucide-react';
 
 /** Client-side CSV download. */
 function downloadCsv(filename: string, header: string[], rows: (string | number | null | undefined)[][]) {
@@ -51,6 +51,16 @@ export default function EmployeesPage() {
   const [modal, setModal] = useState<{ mode: 'add' } | { mode: 'edit'; employee: EmployeeRow } | null>(null);
   const [showBulk, setShowBulk] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const [branchFilter, setBranchFilter] = useState('ALL');
+
+  const branches = [...new Set(employees.map((e) => e.branch?.name).filter(Boolean))] as string[];
+  const q = search.trim().toLowerCase();
+  const filtered = employees.filter((e) => {
+    const matchesBranch = branchFilter === 'ALL' || e.branch?.name === branchFilter;
+    const matchesSearch = !q || [e.name, e.employeeCode, e.phone].some((v) => v?.toLowerCase().includes(q));
+    return matchesBranch && matchesSearch;
+  });
 
   async function downloadCredentials() {
     setDlBusy(true);
@@ -91,13 +101,37 @@ export default function EmployeesPage() {
 
       {showBulk && <BulkUploadModal onClose={() => setShowBulk(false)} onDone={() => mutate()} />}
 
+      {!isLoading && !error && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, code or phone…"
+              className="h-10 w-full rounded-xl border border-border bg-card pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+            />
+          </div>
+          <select
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+          >
+            <option value="ALL">All branches</option>
+            {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+          <span className="text-xs text-muted-foreground">{filtered.length} of {employees.length}</span>
+        </div>
+      )}
+
       {isLoading && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>}
       {error && <Card><CardContent className="p-5 text-sm text-destructive">Couldn&apos;t load employees. Sign in and ensure the backend is running.</CardContent></Card>}
 
       {!isLoading && !error && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {employees.length === 0 && <Card><CardContent className="p-5 text-sm text-muted-foreground">No employees yet — add one.</CardContent></Card>}
-          {employees.map((e) => (
+          {employees.length > 0 && filtered.length === 0 && <Card><CardContent className="p-5 text-sm text-muted-foreground">No employees match your search.</CardContent></Card>}
+          {filtered.map((e) => (
             <Card key={e.id}>
               <CardContent className="flex flex-col gap-3 p-5">
                 <div className="flex items-center gap-4">

@@ -6,8 +6,18 @@ import { fetcher, api, apiBlobUrl } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Check, X, HelpCircle, Image as ImageIcon, FileText, Loader2, Printer, Banknote, Send,
+  Check, X, HelpCircle, Image as ImageIcon, FileText, Loader2, Printer, Banknote, Send, Download,
 } from 'lucide-react';
+
+/** Client-side CSV download. */
+function downloadCsv(filename: string, header: string[], rows: (string | number | null | undefined)[][]) {
+  const esc = (v: string | number | null | undefined) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [header.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 interface ClaimMessage {
   id: string;
@@ -141,9 +151,33 @@ export default function ClaimsPage() {
     }
   }
 
+  function exportCsv() {
+    downloadCsv(
+      `claims-${filter.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Employee', 'Code', 'Branch', 'Type', 'Title', 'Amount', 'Status', 'Submitted', 'Reviewed By', 'Reviewed At', 'Paid By', 'Paid At', 'Note'],
+      claims.map((c) => [
+        c.employee?.name, c.employee?.employeeCode, c.employee?.branch?.name,
+        c.type, c.title, c.amount, c.status,
+        c.createdAt ? fmtFull(c.createdAt) : '',
+        c.reviewerName, c.reviewedAt ? fmtFull(c.reviewedAt) : '',
+        c.paidByName, c.paidAt ? fmtFull(c.paidAt) : '',
+        c.reviewerNote ?? c.paidNote ?? '',
+      ]),
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <PageHero title="Claims" subtitle="Monitor, approve & disburse expense claims · live from database" />
+      <PageHero title="Claims" subtitle="Monitor, approve & disburse expense claims · live from database">
+        <button
+          onClick={exportCsv}
+          disabled={claims.length === 0}
+          title="Download the current claim list as a spreadsheet"
+          className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90 disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" /> Download
+        </button>
+      </PageHero>
 
       {/* Analytics */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
