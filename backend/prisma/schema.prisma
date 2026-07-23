@@ -155,7 +155,8 @@ model Shift {
   name         String // "Morning Shift"
   startTime    String // "09:00"
   endTime      String // "18:00"
-  gracePeriod  Int     @default(15) // minutes
+  gracePeriod  Int     @default(15) // minutes — late tolerance after start time
+  otThresholdHours Float @default(10) // OT counts only for duty time beyond this many hours/day
   isNightShift Boolean @default(false)
 
   employees Employee[]

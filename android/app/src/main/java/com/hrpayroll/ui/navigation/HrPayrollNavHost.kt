@@ -82,7 +82,7 @@ private val employeeTabs = listOf(
     BottomTab(Routes.ATTENDANCE, "Attendance", Icons.Filled.CheckCircle),
     BottomTab(Routes.LEAVE, "Leave", Icons.Filled.CalendarMonth),
     BottomTab(Routes.CLAIMS, "Claims", Icons.Filled.ReceiptLong),
-    BottomTab(Routes.PAYSLIP, "Payslip", Icons.Filled.Payments),
+    // Payslip / salary tab intentionally removed from the app for now — re-add later.
 )
 
 private val adminTabs = listOf(

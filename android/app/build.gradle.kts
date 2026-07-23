@@ -25,8 +25,8 @@ android {
         applicationId = "com.hrpayroll"
         minSdk = 24
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.6.5"
+        versionCode = 15
+        versionName = "0.6.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

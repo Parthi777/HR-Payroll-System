@@ -13,6 +13,7 @@ interface ShiftRow {
   startTime: string;
   endTime: string;
   gracePeriod: number;
+  otThresholdHours?: number;
   isNightShift: boolean;
 }
 
@@ -67,9 +68,10 @@ export default function ShiftsPage() {
                 </div>
                 <div className="text-lg font-bold">{s.name}</div>
                 <div className="text-sm text-muted-foreground">{s.startTime} – {s.endTime}</div>
-                <div className="mt-4 flex items-center justify-between text-xs">
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                   {s.isNightShift && <span className="chip chip-leave">Night</span>}
                   <span className="text-muted-foreground">Grace {s.gracePeriod}m</span>
+                  <span className="text-muted-foreground">· OT after {s.otThresholdHours ?? 10}h</span>
                 </div>
               </CardContent>
             </Card>
@@ -95,6 +97,7 @@ function ShiftModal({ shift, onClose, onSaved }: { shift: ShiftRow | null; onClo
     startTime: shift?.startTime ?? '09:00',
     endTime: shift?.endTime ?? '18:00',
     gracePeriod: shift ? String(shift.gracePeriod) : '15',
+    otThresholdHours: shift?.otThresholdHours != null ? String(shift.otThresholdHours) : '10',
     isNightShift: shift?.isNightShift ?? false,
   });
   const [saving, setSaving] = useState(false);
@@ -113,6 +116,7 @@ function ShiftModal({ shift, onClose, onSaved }: { shift: ShiftRow | null; onClo
         startTime: f.startTime,
         endTime: f.endTime,
         gracePeriod: parseInt(f.gracePeriod) || 0,
+        otThresholdHours: parseFloat(f.otThresholdHours) || 0,
         isNightShift: f.isNightShift,
       });
       if (editing) await api(`/admin/shifts/${shift!.id}`, { method: 'PUT', body });
@@ -146,10 +150,17 @@ function ShiftModal({ shift, onClose, onSaved }: { shift: ShiftRow | null; onClo
               <input className={input} type="time" value={f.endTime} onChange={(e) => setF({ ...f, endTime: e.target.value })} />
             </div>
           </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Grace period (minutes late allowed)</label>
-            <input className={input} type="number" min={0} max={120} value={f.gracePeriod} onChange={(e) => setF({ ...f, gracePeriod: e.target.value })} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Grace period (min late allowed)</label>
+              <input className={input} type="number" min={0} max={120} value={f.gracePeriod} onChange={(e) => setF({ ...f, gracePeriod: e.target.value })} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">OT after (hours/day)</label>
+              <input className={input} type="number" min={0} max={24} step={0.5} value={f.otThresholdHours} onChange={(e) => setF({ ...f, otThresholdHours: e.target.value })} />
+            </div>
           </div>
+          <p className="text-xs text-muted-foreground">Overtime is counted only for duty time beyond the &quot;OT after&quot; hours each day.</p>
           <label className="flex cursor-pointer items-center gap-3 text-sm">
             <input type="checkbox" checked={f.isNightShift} onChange={(e) => setF({ ...f, isNightShift: e.target.checked })} className="h-4 w-4 accent-brand-600" />
             Night shift (crosses midnight)

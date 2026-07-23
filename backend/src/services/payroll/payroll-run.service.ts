@@ -54,7 +54,7 @@ export async function runMonthlyPayroll(
   month: number,
   year: number,
 ): Promise<PayrollRunSummary> {
-  const employees = await prisma.employee.findMany({ where: { status: 'ACTIVE' } });
+  const employees = await prisma.employee.findMany({ where: { status: 'ACTIVE' }, include: { shift: true } });
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -102,9 +102,11 @@ export async function runMonthlyPayroll(
       const attPaid = att && att.checkIn && countsForPay(att) &&
         (att.status === 'PRESENT' || att.status === 'LATE' || att.status === 'HALF_DAY');
 
-      // OT accrues on any counted duty day (incl. Sundays).
+      // OT accrues on any counted duty day (incl. Sundays), beyond the shift's
+      // configured daily OT threshold (falls back to the global default).
       if (attPaid && att!.workingMinutes) {
-        otMinutes += Math.max(0, att!.workingMinutes - OT_DAILY_THRESHOLD_HOURS * 60);
+        const otAfterMin = (emp.shift?.otThresholdHours ?? OT_DAILY_THRESHOLD_HOURS) * 60;
+        otMinutes += Math.max(0, att!.workingMinutes - otAfterMin);
       }
       if (attPaid && att!.status === 'LATE') lateDays += 1;
 

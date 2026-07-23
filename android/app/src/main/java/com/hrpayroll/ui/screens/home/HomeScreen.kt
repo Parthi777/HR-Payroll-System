@@ -185,7 +185,6 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 StatCard("Attendance", "${s.attendanceRate}%", "This month", s.attendanceRate / 100f)
-                StatCard("Salary", "₹${s.netSalary.toInt()}", "Net (latest)", null)
                 StatCard("Leave Balance", s.leaveBalance.toInt().toString(), "Days left", null)
             }
 
@@ -205,12 +204,12 @@ fun HomeScreen(
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         QuickAction(Icons.Filled.AccessTime, "Clock In/Out", Color(0xFF2563EB), Modifier.weight(1f), onCheckIn)
-                        QuickAction(Icons.Filled.Description, "Pay Slip", MoneyGreen, Modifier.weight(1f), onPayslip)
+                        QuickAction(Icons.Filled.Email, "Messages", Color(0xFF7C3AED), Modifier.weight(1f)) {}
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        QuickAction(Icons.Filled.Email, "Messages", Color(0xFF7C3AED), Modifier.weight(1f)) {}
                         QuickAction(Icons.Filled.Call, "Contact HR", Color(0xFFEA580C), Modifier.weight(1f)) {}
+                        Spacer(Modifier.weight(1f))
                     }
                 }
             }
