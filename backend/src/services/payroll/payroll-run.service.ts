@@ -10,9 +10,9 @@ import { calculatePF, calculateESI } from './payroll.service.js';
  *    CL beyond the quota becomes LOP. SL/EL stay paid; LOP is unpaid.
  *  - Working a Sunday (any hours, even a partial shift) earns one EXTRA full
  *    day's salary on top of the paid weekly-off.
- *  - Overtime: duty time beyond OT_DAILY_THRESHOLD_HOURS (10) in a day
- *    accumulates as OT hours; every OT_HOURS_PER_DAY (10) OT hours pays one
- *    extra day, pro-rated (15 OT hours → 1.5 days, 20 → 2 days).
+ *  - Overtime: duty time worked past the shift's close time + its OT grace
+ *    (Shift.otAfterMinutes) accumulates as OT hours; every OT_HOURS_PER_DAY (10)
+ *    OT hours pays one extra day, pro-rated (15 OT hours → 1.5 days).
  *  - Out-of-geofence check-ins count only once HR approves them (PENDING /
  *    REJECTED attendance is not paid; rejected days are marked ABSENT).
  *  - Late marking uses the shift grace period (default 15 min) at check-in.
@@ -24,7 +24,7 @@ import { calculatePF, calculateESI } from './payroll.service.js';
  */
 const MONTH_DIVISOR = 30;
 const CL_PER_YEAR = 12;
-const OT_DAILY_THRESHOLD_HOURS = 10;
+// (OT threshold is now per-shift: Shift.otAfterMinutes, measured after shift close.)
 const OT_HOURS_PER_DAY = 10;
 
 // Late-punch policy — env-overridable so the rule can be tuned without a code change.
@@ -36,6 +36,22 @@ const PAY_DAY_LATE = Number(process.env.PAYROLL_PAY_DAY_LATE ?? 8);
 const DAY_MS = 86_400_000;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+const COMPANY_TZ = process.env.COMPANY_TZ ?? 'Asia/Kolkata';
+
+const parseHHMM = (t: string): number => {
+  const [h, m] = t.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+/** Minutes since midnight for a Date, read in the company timezone (server runs UTC). */
+function minutesSinceMidnight(d: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: COMPANY_TZ,
+  }).formatToParts(d);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const m = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  return (h % 24) * 60 + m;
+}
 
 /** Attendance counts for pay only when it never needed approval or was approved. */
 const countsForPay = (a: { approvalStatus: string | null }) =>
@@ -102,11 +118,14 @@ export async function runMonthlyPayroll(
       const attPaid = att && att.checkIn && countsForPay(att) &&
         (att.status === 'PRESENT' || att.status === 'LATE' || att.status === 'HALF_DAY');
 
-      // OT accrues on any counted duty day (incl. Sundays), beyond the shift's
-      // configured daily OT threshold (falls back to the global default).
-      if (attPaid && att!.workingMinutes) {
-        const otAfterMin = (emp.shift?.otThresholdHours ?? OT_DAILY_THRESHOLD_HOURS) * 60;
-        otMinutes += Math.max(0, att!.workingMinutes - otAfterMin);
+      // OT = duty time worked PAST the shift close + the shift's OT grace (minutes).
+      // Based on the actual check-out clock time, so leaving late earns OT.
+      if (attPaid && att!.checkOut) {
+        const shiftEndMin = parseHHMM(emp.shift?.endTime ?? '18:00');
+        let outMin = minutesSinceMidnight(att!.checkOut);
+        if (outMin < shiftEndMin) outMin += 1440; // checked out after midnight (night shift)
+        const grace = emp.shift?.otAfterMinutes ?? 0;
+        otMinutes += Math.max(0, outMin - (shiftEndMin + grace));
       }
       if (attPaid && att!.status === 'LATE') lateDays += 1;
 

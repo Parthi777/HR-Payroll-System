@@ -88,7 +88,29 @@ fun CameraCaptureScreen(
     ) { result -> hasPermissions = result.values.all { it } }
 
     LaunchedEffect(Unit) { if (!hasPermissions) permissionLauncher.launch(REQUIRED_PERMISSIONS) }
-    LaunchedEffect(state.success) { if (state.success) onDone() }
+
+    // On a normal check-in, finish immediately. When the punch is held for approval
+    // (late arrival / out-of-zone), show a warning first, then finish on OK.
+    val needsApprovalNotice = state.success && state.approvalStatus == "PENDING"
+    LaunchedEffect(state.success) { if (state.success && state.approvalStatus != "PENDING") onDone() }
+
+    if (needsApprovalNotice) {
+        val isLate = state.resultStatus == "LATE"
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { onDone() },
+            title = { androidx.compose.material3.Text(if (isLate) "You are late today" else "Approval needed") },
+            text = {
+                androidx.compose.material3.Text(
+                    if (isLate)
+                        "You need approval from your reporting manager to be paid for today. " +
+                            "Without approval, today will be marked as leave."
+                    else
+                        "Your check-in is outside the work zone and needs HR approval to count for today.",
+                )
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { onDone() }) { androidx.compose.material3.Text("OK, got it") } },
+        )
+    }
 
     var faceCount by remember { mutableIntStateOf(0) }
     var livenessPassed by remember { mutableStateOf(false) }

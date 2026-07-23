@@ -8,7 +8,7 @@ const shiftSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
   gracePeriod: z.number().int().default(15),
-  otThresholdHours: z.number().min(0).max(24).default(10),
+  otAfterMinutes: z.number().int().min(0).max(720).default(0),
   isNightShift: z.boolean().default(false),
 });
 

@@ -16,7 +16,8 @@ import javax.inject.Inject
 data class CheckInUiState(
     val isSubmitting: Boolean = false,
     val success: Boolean = false,
-    val resultStatus: String? = null,
+    val resultStatus: String? = null, // PRESENT | LATE | ...
+    val approvalStatus: String? = null, // PENDING when late / out-of-zone
     val error: String? = null,
 )
 
@@ -41,7 +42,7 @@ class CheckInViewModel @Inject constructor(
                 if (isCheckOut) repository.checkOut(selfie, lat, lng)
                 else repository.checkIn(selfie, lat, lng, accuracy)
             }
-                .onSuccess { _uiState.value = CheckInUiState(success = true, resultStatus = it.status) }
+                .onSuccess { _uiState.value = CheckInUiState(success = true, resultStatus = it.status, approvalStatus = it.approvalStatus) }
                 .onFailure {
                     _uiState.value = CheckInUiState(
                         error = it.userMessage(if (isCheckOut) "Check-out failed" else "Check-in failed"),

@@ -6,8 +6,14 @@ import { checkGeofence } from '../geofence/geofence.service.js';
 import { verifyFace, isFaceMatchEnabled } from '../ai/face.service.js';
 import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
 import { isS3Enabled, uploadImage } from '../storage/storage.service.js';
+import { notifyAdmins, approverIds } from '../notification.service.js';
+import { pushToEmployee } from '../push.service.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
+
+// Late punches require reporting-manager/HR approval to be paid (else marked as leave).
+// Toggle off with LATE_REQUIRES_APPROVAL=false.
+const LATE_REQUIRES_APPROVAL = process.env.LATE_REQUIRES_APPROVAL !== 'false';
 
 function startOfToday(): Date {
   const d = new Date();
@@ -102,15 +108,13 @@ export async function markCheckIn(
   }
 
   const geo = checkGeofence({ lat, lng }, employee.branch, accuracy);
-  // Strict-mode branches hard-block outside check-ins. Soft-mode branches accept
-  // them but hold for HR/admin approval — unpaid until approved (rejected → absent).
+  // Strict-mode branches hard-block outside check-ins.
   if (geo.status === 'OUTSIDE' && employee.branch.strictMode) {
     throw new AppError(
       `You are ${Math.round(geo.distance)}m away from ${employee.branch.name}. Move inside the branch area to check in.`,
       403,
     );
   }
-  const approvalStatus = geo.status === 'OUTSIDE' ? 'PENDING' : null;
 
   const today = startOfToday();
   const existing = await prisma.attendance.findUnique({
@@ -122,6 +126,11 @@ export async function markCheckIn(
   const lateAfter = shiftStartToday(employee.shift.startTime).getTime() + (employee.shift.gracePeriod ?? 0) * 60_000;
   const status = now.getTime() > lateAfter ? 'LATE' : 'PRESENT';
 
+  // A late punch, or an out-of-zone (soft-mode) punch, is held for approval —
+  // it isn't paid until the reporting manager / HR approves it.
+  const lateNeedsApproval = status === 'LATE' && LATE_REQUIRES_APPROVAL;
+  const approvalStatus = geo.status === 'OUTSIDE' || lateNeedsApproval ? 'PENDING' : null;
+
   // Identity gate before any side effects: enrolled face + selfie must match
   // the logged-in employee, or the check-in is rejected outright.
   const faceMatchScore = await requireFaceMatch(employee.faceTemplateId, selfie, employeeId);
@@ -129,10 +138,11 @@ export async function markCheckIn(
   const selfieUrl = selfie ? await saveSelfie(selfie, employeeId) : null;
 
   const geoFlagged = geo.status !== 'INSIDE';
-  const flagged = geoFlagged;
-  const flagReason = geoFlagged
-    ? `Geofence ${geo.status} — ${Math.round(geo.distance)}m from ${employee.branch.name}${approvalStatus ? ' (awaiting HR approval)' : ''}`
-    : null;
+  const flagged = geoFlagged || lateNeedsApproval;
+  const reasons: string[] = [];
+  if (geoFlagged) reasons.push(`Geofence ${geo.status} — ${Math.round(geo.distance)}m from ${employee.branch.name}`);
+  if (lateNeedsApproval) reasons.push('Late arrival');
+  const flagReason = reasons.length ? `${reasons.join('; ')}${approvalStatus ? ' — awaiting approval' : ''}` : null;
 
   // Log a geofence violation row when the check-in is outside/borderline the zone.
   if (geoFlagged) {
@@ -154,6 +164,16 @@ export async function markCheckIn(
       isFlagged: flagged, flagReason, approvalStatus,
     },
   });
+
+  // Pending punch → notify the reporting manager / branch approver(s) to decide.
+  if (approvalStatus === 'PENDING') {
+    const reason = lateNeedsApproval ? 'late arrival' : 'out-of-zone check-in';
+    await notifyAdmins(prisma, await approverIds(prisma, employee), {
+      type: 'CLAIM_SUBMITTED',
+      title: 'Attendance needs approval',
+      body: `${employee.name} — ${reason} today. Approve to pay, or reject.`,
+    });
+  }
 
   // Check-in confirmation (logged always; delivered when a provider is configured).
   await dispatchWhatsApp(prisma, {
@@ -236,15 +256,31 @@ export async function decideAttendanceApproval(
   if (att.approvalStatus !== 'PENDING') {
     throw new AppError('This attendance is not awaiting approval', 409);
   }
-  return prisma.attendance.update({
+  // Rejecting a late punch marks the day as leave; rejecting an out-of-zone
+  // punch marks it absent. (Neither counts for pay.)
+  const rejectStatus = att.status === 'LATE' ? 'ON_LEAVE' : 'ABSENT';
+  const updated = await prisma.attendance.update({
     where: { id: attendanceId },
     data: {
       approvalStatus: approve ? 'APPROVED' : 'REJECTED',
       approvedBy: adminId,
       approvedAt: new Date(),
-      ...(approve ? {} : { status: 'ABSENT' }),
+      ...(approve ? {} : { status: rejectStatus }),
     },
   });
+
+  // Tell the employee the outcome (push + in-app).
+  await pushToEmployee(
+    prisma,
+    updated.employeeId,
+    approve ? 'Attendance approved ✓' : 'Attendance not approved',
+    approve
+      ? "Today's attendance was approved — it will be paid."
+      : att.status === 'LATE'
+        ? 'Your late punch was not approved — today is marked as leave.'
+        : "Today's check-in was not approved — marked absent.",
+  );
+  return updated;
 }
 
 function toResult(

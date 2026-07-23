@@ -156,7 +156,7 @@ model Shift {
   startTime    String // "09:00"
   endTime      String // "18:00"
   gracePeriod  Int     @default(15) // minutes — late tolerance after start time
-  otThresholdHours Float @default(10) // OT counts only for duty time beyond this many hours/day
+  otAfterMinutes Int  @default(0) // OT counts for duty time past (shift end + this many minutes)
   isNightShift Boolean @default(false)
 
   employees Employee[]
