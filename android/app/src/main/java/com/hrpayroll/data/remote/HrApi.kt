@@ -25,6 +25,8 @@ import com.hrpayroll.data.remote.dto.ShiftListResponse
 import com.hrpayroll.data.remote.dto.LeaveCreatedResponse
 import com.hrpayroll.data.remote.dto.LeaveListResponse
 import com.hrpayroll.data.remote.dto.LiveAttendanceRowDto
+import com.hrpayroll.data.remote.dto.MonthSummaryResponse
+import com.hrpayroll.data.remote.dto.DailyReportResponse
 import com.hrpayroll.data.remote.dto.MeDto
 import com.hrpayroll.data.remote.dto.OtpResponse
 import com.hrpayroll.data.remote.dto.PayslipListResponse
@@ -102,6 +104,15 @@ interface HrApi {
 
     @GET("admin/attendance/live")
     suspend fun liveAttendance(): List<LiveAttendanceRowDto>
+
+    @GET("admin/reports/daily")
+    suspend fun dailyReport(@retrofit2.http.Query("date") date: String): DailyReportResponse
+
+    @GET("admin/attendance/month-summary")
+    suspend fun monthSummary(
+        @retrofit2.http.Query("month") month: Int,
+        @retrofit2.http.Query("year") year: Int,
+    ): MonthSummaryResponse
 
     @GET("admin/reports/performance")
     suspend fun performance(

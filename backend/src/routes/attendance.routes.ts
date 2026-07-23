@@ -190,6 +190,53 @@ export async function attendanceRoutes(app: FastifyInstance) {
     },
   );
 
+  // Company-wide month calendar: per-day present / late / absent counts.
+  // Powers the admin Live Attendance calendar (tap a day to see that date).
+  app.get(
+    '/admin/attendance/month-summary',
+    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') },
+    async (req) => {
+      const q = req.query as { month?: string; year?: string };
+      const now = new Date();
+      const month = q.month ? parseInt(q.month, 10) : now.getMonth() + 1;
+      const year = q.year ? parseInt(q.year, 10) : now.getFullYear();
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 1);
+      const daysInMonth = new Date(year, month, 0).getDate();
+
+      const [totalStaff, atts] = await Promise.all([
+        app.prisma.employee.count({ where: { status: 'ACTIVE' } }),
+        app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } }),
+      ]);
+      const key = (d: Date) => `${d.getDate()}`;
+      const byDay = new Map<string, typeof atts>();
+      for (const a of atts) {
+        const k = key(a.date);
+        const list = byDay.get(k) ?? [];
+        list.push(a);
+        byDay.set(k, list);
+      }
+
+      const days = [];
+      const summary = { present: 0, late: 0, absent: 0 };
+      for (let dn = 1; dn <= daysInMonth; dn++) {
+        const d = new Date(year, month - 1, dn);
+        const list = byDay.get(String(dn)) ?? [];
+        const present = list.filter((a) => a.checkIn && (a.status === 'PRESENT' || a.status === 'LATE')).length;
+        const late = list.filter((a) => a.status === 'LATE').length;
+        const isFuture = d > now;
+        const isSunday = d.getDay() === 0;
+        // Absent only makes sense for past working days.
+        const absent = isFuture || isSunday ? 0 : Math.max(totalStaff - present, 0);
+        days.push({ day: dn, weekday: d.getDay(), present, late, absent, future: isFuture });
+        summary.present += present;
+        summary.late += late;
+        summary.absent += absent;
+      }
+      return { month, year, totalStaff, days, summary };
+    },
+  );
+
   // Per-employee performance/monitoring report for a month (admin, mobile + web).
   app.get(
     '/admin/reports/performance',

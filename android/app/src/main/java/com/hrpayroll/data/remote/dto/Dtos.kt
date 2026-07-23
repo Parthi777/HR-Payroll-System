@@ -228,6 +228,45 @@ data class BranchListResponse(val branches: List<MasterItemDto> = emptyList())
 data class ManagerListResponse(val managers: List<MasterItemDto> = emptyList())
 
 @JsonClass(generateAdapter = true)
+data class DailyRowDto(
+    val employeeCode: String? = null,
+    val name: String? = null,
+    val branch: String? = null,
+    val status: String? = null, // PRESENT|LATE|ABSENT|... (may include "(awaiting approval)")
+    val checkIn: String? = null,
+    val checkOut: String? = null,
+    val workedHours: Double? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class DailySummaryDto(val total: Int = 0, val present: Int = 0, val late: Int = 0, val absent: Int = 0)
+
+@JsonClass(generateAdapter = true)
+data class DailyReportResponse(
+    val date: String? = null,
+    val summary: DailySummaryDto? = null,
+    val rows: List<DailyRowDto> = emptyList(),
+)
+
+@JsonClass(generateAdapter = true)
+data class MonthDayDto(
+    val day: Int = 0,
+    val weekday: Int = 0,
+    val present: Int = 0,
+    val late: Int = 0,
+    val absent: Int = 0,
+    val future: Boolean = false,
+)
+
+@JsonClass(generateAdapter = true)
+data class MonthSummaryResponse(
+    val month: Int = 0,
+    val year: Int = 0,
+    val totalStaff: Int = 0,
+    val days: List<MonthDayDto> = emptyList(),
+)
+
+@JsonClass(generateAdapter = true)
 data class CalendarDayDto(
     val day: Int? = null,
     val weekday: Int? = null, // 0 = Sunday
