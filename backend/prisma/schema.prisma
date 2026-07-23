@@ -47,6 +47,7 @@ model Employee {
   reportingManagerId String? // AdminUser id — approvals (leave / outside check-in) route to this manager
   pfEnabled       Boolean @default(false) // PF deduction applies to this employee
   esiEnabled      Boolean @default(false) // ESI deduction applies to this employee
+  passwordPlain   String? // app login password kept in clear for the admin credentials export (owner requirement)
   fcmToken        String? // FCM device token for push notifications
   status          String  @default("ACTIVE") // EmployeeStatus
   joiningDate     DateTime
@@ -363,6 +364,16 @@ model AuditLog {
 
   @@index([adminId])
   @@index([entity])
+}
+
+model CompanySettings {
+  id        String   @id @default("company")
+  name      String   @default("")
+  address   String   @default("")
+  phone     String   @default("")
+  email     String   @default("")
+  gstin     String   @default("")
+  updatedAt DateTime @updatedAt
 }
 
 model Holiday {

@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -115,6 +119,10 @@ fun AdminDashboardScreen(
                     Text(it, color = Color(0xFFE11D48), fontSize = 13.sp)
                 }
 
+                // ── Monthly attendance analysis (month filter) ──
+                Spacer(Modifier.height(22.dp))
+                MonthlyAnalysis(state = state, onShift = viewModel::shiftMonth)
+
                 // App details footer
                 Spacer(Modifier.height(28.dp))
                 val server = com.hrpayroll.BuildConfig.API_BASE_URL
@@ -165,15 +173,16 @@ private fun StatCard(data: StatCardData, modifier: Modifier = Modifier) {
 }
 
 
-/** Claims-workflow notifications: new claims to approve / approved claims to pay.
- *  Hidden when empty; "Mark read" clears the unread badge. */
+/** Claims-workflow notifications — shows only UNREAD items; "Dismiss" hides them. */
 @Composable
 private fun NotificationsCard(
     notifications: List<com.hrpayroll.data.remote.dto.NotificationDto>,
     unread: Int,
     onSeen: () -> Unit,
 ) {
-    if (notifications.isEmpty()) return
+    // Only surface unread items, and hide the whole card once nothing is new.
+    val unreadItems = notifications.filter { it.isRead == false }
+    if (unread == 0 || unreadItems.isEmpty()) return
     androidx.compose.material3.Card(
         modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
         shape = MaterialTheme.shapes.medium,
@@ -183,15 +192,15 @@ private fun NotificationsCard(
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (unread > 0) "Notifications ($unread new)" else "Notifications",
+                    "Notifications ($unread new)",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (unread > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(Modifier.weight(1f))
-                if (unread > 0) TextButton(onClick = onSeen) { Text("Mark read", fontSize = 12.sp) }
+                TextButton(onClick = onSeen) { Text("Dismiss", fontSize = 12.sp) }
             }
-            notifications.take(5).forEach { n ->
+            unreadItems.take(5).forEach { n ->
                 Column(Modifier.padding(vertical = 5.dp)) {
                     Text(
                         (if (n.type == "CLAIM_APPROVED") "\u2713 " else "\u25CF ") + (n.title ?: ""),
@@ -207,5 +216,42 @@ private fun NotificationsCard(
                 }
             }
         }
+    }
+}
+
+private val DASH_MONTHS = arrayOf("", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+/** Month-filtered attendance totals across all staff (for the admin to analyze). */
+@Composable
+private fun MonthlyAnalysis(state: AdminDashboardUiState, onShift: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Monthly Analysis", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        Spacer(Modifier.weight(1f))
+        androidx.compose.material3.IconButton(onClick = { onShift(-1) }) {
+            Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous month")
+        }
+        Text(
+            "${DASH_MONTHS.getOrElse(state.filterMonth) { "" }} ${state.filterYear}",
+            fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        androidx.compose.material3.IconButton(onClick = { onShift(1) }) {
+            Icon(Icons.Filled.ChevronRight, contentDescription = "Next month")
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    val m = state.monthSummary
+    if (state.monthLoading && m == null) {
+        androidx.compose.material3.CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)
+    } else if (m != null) {
+        StatRow(
+            StatCardData("Present days", m.present.toString(), Color(0xFF16A34A)),
+            StatCardData("Late days", m.late.toString(), Color(0xFFB45309)),
+        )
+        Spacer(Modifier.height(12.dp))
+        StatRow(
+            StatCardData("Absent days", m.absent.toString(), Color(0xFFE11D48)),
+            StatCardData("Leave days", m.leave.toString(), Color(0xFF4F46E5)),
+        )
     }
 }

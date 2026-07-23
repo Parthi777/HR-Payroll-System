@@ -5,7 +5,18 @@ import useSWR from 'swr';
 import { fetcher, api, apiUpload } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent } from '@/components/ui/card';
-import { UserPlus, Loader2, X, ScanFace, Check, Pencil, Trash2 } from 'lucide-react';
+import { PasswordInput } from '@/components/password-input';
+import { UserPlus, Loader2, X, ScanFace, Check, Pencil, Trash2, Upload, KeyRound } from 'lucide-react';
+
+/** Client-side CSV download. */
+function downloadCsv(filename: string, header: string[], rows: (string | number | null | undefined)[][]) {
+  const esc = (v: string | number | null | undefined) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [header.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 interface EmployeeRow {
   id: string;
@@ -38,6 +49,21 @@ export default function EmployeesPage() {
   const { data, error, isLoading, mutate } = useSWR<{ employees: EmployeeRow[] }>('/admin/employees', fetcher, { shouldRetryOnError: false });
   const employees = data?.employees ?? [];
   const [modal, setModal] = useState<{ mode: 'add' } | { mode: 'edit'; employee: EmployeeRow } | null>(null);
+  const [showBulk, setShowBulk] = useState(false);
+  const [dlBusy, setDlBusy] = useState(false);
+
+  async function downloadCredentials() {
+    setDlBusy(true);
+    try {
+      const res = await api<{ employees: { employeeCode: string; name: string; phone: string; branch: string; password: string }[] }>('/admin/employees/credentials');
+      downloadCsv('employee-credentials.csv', ['Employee Code', 'Name', 'Phone', 'Branch', 'App Password'],
+        res.employees.map((e) => [e.employeeCode, e.name, e.phone, e.branch, e.password]));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Only a Super Admin can download credentials');
+    } finally {
+      setDlBusy(false);
+    }
+  }
 
   async function deactivate(e: EmployeeRow) {
     if (!confirm(`Deactivate ${e.name}? They will no longer be able to log in or check in.`)) return;
@@ -52,10 +78,18 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-6">
       <PageHero title="Employees" subtitle={`${employees.length} staff · live from database`}>
+        <button onClick={downloadCredentials} disabled={dlBusy} title="Download all employees' login credentials (Super Admin)" className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium text-white ring-1 ring-white/25 hover:bg-white/25 disabled:opacity-50">
+          {dlBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />} Credentials
+        </button>
+        <button onClick={() => setShowBulk(true)} className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium text-white ring-1 ring-white/25 hover:bg-white/25">
+          <Upload className="h-4 w-4" /> Bulk Upload
+        </button>
         <button onClick={() => setModal({ mode: 'add' })} className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90">
           <UserPlus className="h-4 w-4" /> Add Employee
         </button>
       </PageHero>
+
+      {showBulk && <BulkUploadModal onClose={() => setShowBulk(false)} onDone={() => mutate()} />}
 
       {isLoading && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>}
       {error && <Card><CardContent className="p-5 text-sm text-destructive">Couldn&apos;t load employees. Sign in and ensure the backend is running.</CardContent></Card>}
@@ -182,7 +216,7 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
           <input className={input} placeholder={editing ? 'Employee code' : `Auto: ${nc?.nextCode ?? '…'} (or type one)`} value={f.employeeCode} onChange={(e) => set('employeeCode', e.target.value)} disabled={editing} />
           <input className={input} placeholder="Phone * (+91…)" value={f.phone} onChange={(e) => set('phone', e.target.value)} />
           <input className={input} placeholder="Email" value={f.email} onChange={(e) => set('email', e.target.value)} />
-          <input className={input} type="password" placeholder={editing ? 'New password (blank = keep)' : 'App login password *'} value={f.password} onChange={(e) => set('password', e.target.value)} />
+          <PasswordInput className={input} placeholder={editing ? 'New password (blank = keep)' : 'App login password *'} value={f.password} onChange={(v) => set('password', v)} />
           <input className={input} type="number" placeholder="Salary (₹/mo) *" value={f.salary} onChange={(e) => set('salary', e.target.value)} />
           <input className={input} type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} />
           <select className={input} value={f.branchId} onChange={(e) => set('branchId', e.target.value)}>
@@ -275,6 +309,90 @@ function EnrollFaceButton({ employee, onEnrolled }: { employee: EmployeeRow; onE
         {status === 'uploading' ? 'Enrolling…' : enrolled ? 'Face enrolled — re-enroll' : 'Enroll Face'}
       </button>
       {msg && <p className="mt-1 text-[11px] text-destructive">{msg}</p>}
+    </div>
+  );
+}
+
+interface BulkResult { imported: number; created: { employeeCode: string; name: string; phone: string; password: string }[]; errors: string[] }
+
+function BulkUploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<BulkResult | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  function downloadTemplate() {
+    downloadCsv('employee-import-template.csv',
+      ['name', 'phone', 'salary', 'branch', 'department', 'designation', 'shift', 'email', 'password'],
+      [['Ravi Kumar', '9876543210', '15000', 'Bhavani Branch', 'Sales', 'Executive', 'General Shift', 'ravi@example.com', '']]);
+  }
+
+  async function upload() {
+    if (!file) { setErr('Choose a CSV file first'); return; }
+    setBusy(true); setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await apiUpload<BulkResult>('/admin/employees/bulk-import', fd);
+      setResult(res);
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card p-6 shadow-brand" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">Bulk Upload Employees</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+
+        {!result ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Upload a CSV with columns <b>name, phone, salary</b> (required) and optionally branch, department,
+              designation, shift, email, password. Codes auto-generate; blank passwords are auto-created.
+            </p>
+            <button onClick={downloadTemplate} className="mt-3 text-sm font-semibold text-brand-600 hover:underline">
+              ↓ Download CSV template
+            </button>
+            <input type="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="mt-4 block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-600" />
+            {err && <p className="mt-3 text-sm text-destructive">{err}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={onClose} className="h-10 rounded-xl border border-border px-4 text-sm font-medium">Cancel</button>
+              <button onClick={upload} disabled={busy} className="flex h-10 items-center gap-2 rounded-xl brand-gradient px-5 text-sm font-semibold text-white disabled:opacity-60">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Import
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-emerald-600">Imported {result.imported} employee(s).</p>
+            {result.errors.length > 0 && (
+              <div className="mt-2 rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+                {result.errors.map((e, i) => <div key={i}>{e}</div>)}
+              </div>
+            )}
+            {result.created.length > 0 && (
+              <button
+                onClick={() => downloadCsv('imported-credentials.csv', ['Employee Code', 'Name', 'Phone', 'App Password'],
+                  result.created.map((c) => [c.employeeCode, c.name, c.phone, c.password]))}
+                className="mt-3 flex h-10 items-center gap-2 rounded-xl bg-brand-50 px-4 text-sm font-semibold text-brand-600"
+              >
+                <KeyRound className="h-4 w-4" /> Download credentials of imported staff
+              </button>
+            )}
+            <div className="mt-5 flex justify-end">
+              <button onClick={onClose} className="h-10 rounded-xl brand-gradient px-5 text-sm font-semibold text-white">Done</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

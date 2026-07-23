@@ -6,6 +6,12 @@ import { runMonthlyPayroll } from '../services/payroll/payroll-run.service.js';
 import { generatePayslipPdf } from '../services/payroll/payslip-pdf.service.js';
 import { generateSalaryRegisterPdf } from '../services/payroll/salary-register-pdf.service.js';
 
+/** Company profile for PDF headers (empty object when unset). */
+async function getCompany(app: FastifyInstance): Promise<{ name: string; address: string }> {
+  const c = await app.prisma.companySettings.findUnique({ where: { id: 'company' } });
+  return { name: c?.name ?? '', address: c?.address ?? '' };
+}
+
 /** Fetch a payslip (with employee+branch) and stream it as a PDF. */
 async function streamPayslipPdf(app: FastifyInstance, reply: FastifyReply, id: string) {
   const payslip = await app.prisma.payslip.findUnique({
@@ -13,7 +19,7 @@ async function streamPayslipPdf(app: FastifyInstance, reply: FastifyReply, id: s
     include: { employee: { include: { branch: true } } },
   });
   if (!payslip) throw AppError.notFound('Payslip');
-  const pdf = await generatePayslipPdf(payslip);
+  const pdf = await generatePayslipPdf({ ...payslip, company: await getCompany(app) });
   reply.header('Content-Type', 'application/pdf');
   reply.header('Content-Disposition', `inline; filename="payslip-${payslip.month}-${payslip.year}.pdf"`);
   return reply.send(pdf);
@@ -48,6 +54,7 @@ export async function payrollRoutes(app: FastifyInstance) {
       orderBy: { employee: { employeeCode: 'asc' } },
     });
     if (payslips.length === 0) throw AppError.notFound('No payslips for that month — run payroll first');
+    const company = await getCompany(app);
     const pdf = await generateSalaryRegisterPdf(
       Number(month),
       Number(year),
@@ -71,6 +78,7 @@ export async function payrollRoutes(app: FastifyInstance) {
         payDate: p.payDate,
         status: p.status,
       })),
+      company,
     );
     reply.header('Content-Type', 'application/pdf');
     reply.header('Content-Disposition', `attachment; filename="salary-register-${month}-${year}.pdf"`);

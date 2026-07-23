@@ -104,7 +104,10 @@ interface HrApi {
     suspend fun liveAttendance(): List<LiveAttendanceRowDto>
 
     @GET("admin/reports/performance")
-    suspend fun performance(): List<PerformanceRowDto>
+    suspend fun performance(
+        @retrofit2.http.Query("month") month: Int? = null,
+        @retrofit2.http.Query("year") year: Int? = null,
+    ): List<PerformanceRowDto>
 
     // ── Claims (employee) ──
     @GET("claims/my-claims")

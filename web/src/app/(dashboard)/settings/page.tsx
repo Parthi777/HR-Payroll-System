@@ -9,16 +9,62 @@ import { Building2, GitBranch, Briefcase, Plus, Loader2, Pencil, Trash2, Check, 
 
 interface Named { id: string; name: string }
 
+interface Company { name: string; address: string; phone: string; email: string; gstin: string }
+
 export default function SettingsPage() {
   return (
     <div className="space-y-6">
-      <PageHero title="Settings" subtitle="Company master data · live" />
+      <PageHero title="Settings" subtitle="Company profile & master data · live" />
+      <CompanyCard />
       <div className="grid gap-4 lg:grid-cols-3">
         <BranchesCard />
         <ListManager title="Departments" icon={Briefcase} endpoint="/admin/departments" listKey="departments" />
         <ListManager title="Designations" icon={GitBranch} endpoint="/admin/designations" listKey="designations" />
       </div>
     </div>
+  );
+}
+
+/** Company profile — printed on salary slips & the salary register PDF. */
+function CompanyCard() {
+  const { data, mutate } = useSWR<{ company: Company }>('/admin/company', fetcher, { shouldRetryOnError: false });
+  const [f, setF] = useState<Company | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const c = f ?? data?.company ?? { name: '', address: '', phone: '', email: '', gstin: '' };
+  const set = (k: keyof Company, v: string) => { setSaved(false); setF({ ...c, [k]: v }); };
+  const input = 'h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40';
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api('/admin/company', { method: 'PUT', body: JSON.stringify(c) });
+      await mutate();
+      setSaved(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4" /> Company Profile <span className="text-xs font-normal text-muted-foreground">(shown on salary slips)</span></CardTitle></CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2">
+        <input className={`${input} sm:col-span-2`} placeholder="Company name" value={c.name} onChange={(e) => set('name', e.target.value)} />
+        <input className={`${input} sm:col-span-2`} placeholder="Address" value={c.address} onChange={(e) => set('address', e.target.value)} />
+        <input className={input} placeholder="Phone" value={c.phone} onChange={(e) => set('phone', e.target.value)} />
+        <input className={input} placeholder="Email" value={c.email} onChange={(e) => set('email', e.target.value)} />
+        <input className={input} placeholder="GSTIN" value={c.gstin} onChange={(e) => set('gstin', e.target.value)} />
+        <div className="flex items-center gap-3 sm:col-span-2">
+          <button onClick={save} disabled={saving} className="flex h-10 items-center gap-2 rounded-xl brand-gradient px-5 text-sm font-semibold text-white disabled:opacity-60">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
+          </button>
+          {saved && <span className="text-sm font-medium text-emerald-600">Saved ✓</span>}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

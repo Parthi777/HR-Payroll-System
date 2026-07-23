@@ -153,6 +153,43 @@ export async function attendanceRoutes(app: FastifyInstance) {
     },
   );
 
+  // Dashboard charts: 7-day attendance trend + today's branch-wise present counts.
+  app.get(
+    '/admin/dashboard/trend',
+    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') },
+    async () => {
+      const days: { label: string; present: number; late: number; absent: number }[] = [];
+      const totalStaff = await app.prisma.employee.count({ where: { status: 'ACTIVE' } });
+      for (let i = 6; i >= 0; i--) {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        start.setDate(start.getDate() - i);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        const atts = await app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } });
+        const present = atts.filter((a) => a.checkIn && (a.status === 'PRESENT' || a.status === 'LATE')).length;
+        const late = atts.filter((a) => a.status === 'LATE').length;
+        days.push({
+          label: start.toLocaleDateString('en-US', { weekday: 'short', timeZone: COMPANY_TZ }),
+          present,
+          late,
+          absent: Math.max(totalStaff - present, 0),
+        });
+      }
+
+      const { start, end } = todayRange();
+      const branches = await app.prisma.branch.findMany({ include: { employees: { where: { status: 'ACTIVE' }, select: { id: true } } } });
+      const todayAtts = await app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end }, checkIn: { not: null } } });
+      const presentByEmp = new Set(todayAtts.map((a) => a.employeeId));
+      const branchStats = branches.map((b) => ({
+        branch: b.name,
+        present: b.employees.filter((e) => presentByEmp.has(e.id)).length,
+        total: b.employees.length,
+      }));
+      return { trend: days, branches: branchStats };
+    },
+  );
+
   // Per-employee performance/monitoring report for a month (admin, mobile + web).
   app.get(
     '/admin/reports/performance',

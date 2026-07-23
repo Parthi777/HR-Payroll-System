@@ -102,6 +102,61 @@ export async function reportsRoutes(app: FastifyInstance) {
     return { month, year, rows, branches: [...branches.values()] };
   });
 
+  // ── Per-employee monthly report: day-by-day attendance for one employee ──
+  app.get('/admin/reports/employee/:id', { preHandler: guard }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { month, year } = z
+      .object({ month: z.coerce.number().min(1).max(12), year: z.coerce.number() })
+      .parse(req.query);
+    const employee = await app.prisma.employee.findUnique({
+      where: { id },
+      include: { branch: { select: { name: true } }, shift: { select: { name: true } } },
+    });
+    if (!employee) throw new Error('Employee not found');
+
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const [atts, holidays] = await Promise.all([
+      app.prisma.attendance.findMany({ where: { employeeId: id, date: { gte: start, lt: end } } }),
+      app.prisma.holiday.findMany({ where: { date: { gte: start, lt: end } } }),
+    ]);
+    const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const byDay = new Map(atts.map((a) => [key(a.date), a]));
+    const holidaySet = new Set(holidays.map((h) => key(h.date)));
+    const now = new Date();
+
+    const days = [];
+    const summary = { present: 0, late: 0, half: 0, absent: 0, off: 0, worked: 0 };
+    for (let dn = 1; dn <= daysInMonth; dn++) {
+      const d = new Date(year, month - 1, dn);
+      const a = byDay.get(key(d));
+      const counted = a && a.checkIn && (a.approvalStatus == null || a.approvalStatus === 'APPROVED');
+      const isOff = d.getDay() === 0 || holidaySet.has(key(d));
+      let status = 'ABSENT';
+      if (a?.approvalStatus === 'PENDING') status = 'PENDING';
+      else if (counted && (a!.status === 'PRESENT' || a!.status === 'LATE' || a!.status === 'HALF_DAY')) status = a!.status;
+      else if (isOff) status = 'OFF';
+      else if (d > now) status = 'FUTURE';
+      if (status === 'PRESENT') summary.present += 1;
+      else if (status === 'LATE') { summary.late += 1; summary.present += 1; }
+      else if (status === 'HALF_DAY') summary.half += 1;
+      else if (status === 'OFF') summary.off += 1;
+      else if (status === 'ABSENT') summary.absent += 1;
+      if (a?.workingMinutes) summary.worked += a.workingMinutes;
+      days.push({
+        day: dn, weekday: d.getDay(), status,
+        checkIn: fmtTime(a?.checkIn ?? null), checkOut: fmtTime(a?.checkOut ?? null),
+        workedHours: a?.workingMinutes ? Math.round((a.workingMinutes / 60) * 10) / 10 : null,
+      });
+    }
+    return {
+      employee: { name: employee.name, employeeCode: employee.employeeCode, branch: employee.branch.name, shift: employee.shift.name },
+      month, year, days,
+      summary: { ...summary, workedHours: Math.round((summary.worked / 60) * 10) / 10 },
+    };
+  });
+
   // ── Late-punch report: who was late, when, how often ──
   app.get('/admin/reports/late', { preHandler: guard }, async (req) => {
     const { month, year } = z

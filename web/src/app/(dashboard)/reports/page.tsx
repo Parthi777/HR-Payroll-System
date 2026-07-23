@@ -20,8 +20,11 @@ interface MonthlyRow {
 interface BranchRow { branch: string; employees: number; presentDays: number; lateDays: number; workedHours: number }
 interface LateRow { employeeCode: string; name: string; branch: string; count: number; dates: string[]; checkIns: (string | null)[] }
 
-const TABS = ['Daily', 'Monthly', 'Late Punches'] as const;
+const TABS = ['Daily', 'Monthly', 'Employee', 'Late Punches'] as const;
 type Tab = (typeof TABS)[number];
+
+interface EmpDay { day: number; weekday: number; status: string; checkIn: string | null; checkOut: string | null; workedHours: number | null }
+interface Named2 { id: string; name: string; employeeCode?: string }
 
 const today = new Date();
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -86,6 +89,7 @@ export default function ReportsPage() {
 
       {tab === 'Daily' && <DailyReport date={date} />}
       {tab === 'Monthly' && <MonthlyReport month={month} year={year} />}
+      {tab === 'Employee' && <EmployeeReport month={month} year={year} />}
       {tab === 'Late Punches' && <LateReport month={month} year={year} />}
     </div>
   );
@@ -278,5 +282,66 @@ function TableCard({ title, loading, empty, onExport, children }: {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function EmployeeReport({ month, year }: { month: number; year: number }) {
+  const { data: emps } = useSWR<{ employees: Named2[] }>('/admin/employees', fetcher, { shouldRetryOnError: false });
+  const list = emps?.employees ?? [];
+  const [empId, setEmpId] = useState('');
+  const { data, isLoading } = useSWR<{
+    employee: { name: string; employeeCode: string; branch: string; shift: string };
+    days: EmpDay[];
+    summary: { present: number; late: number; half: number; absent: number; off: number; workedHours: number };
+  }>(empId ? `/admin/reports/employee/${empId}?month=${month}&year=${year}` : null, fetcher, { shouldRetryOnError: false });
+  const tag = `${year}-${String(month).padStart(2, '0')}`;
+
+  return (
+    <>
+      <Card>
+        <CardContent className="p-4">
+          <select value={empId} onChange={(e) => setEmpId(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40 sm:max-w-sm">
+            <option value="">Select an employee…</option>
+            {list.map((e) => <option key={e.id} value={e.id}>{e.name} {e.employeeCode ? `(${e.employeeCode})` : ''}</option>)}
+          </select>
+        </CardContent>
+      </Card>
+
+      {empId && data && (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          <Stat label="Present" value={data.summary.present} tint="text-emerald-600" />
+          <Stat label="Late" value={data.summary.late} tint="text-amber-600" />
+          <Stat label="Absent" value={data.summary.absent} tint="text-rose-600" />
+          <Stat label="Off/Holiday" value={data.summary.off} />
+          <Stat label="Worked hrs" value={data.summary.workedHours} tint="text-brand-600" />
+        </div>
+      )}
+
+      {empId && (
+        <TableCard
+          title={data ? `${data.employee.name} · ${data.employee.employeeCode} · ${tag}` : `Employee report — ${tag}`}
+          loading={isLoading}
+          empty={!data ? 'No data.' : null}
+          onExport={() => data && downloadCsv(`employee-${data.employee.employeeCode}-${tag}.csv`,
+            ['Day', 'Status', 'Check-In', 'Check-Out', 'Hours'],
+            data.days.map((d) => [d.day, d.status, d.checkIn, d.checkOut, d.workedHours]))}
+        >
+          <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className={th}>Date</th><th className={th}>Status</th><th className={th}>Check-In</th><th className={th}>Check-Out</th><th className={th}>Hours</th>
+          </tr></thead>
+          <tbody>
+            {data?.days.map((d) => (
+              <tr key={d.day} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
+                <td className={td}>{tag}-{String(d.day).padStart(2, '0')}</td>
+                <td className={td}><StatusChip status={d.status} /></td>
+                <td className={td}>{d.checkIn ?? '—'}</td>
+                <td className={td}>{d.checkOut ?? '—'}</td>
+                <td className={td}>{d.workedHours != null ? `${d.workedHours}h` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </TableCard>
+      )}
+    </>
   );
 }

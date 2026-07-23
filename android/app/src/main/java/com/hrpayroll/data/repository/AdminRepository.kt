@@ -17,7 +17,7 @@ class AdminRepository @Inject constructor(
 ) {
     suspend fun dashboardStats(): DashboardStatsDto = api.dashboardStats()
     suspend fun liveAttendance(): List<LiveAttendanceRowDto> = api.liveAttendance()
-    suspend fun performance(): List<PerformanceRowDto> = api.performance()
+    suspend fun performance(month: Int? = null, year: Int? = null): List<PerformanceRowDto> = api.performance(month, year)
 
     suspend fun claims(status: String?): List<ClaimDto> = api.adminClaims(status).claims
     suspend fun approveClaim(id: String) = api.approveClaim(id)

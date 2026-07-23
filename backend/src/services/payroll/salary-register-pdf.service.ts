@@ -45,7 +45,7 @@ const COLS: Col[] = [
 ];
 
 /** Landscape A4 salary register: one row per employee + totals, for accounts/bank use. */
-export function generateSalaryRegisterPdf(month: number, year: number, rows: RegisterRow[]): Promise<Buffer> {
+export function generateSalaryRegisterPdf(month: number, year: number, rows: RegisterRow[], company?: { name: string; address: string }): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28 });
     const chunks: Buffer[] = [];
@@ -55,12 +55,13 @@ export function generateSalaryRegisterPdf(month: number, year: number, rows: Reg
 
     const brand = '#2F55F4';
     const left = 28;
-    const company = process.env.COMPANY_NAME ?? 'AI HR Payroll';
+    const companyName = company?.name || process.env.COMPANY_NAME || 'AI HR Payroll';
 
     const drawHeader = () => {
-      doc.fillColor('#1c1b2e').fontSize(15).font('Helvetica-Bold').text(company, left, 26);
+      doc.fillColor('#1c1b2e').fontSize(15).font('Helvetica-Bold').text(companyName, left, 22);
+      if (company?.address) doc.fontSize(8).font('Helvetica').fillColor('#777').text(company.address, left, 40);
       doc.fontSize(10).font('Helvetica').fillColor('#555')
-        .text(`Salary Register — ${MONTHS[month]} ${year} · ${rows.length} employee(s) · amounts in Rs.`, left, 46);
+        .text(`Salary Register — ${MONTHS[month]} ${year} · ${rows.length} employee(s) · amounts in Rs.`, left, company?.address ? 52 : 46);
       let x = left;
       const y = 68;
       doc.rect(left, y, COLS.reduce((s, c) => s + c.w, 0), 16).fill(brand);

@@ -18,6 +18,7 @@ export interface PayslipPdfData {
   otherDeductions: number;
   netSalary: number;
   employee: { name: string; employeeCode: string; branch?: { name: string } | null };
+  company?: { name: string; address: string };
 }
 
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -38,8 +39,9 @@ export function generatePayslipPdf(p: PayslipPdfData): Promise<Buffer> {
 
     // Header band
     doc.rect(0, 0, doc.page.width, 90).fill(brand);
-    doc.fillColor('#ffffff').fontSize(22).text('AI HR Payroll', left, 28);
-    doc.fontSize(11).fillColor('#e7e4fa').text('Payslip', left, 58);
+    doc.fillColor('#ffffff').fontSize(20).text(p.company?.name || 'AI HR Payroll', left, 22);
+    if (p.company?.address) doc.fontSize(8).fillColor('#d9d5f5').text(p.company.address, left, 46);
+    doc.fontSize(11).fillColor('#e7e4fa').text('Payslip', left, p.company?.address ? 60 : 58);
     doc.fillColor('#ffffff').fontSize(13).text(`${MONTHS[p.month] ?? ''} ${p.year}`, 0, 40, { align: 'right', width: right });
 
     // Employee block

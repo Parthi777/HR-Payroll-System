@@ -12,9 +12,33 @@ const branchSchema = z.object({
   strictMode: z.boolean().default(false),
 });
 
+const companySchema = z.object({
+  name: z.string().default(''),
+  address: z.string().default(''),
+  phone: z.string().default(''),
+  email: z.string().default(''),
+  gstin: z.string().default(''),
+});
+
 /** Master data: branches, departments, designations. Powers the Add-Employee form. */
 export async function masterRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'));
+
+  // Company profile — shown on salary slips / register. Singleton row id="company".
+  app.get('/admin/company', async () => {
+    const company = await app.prisma.companySettings.findUnique({ where: { id: 'company' } });
+    return { company: company ?? { id: 'company', name: '', address: '', phone: '', email: '', gstin: '' } };
+  });
+
+  app.put('/admin/company', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
+    const data = companySchema.parse(req.body);
+    const company = await app.prisma.companySettings.upsert({
+      where: { id: 'company' },
+      update: data,
+      create: { id: 'company', ...data },
+    });
+    return { company };
+  });
 
   // Branches
   app.get('/admin/branches', async () => ({

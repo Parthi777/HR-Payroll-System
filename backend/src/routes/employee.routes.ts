@@ -45,11 +45,36 @@ const createEmployeeSchema = z.object({
   status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(), // app-access control
 });
 
-/** Never return the password hash to clients. */
-function safeEmployee<T extends { passwordHash?: string | null }>(e: T) {
-  const { passwordHash: _omit, ...rest } = e;
+/** Never return the password hash or plaintext to normal list clients. */
+function safeEmployee<T extends { passwordHash?: string | null; passwordPlain?: string | null }>(e: T) {
+  const { passwordHash: _h, passwordPlain: _p, ...rest } = e;
   return rest;
 }
+
+/** Minimal CSV parser (handles quoted fields with commas). Returns rows of cells. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') inQuotes = false;
+      else cell += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      if (cell !== '' || row.length) { row.push(cell); rows.push(row); row = []; cell = ''; }
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+const randomPassword = () => Math.random().toString(36).slice(2, 8);
 
 export async function employeeRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'));
@@ -104,9 +129,88 @@ export async function employeeRoutes(app: FastifyInstance) {
       throw new AppError(`Phone ${rest.phone} is already registered to ${phoneDup.name} (${phoneDup.employeeCode})`, 409);
     }
 
-    const data = { ...rest, employeeCode, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
+    const data = { ...rest, employeeCode, ...(password ? { passwordHash: await bcrypt.hash(password, 10), passwordPlain: password } : {}) };
     const employee = await app.prisma.employee.create({ data });
     return { employee: safeEmployee(employee) };
+  });
+
+  // Credentials sheet — code / name / phone / app password. SUPER_ADMIN only.
+  app.get('/credentials', { preHandler: requireRole('SUPER_ADMIN') }, async () => {
+    const employees = await app.prisma.employee.findMany({
+      where: { status: 'ACTIVE' },
+      select: { employeeCode: true, name: true, phone: true, passwordPlain: true, branch: { select: { name: true } } },
+      orderBy: { employeeCode: 'asc' },
+    });
+    return {
+      employees: employees.map((e) => ({
+        employeeCode: e.employeeCode,
+        name: e.name,
+        phone: e.phone,
+        branch: e.branch?.name ?? '',
+        password: e.passwordPlain ?? '(set before this feature — reset to reveal)',
+      })),
+    };
+  });
+
+  // Bulk import from CSV: columns name,phone,salary,branch,department,designation,shift[,email][,password].
+  // Missing password is auto-generated; branch/dept/desig/shift resolved by name.
+  app.post('/bulk-import', async (req) => {
+    const file = await req.file();
+    if (!file) throw new AppError('Upload a CSV file', 400);
+    const rows = parseCsv((await file.toBuffer()).toString('utf8'));
+    if (rows.length < 2) throw new AppError('CSV has no data rows', 400);
+
+    const header = rows[0].map((h) => h.trim().toLowerCase());
+    const col = (name: string) => header.indexOf(name);
+    const iName = col('name'), iPhone = col('phone'), iSalary = col('salary');
+    if (iName < 0 || iPhone < 0 || iSalary < 0) {
+      throw new AppError('CSV must have at least: name, phone, salary columns', 400);
+    }
+    const iEmail = col('email'), iPwd = col('password');
+    const iBranch = col('branch'), iDept = col('department'), iDesig = col('designation'), iShift = col('shift');
+
+    const [branches, depts, desigs, shifts] = await Promise.all([
+      app.prisma.branch.findMany(), app.prisma.department.findMany(),
+      app.prisma.designation.findMany(), app.prisma.shift.findMany(),
+    ]);
+    const byName = <T extends { name: string }>(list: T[], v: string | undefined) =>
+      v ? list.find((x) => x.name.toLowerCase() === v.trim().toLowerCase()) : undefined;
+
+    const created: { employeeCode: string; name: string; phone: string; password: string }[] = [];
+    const errors: string[] = [];
+
+    for (let r = 1; r < rows.length; r++) {
+      const cells = rows[r];
+      const name = cells[iName]?.trim();
+      if (!name) continue;
+      try {
+        const phone = normalizePhone(cells[iPhone]?.trim() ?? '');
+        const salary = parseFloat(cells[iSalary] ?? '');
+        if (!(salary > 0)) throw new Error('invalid salary');
+        const branch = byName(branches, iBranch >= 0 ? cells[iBranch] : undefined) ?? branches[0];
+        const dept = byName(depts, iDept >= 0 ? cells[iDept] : undefined) ?? depts[0];
+        const desig = byName(desigs, iDesig >= 0 ? cells[iDesig] : undefined) ?? desigs[0];
+        const shift = byName(shifts, iShift >= 0 ? cells[iShift] : undefined) ?? shifts[0];
+        if (!branch || !dept || !desig || !shift) throw new Error('create a branch/department/designation/shift first');
+        if (await app.prisma.employee.findUnique({ where: { phone } })) throw new Error(`phone ${phone} already exists`);
+
+        const password = (iPwd >= 0 && cells[iPwd]?.trim()) || randomPassword();
+        const employeeCode = await nextEmployeeCode(app.prisma);
+        await app.prisma.employee.create({
+          data: {
+            employeeCode, name, phone,
+            email: iEmail >= 0 ? cells[iEmail]?.trim() || null : null,
+            branchId: branch.id, departmentId: dept.id, designationId: desig.id, shiftId: shift.id,
+            joiningDate: new Date(), salary,
+            passwordHash: await bcrypt.hash(password, 10), passwordPlain: password,
+          },
+        });
+        created.push({ employeeCode, name, phone, password });
+      } catch (e) {
+        errors.push(`Row ${r + 1} (${name}): ${e instanceof Error ? e.message : 'failed'}`);
+      }
+    }
+    return { imported: created.length, created, errors };
   });
 
   app.get('/:id', async (req) => {
@@ -120,7 +224,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { password, ...rest } = createEmployeeSchema.partial().parse(req.body);
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
-    const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
+    const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10), passwordPlain: password } : {}) };
     const employee = await app.prisma.employee.update({ where: { id }, data });
     return { employee: safeEmployee(employee) };
   });
@@ -180,10 +284,5 @@ export async function employeeRoutes(app: FastifyInstance) {
 
     await app.prisma.employee.update({ where: { id }, data: { faceTemplateId: faceId, faceTemplateUrl } });
     return { id, faceId, enrolled: true };
-  });
-
-  app.post('/bulk-import', async () => {
-    // TODO: parse Excel upload -> bulk create
-    return { imported: 0, status: 'TODO' };
   });
 }

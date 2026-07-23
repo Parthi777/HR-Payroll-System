@@ -39,7 +39,24 @@ export async function geofenceRoutes(app: FastifyInstance) {
   });
 
   app.get('/admin/geofence/violations', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') }, async () => {
-    const violations = await app.prisma.geofenceViolation.findMany({ take: 100, orderBy: { timestamp: 'desc' } });
-    return { violations };
+    const violations = await app.prisma.geofenceViolation.findMany({
+      take: 100,
+      orderBy: { timestamp: 'desc' },
+      include: { branch: { select: { name: true } } },
+    });
+    // GeofenceViolation has no employee relation — resolve names in one query.
+    const emps = await app.prisma.employee.findMany({
+      where: { id: { in: [...new Set(violations.map((v) => v.employeeId))] } },
+      select: { id: true, name: true, employeeCode: true },
+    });
+    const byId = new Map(emps.map((e) => [e.id, e]));
+    return {
+      violations: violations.map((v) => ({
+        ...v,
+        employeeName: byId.get(v.employeeId)?.name ?? 'Unknown',
+        employeeCode: byId.get(v.employeeId)?.employeeCode ?? '',
+        branchName: v.branch?.name ?? '',
+      })),
+    };
   });
 }
