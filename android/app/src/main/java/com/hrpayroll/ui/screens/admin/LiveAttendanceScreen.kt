@@ -100,6 +100,18 @@ fun LiveAttendanceScreen(viewModel: LiveAttendanceViewModel = hiltViewModel()) {
                 modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // Pending late / out-of-zone punches to approve.
+                if (state.approvals.isNotEmpty()) {
+                    item {
+                        ApprovalsCard(
+                            approvals = state.approvals,
+                            busyId = state.busyApprovalId,
+                            onApprove = viewModel::approve,
+                            onReject = viewModel::reject,
+                        )
+                    }
+                }
+
                 // Month calendar (late / absent) — collapsible.
                 if (state.showCalendar) {
                     item {
@@ -320,4 +332,62 @@ private fun DatePicker0(initial: LocalDate, onPicked: (LocalDate) -> Unit, onDis
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     ) { DatePicker(state = pickerState) }
+}
+
+/** Pending late / out-of-zone punches — approve to pay, reject to mark leave/absent. */
+@Composable
+private fun ApprovalsCard(
+    approvals: List<com.hrpayroll.data.remote.dto.AttendanceApprovalDto>,
+    busyId: String?,
+    onApprove: (String) -> Unit,
+    onReject: (String) -> Unit,
+) {
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                "Attendance approvals (${approvals.size})",
+                fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFFB45309),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Approve to pay today, or reject (late → marked leave, out-of-zone → absent).",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+            approvals.forEach { a ->
+                Spacer(Modifier.height(10.dp))
+                Column {
+                    Text("${a.name ?: "Employee"}  ", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface)
+                    Text("${a.employeeCode ?: ""} · ${a.branch ?: ""} · in ${a.checkIn ?: "—"}",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    a.reason?.let { Text(it, fontSize = 12.sp, color = Color(0xFFB45309)) }
+                    Spacer(Modifier.height(6.dp))
+                    val busy = busyId == a.id
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.compose.material3.Button(
+                            onClick = { a.id?.let(onApprove) },
+                            enabled = !busy,
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                        ) {
+                            if (busy) androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                            else Text("Approve", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { a.id?.let(onReject) },
+                            enabled = !busy,
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE11D48)),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                        ) { Text("Reject", fontSize = 13.sp) }
+                    }
+                }
+                androidx.compose.material3.HorizontalDivider(
+                    Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+            }
+        }
+    }
 }

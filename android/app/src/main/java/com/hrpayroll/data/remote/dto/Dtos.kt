@@ -229,6 +229,24 @@ data class BranchListResponse(val branches: List<MasterItemDto> = emptyList())
 data class ManagerListResponse(val managers: List<MasterItemDto> = emptyList())
 
 @JsonClass(generateAdapter = true)
+data class AttendanceApprovalDto(
+    val id: String? = null,
+    val name: String? = null,
+    val employeeCode: String? = null,
+    val branch: String? = null,
+    val date: String? = null,
+    val checkIn: String? = null,
+    val reason: String? = null,
+    val hasSelfie: Boolean? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class AttendanceApprovalsResponse(val approvals: List<AttendanceApprovalDto> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class AttendanceDecisionResponse(val ok: Boolean = true)
+
+@JsonClass(generateAdapter = true)
 data class DailyRowDto(
     val employeeCode: String? = null,
     val name: String? = null,

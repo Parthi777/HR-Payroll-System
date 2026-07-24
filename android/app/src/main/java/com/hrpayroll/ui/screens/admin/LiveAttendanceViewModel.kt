@@ -3,6 +3,7 @@ package com.hrpayroll.ui.screens.admin
 import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hrpayroll.data.remote.dto.AttendanceApprovalDto
 import com.hrpayroll.data.remote.dto.DailyRowDto
 import com.hrpayroll.data.remote.dto.DailySummaryDto
 import com.hrpayroll.data.remote.dto.MonthSummaryResponse
@@ -26,6 +27,9 @@ data class LiveAttendanceUiState(
     val calMonth: Int = LocalDate.now().monthValue,
     val calYear: Int = LocalDate.now().year,
     val monthSummary: MonthSummaryResponse? = null,
+    // Pending late / out-of-zone punches awaiting this admin's decision.
+    val approvals: List<AttendanceApprovalDto> = emptyList(),
+    val busyApprovalId: String? = null,
 )
 
 @HiltViewModel
@@ -36,7 +40,27 @@ class LiveAttendanceViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(LiveAttendanceUiState())
     val uiState: StateFlow<LiveAttendanceUiState> = _uiState.asStateFlow()
 
-    init { loadDate(LocalDate.now()); loadMonth() }
+    init { loadDate(LocalDate.now()); loadMonth(); loadApprovals() }
+
+    fun loadApprovals() {
+        viewModelScope.launch {
+            runCatching { repository.attendanceApprovals() }
+                .onSuccess { _uiState.value = _uiState.value.copy(approvals = it) }
+        }
+    }
+
+    fun approve(id: String) = decide(id, approve = true)
+    fun reject(id: String) = decide(id, approve = false)
+
+    private fun decide(id: String, approve: Boolean) {
+        _uiState.value = _uiState.value.copy(busyApprovalId = id)
+        viewModelScope.launch {
+            runCatching { if (approve) repository.approveAttendance(id) else repository.rejectAttendance(id) }
+            _uiState.value = _uiState.value.copy(busyApprovalId = null)
+            loadApprovals()
+            loadDate(_uiState.value.date) // refresh the day list to reflect the decision
+        }
+    }
 
     /** Per-employee attendance for one date (present / late / absent). */
     fun loadDate(date: LocalDate) {

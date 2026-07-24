@@ -26,6 +26,8 @@ import com.hrpayroll.data.remote.dto.LeaveCreatedResponse
 import com.hrpayroll.data.remote.dto.LeaveListResponse
 import com.hrpayroll.data.remote.dto.LiveAttendanceRowDto
 import com.hrpayroll.data.remote.dto.MonthSummaryResponse
+import com.hrpayroll.data.remote.dto.AttendanceDecisionResponse
+import com.hrpayroll.data.remote.dto.AttendanceApprovalsResponse
 import com.hrpayroll.data.remote.dto.DailyReportResponse
 import com.hrpayroll.data.remote.dto.MeDto
 import com.hrpayroll.data.remote.dto.OtpResponse
@@ -107,6 +109,13 @@ interface HrApi {
 
     @GET("admin/reports/daily")
     suspend fun dailyReport(@retrofit2.http.Query("date") date: String): DailyReportResponse
+
+    @GET("admin/attendance/approvals")
+    suspend fun attendanceApprovals(): AttendanceApprovalsResponse
+    @retrofit2.http.PATCH("admin/attendance/{id}/approve")
+    suspend fun approveAttendance(@retrofit2.http.Path("id") id: String): AttendanceDecisionResponse
+    @retrofit2.http.PATCH("admin/attendance/{id}/reject")
+    suspend fun rejectAttendance(@retrofit2.http.Path("id") id: String): AttendanceDecisionResponse
 
     @GET("admin/attendance/month-summary")
     suspend fun monthSummary(
