@@ -4,9 +4,21 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Download, Filter, Check, X, Camera, Loader2, MapPinOff } from 'lucide-react';
+import { FileSpreadsheet, FileText, Search, Check, X, Camera, Loader2, MapPinOff } from 'lucide-react';
 import { useLiveAttendance, type LiveAttendanceRow } from '@/hooks/useApi';
 import { fetcher, api, apiBlobUrl } from '@/lib/api';
+
+const esc = (v: string | number | null | undefined) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+const escHtml = (v: string | null | undefined) =>
+  String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+
+function downloadCsv(filename: string, header: string[], rows: (string | number | null | undefined)[][]) {
+  const csv = [header.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 interface PendingApproval {
   id: string;
@@ -30,6 +42,45 @@ const chipClass: Record<string, string> = {
 
 export default function AttendancePage() {
   const { data: rows, isLive } = useLiveAttendance(noRows);
+  const [search, setSearch] = useState('');
+  const [branchFilter, setBranchFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
+  const branches = [...new Set(rows.map((r) => r.branch).filter(Boolean))];
+  const statuses = [...new Set(rows.map((r) => r.status).filter(Boolean))];
+  const q = search.trim().toLowerCase();
+  const filtered = rows.filter((r) => {
+    const mBranch = branchFilter === 'ALL' || r.branch === branchFilter;
+    const mStatus = statusFilter === 'ALL' || r.status === statusFilter;
+    const mSearch = !q || (r.name?.toLowerCase().includes(q) ?? false) || (r.branch?.toLowerCase().includes(q) ?? false);
+    return mBranch && mStatus && mSearch;
+  });
+
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  function exportExcel() {
+    downloadCsv(
+      `live-attendance-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Employee', 'Branch', 'Check-In', 'Check-Out', 'Status'],
+      filtered.map((r) => [r.name, r.branch, r.checkIn, r.checkOut, r.status]),
+    );
+  }
+
+  function exportPdf() {
+    const w = window.open('', '_blank');
+    if (!w) { alert('Allow pop-ups to export the PDF'); return; }
+    const body = filtered.map((r) =>
+      `<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.branch)}</td><td>${escHtml(r.checkIn ?? '—')}</td><td>${escHtml(r.checkOut ?? '—')}</td><td>${escHtml(r.status)}</td></tr>`,
+    ).join('');
+    w.document.write(`<!doctype html><html><head><title>Live Attendance ${today}</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px;color:#1c1b2e}h2{margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:13px}
+      table{width:100%;border-collapse:collapse;font-size:13px}th{background:#2F55F4;color:#fff;text-align:left;padding:8px}td{padding:8px;border-bottom:1px solid #eee}</style>
+      </head><body><h2>Live Attendance</h2><p>${today} · ${filtered.length} record(s)</p>
+      <table><thead><tr><th>Employee</th><th>Branch</th><th>Check-In</th><th>Check-Out</th><th>Status</th></tr></thead>
+      <tbody>${body || '<tr><td colspan="5">No records</td></tr>'}</tbody></table>
+      <script>window.onload=function(){window.print()}</script></body></html>`);
+    w.document.close();
+  }
 
   return (
     <div className="space-y-6">
@@ -37,15 +88,37 @@ export default function AttendancePage() {
         <span className={`chip ${isLive ? 'chip-present' : 'chip-half'}`}>
           {isLive ? '● Live' : 'Offline'}
         </span>
-        <button className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 hover:bg-white/25">
-          <Filter className="h-4 w-4" /> Filter
+        <button onClick={exportExcel} disabled={filtered.length === 0} className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium text-white ring-1 ring-white/25 hover:bg-white/25 disabled:opacity-50">
+          <FileSpreadsheet className="h-4 w-4" /> Excel
         </button>
-        <button className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90">
-          <Download className="h-4 w-4" /> Export
+        <button onClick={exportPdf} disabled={filtered.length === 0} className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90 disabled:opacity-50">
+          <FileText className="h-4 w-4" /> PDF
         </button>
       </PageHero>
 
       <ApprovalsCard />
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search employee or branch…"
+            className="h-10 w-full rounded-xl border border-border bg-card pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+          />
+        </div>
+        <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40">
+          <option value="ALL">All branches</option>
+          {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40">
+          <option value="ALL">All statuses</option>
+          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <span className="text-xs text-muted-foreground">{filtered.length} of {rows.length}</span>
+      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -61,14 +134,14 @@ export default function AttendancePage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 && (
+                {filtered.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-6 py-10 text-center text-muted-foreground">
-                      {isLive ? 'No check-ins yet today' : 'Waiting for live data…'}
+                      {rows.length === 0 ? (isLive ? 'No check-ins yet today' : 'Waiting for live data…') : 'No records match your filters'}
                     </td>
                   </tr>
                 )}
-                {rows.map((r) => (
+                {filtered.map((r) => (
                   <tr key={r.id} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
                     <td className="px-6 py-4 font-medium">{r.name}</td>
                     <td className="px-6 py-4 text-muted-foreground">{r.branch}</td>
