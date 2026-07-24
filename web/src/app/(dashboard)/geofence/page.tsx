@@ -279,15 +279,19 @@ export default function GeofencePage() {
 
           <Card>
             <CardHeader><CardTitle className="text-base">Violations ({violations.length})</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent>
               {violations.length === 0 && <div className="text-sm text-muted-foreground">No violations logged. 🎉</div>}
-              {violations.map((v) => (
-                <div key={v.id} className="rounded-xl border border-border/60 bg-rose-50/50 p-3 text-sm">
-                  <div className="font-semibold">{v.employeeName ?? 'Employee'} <span className="text-xs font-normal text-muted-foreground">{v.employeeCode}{v.branchName ? ` · ${v.branchName}` : ''}</span></div>
-                  <div className="font-medium text-rose-600">{Math.round(v.distance)}m outside zone</div>
-                  <div className="text-xs text-muted-foreground">{new Date(v.timestamp).toLocaleString()}</div>
+              {violations.length > 0 && (
+                <div className="max-h-[26rem] space-y-3 overflow-y-auto pr-1">
+                  {violations.map((v) => (
+                    <div key={v.id} className="rounded-xl border border-border/60 bg-rose-50/50 p-3 text-sm">
+                      <div className="font-semibold">{v.employeeName ?? 'Employee'} <span className="text-xs font-normal text-muted-foreground">{v.employeeCode}{v.branchName ? ` · ${v.branchName}` : ''}</span></div>
+                      <div className="font-medium text-rose-600">{Math.round(v.distance)}m outside zone</div>
+                      <div className="text-xs text-muted-foreground">{new Date(v.timestamp).toLocaleString()}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </CardContent>
           </Card>
         </div>
