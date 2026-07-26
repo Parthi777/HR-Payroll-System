@@ -8,6 +8,8 @@ import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
 import { isS3Enabled, uploadImage } from '../storage/storage.service.js';
 import { notifyAdmins, approverIds } from '../notification.service.js';
 import { pushToEmployee } from '../push.service.js';
+import { resolveAttendanceStatus, isLateArrival } from './attendance-policy.js';
+import { atCompanyTime, startOfDay } from '../../utils/time.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 
@@ -18,14 +20,6 @@ const LATE_REQUIRES_APPROVAL = process.env.LATE_REQUIRES_APPROVAL !== 'false';
 function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-/** Build today's Date at the shift's HH:MM start time. */
-function shiftStartToday(startTime: string): Date {
-  const [h, m] = startTime.split(':').map(Number);
-  const d = new Date();
-  d.setHours(h || 0, m || 0, 0, 0);
   return d;
 }
 
@@ -123,12 +117,13 @@ export async function markCheckIn(
   if (existing?.checkIn) throw new AppError('Already checked in today', 409);
 
   const now = new Date();
-  const lateAfter = shiftStartToday(employee.shift.startTime).getTime() + (employee.shift.gracePeriod ?? 0) * 60_000;
-  const status = now.getTime() > lateAfter ? 'LATE' : 'PRESENT';
+  // Half-day window (12:30–14:00) takes precedence over LATE — see attendance-policy.
+  const status = resolveAttendanceStatus({ checkIn: now, checkOut: null, shift: employee.shift });
+  const late = isLateArrival(now, employee.shift);
 
   // A late punch, or an out-of-zone (soft-mode) punch, is held for approval —
   // it isn't paid until the reporting manager / HR approves it.
-  const lateNeedsApproval = status === 'LATE' && LATE_REQUIRES_APPROVAL;
+  const lateNeedsApproval = late && LATE_REQUIRES_APPROVAL;
   const approvalStatus = geo.status === 'OUTSIDE' || lateNeedsApproval ? 'PENDING' : null;
 
   // Identity gate before any side effects: enrolled face + selfie must match
@@ -213,7 +208,7 @@ export async function markCheckOut(
   // Same identity gate as check-in — nobody can check out on a colleague's behalf.
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
-    include: { branch: true },
+    include: { branch: true, shift: true },
   });
   await requireFaceMatch(employee?.faceTemplateId ?? null, selfie, employeeId);
 
@@ -236,12 +231,120 @@ export async function markCheckOut(
   const workingMinutes = Math.round((now.getTime() - existing.checkIn.getTime()) / 60_000);
   const selfieUrl = selfie ? await saveSelfie(selfie, employeeId) : null;
 
+  // Leaving inside the midday window turns the day into a half day — re-derive
+  // the status now that both punch times are known.
+  const status = employee?.shift
+    ? resolveAttendanceStatus({ checkIn: existing.checkIn, checkOut: now, shift: employee.shift })
+    : existing.status;
+
   const record = await prisma.attendance.update({
     where: { id: existing.id },
-    data: { checkOut: now, checkOutLat: lat, checkOutLng: lng, checkOutSelfie: selfieUrl, workingMinutes },
+    data: { checkOut: now, checkOutLat: lat, checkOutLng: lng, checkOutSelfie: selfieUrl, workingMinutes, status },
   });
 
   return toResult(record, record.geofenceStatus, 0, record.isFlagged, record.flagReason, record.approvalStatus);
+}
+
+export interface ManualPunchInput {
+  employeeId: string;
+  /** MANUAL = typed times, no photo. SELFIE = photo attached, no geofence/face gate. */
+  mode: 'MANUAL' | 'SELFIE';
+  /** Wall-clock "HH:MM" in company time. At least one of the two is required. */
+  checkIn?: string | null;
+  checkOut?: string | null;
+  /** Calendar day the punch belongs to. Defaults to today. */
+  date?: Date;
+  reason: string;
+  selfie?: Buffer | null;
+  /** Set when HR raised the punch on the employee's behalf. */
+  raisedByAdminId?: string | null;
+}
+
+/**
+ * Manual / selfie punch — the escape hatch for a punch that can't go through
+ * the normal gate (face verification failing, or the employee working away
+ * from the branch geofence).
+ *
+ * Deliberately skips geofence, face matching and the shift-time gate: the
+ * punch is recorded as typed and always lands as PENDING, so it pays only
+ * once the reporting manager approves it. Filling in a missing half of an
+ * already-recorded day (e.g. a check-out that never went through) sends the
+ * whole day back for approval, since the times are now partly unverified.
+ */
+export async function markManualPunch(
+  prisma: PrismaClient,
+  input: ManualPunchInput,
+): Promise<MarkResult> {
+  const { employeeId, mode, reason } = input;
+  if (!input.checkIn && !input.checkOut) {
+    throw new AppError('Enter a check-in time, a check-out time, or both', 400);
+  }
+  if (!reason?.trim()) throw new AppError('A reason is required for a manual punch', 400);
+  if (mode === 'SELFIE' && !input.selfie) throw new AppError('A selfie is required for a selfie punch', 400);
+
+  const employee = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    include: { branch: true, shift: true },
+  });
+  if (!employee) throw AppError.notFound('Employee not found');
+  if (employee.status !== 'ACTIVE') throw new AppError('This employee is not active', 403);
+
+  const day = input.date ? startOfDay(input.date) : startOfToday();
+  if (day.getTime() > startOfToday().getTime()) {
+    throw new AppError('You cannot punch for a future date', 400);
+  }
+
+  const existing = await prisma.attendance.findUnique({
+    where: { employeeId_date: { employeeId, date: day } },
+  });
+
+  const checkIn = input.checkIn ? atCompanyTime(day, input.checkIn) : (existing?.checkIn ?? null);
+  const checkOut = input.checkOut ? atCompanyTime(day, input.checkOut) : (existing?.checkOut ?? null);
+  if (!checkIn) throw new AppError('There is no check-in for this day — enter a check-in time too', 400);
+  if (checkOut && checkOut.getTime() <= checkIn.getTime()) {
+    // Night shifts legitimately close the next morning; roll the clock forward.
+    if (employee.shift?.isNightShift) checkOut.setDate(checkOut.getDate() + 1);
+    else throw new AppError('Check-out time must be after the check-in time', 400);
+  }
+
+  const status = resolveAttendanceStatus({ checkIn, checkOut, shift: employee.shift });
+  const workingMinutes = checkOut ? Math.round((checkOut.getTime() - checkIn.getTime()) / 60_000) : null;
+  const selfieUrl = input.selfie ? await saveSelfie(input.selfie, employeeId) : null;
+
+  const label = mode === 'SELFIE' ? 'Selfie punch' : 'Manual punch';
+  const raisedNote = input.raisedByAdminId ? ' (raised by HR)' : '';
+  const flagReason = `${label}${raisedNote} — ${reason.trim()} — awaiting approval`;
+
+  const data = {
+    checkIn,
+    ...(checkOut ? { checkOut } : {}),
+    ...(workingMinutes != null ? { workingMinutes } : {}),
+    // A manual/selfie punch carries no verified location or face score.
+    ...(selfieUrl ? (input.checkOut && !input.checkIn ? { checkOutSelfie: selfieUrl } : { checkInSelfie: selfieUrl }) : {}),
+    status,
+    punchMode: mode,
+    punchReason: reason.trim(),
+    raisedBy: input.raisedByAdminId ?? null,
+    approvalStatus: 'PENDING',
+    approvedBy: null,
+    approvedAt: null,
+    isFlagged: true,
+    flagReason,
+  };
+
+  const record = await prisma.attendance.upsert({
+    where: { employeeId_date: { employeeId, date: day } },
+    update: data,
+    create: { employeeId, date: day, geofenceStatus: 'OUTSIDE', ...data },
+  });
+
+  await notifyAdmins(prisma, await approverIds(prisma, employee), {
+    type: 'CLAIM_SUBMITTED',
+    title: `${label} needs approval`,
+    body: `${employee.name} — ${reason.trim()}. Approve to pay, or reject.`,
+  });
+
+  return toResult(record, record.geofenceStatus, 0, true, flagReason, 'PENDING');
 }
 
 /** HR/admin decision on an out-of-geofence check-in. Reject marks the day absent. */
@@ -256,9 +359,9 @@ export async function decideAttendanceApproval(
   if (att.approvalStatus !== 'PENDING') {
     throw new AppError('This attendance is not awaiting approval', 409);
   }
-  // Rejecting a late punch marks the day as leave; rejecting an out-of-zone
-  // punch marks it absent. (Neither counts for pay.)
-  const rejectStatus = att.status === 'LATE' ? 'ON_LEAVE' : 'ABSENT';
+  // Rejecting a late punch marks the day as leave; rejecting an out-of-zone or
+  // manual/selfie punch marks it absent. (Neither counts for pay.)
+  const rejectStatus = att.status === 'LATE' && att.punchMode === 'GEO' ? 'ON_LEAVE' : 'ABSENT';
   const updated = await prisma.attendance.update({
     where: { id: attendanceId },
     data: {
@@ -275,10 +378,12 @@ export async function decideAttendanceApproval(
     updated.employeeId,
     approve ? 'Attendance approved ✓' : 'Attendance not approved',
     approve
-      ? "Today's attendance was approved — it will be paid."
-      : att.status === 'LATE'
-        ? 'Your late punch was not approved — today is marked as leave.'
-        : "Today's check-in was not approved — marked absent.",
+      ? 'Your attendance was approved — it will be paid.'
+      : att.punchMode !== 'GEO'
+        ? `Your ${att.punchMode === 'SELFIE' ? 'selfie' : 'manual'} punch was not approved — the day is marked absent.`
+        : att.status === 'LATE'
+          ? 'Your late punch was not approved — that day is marked as leave.'
+          : 'Your check-in was not approved — marked absent.',
   );
   return updated;
 }

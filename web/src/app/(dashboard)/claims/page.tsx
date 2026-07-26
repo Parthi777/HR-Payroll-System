@@ -27,9 +27,18 @@ interface ClaimMessage {
   createdAt: string;
 }
 
+/** Expense-head name for display — the backend label, else the raw stored code. */
+const typeName = (c: { typeLabel?: string | null; type: string }) => c.typeLabel || c.type;
+
 interface Claim {
   id: string;
   type: string;
+  /** Human expense-head label from the backend (falls back to the raw code). */
+  typeLabel?: string | null;
+  /** Running Claim ID, issued on receipt. Zero-padded label, e.g. "001". */
+  claimNoLabel?: string | null;
+  /** Running Voucher No — only present once the claim is approved. */
+  voucherNoLabel?: string | null;
   title: string;
   amount: number;
   description?: string | null;
@@ -83,17 +92,24 @@ const APPROVE_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_A
 
 export default function ClaimsPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('ALL');
+  const [typeFilter, setTypeFilter] = useState('ALL');
   const [role, setRole] = useState<string>('');
   useEffect(() => setRole(localStorage.getItem('adminRole') ?? ''), []);
 
   const { data: stats, mutate: mutateStats } = useSWR<Stats>('/admin/claims/stats', fetcher, { shouldRetryOnError: false });
+  // Canonical expense-head list — keeps the picker in step with the backend.
+  const { data: typeData } = useSWR<{ types: { code: string; label: string }[] }>(
+    '/claims/types', fetcher, { shouldRetryOnError: false },
+  );
+  const claimTypes = typeData?.types ?? [];
   const query = filter === 'ALL' ? '' : `?status=${filter}`;
   const { data, error, isLoading, mutate } = useSWR<{ claims: Claim[] }>(
     `/admin/claims${query}`,
     fetcher,
     { shouldRetryOnError: false },
   );
-  const claims = data?.claims ?? [];
+  // Status is filtered server-side; the expense head is a local narrowing.
+  const claims = (data?.claims ?? []).filter((c) => typeFilter === 'ALL' || c.type === typeFilter);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Claim | null>(null);
 
@@ -154,10 +170,11 @@ export default function ClaimsPage() {
   function exportCsv() {
     downloadCsv(
       `claims-${filter.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Employee', 'Code', 'Branch', 'Type', 'Title', 'Amount', 'Status', 'Submitted', 'Reviewed By', 'Reviewed At', 'Paid By', 'Paid At', 'Note'],
+      ['Claim ID', 'Voucher No', 'Employee', 'Code', 'Branch', 'Type', 'Title', 'Amount', 'Status', 'Submitted', 'Reviewed By', 'Reviewed At', 'Paid By', 'Paid At', 'Note'],
       claims.map((c) => [
+        c.claimNoLabel, c.voucherNoLabel,
         c.employee?.name, c.employee?.employeeCode, c.employee?.branch?.name,
-        c.type, c.title, c.amount, c.status,
+        typeName(c), c.title, c.amount, c.status,
         c.createdAt ? fmtFull(c.createdAt) : '',
         c.reviewerName, c.reviewedAt ? fmtFull(c.reviewedAt) : '',
         c.paidByName, c.paidAt ? fmtFull(c.paidAt) : '',
@@ -203,6 +220,14 @@ export default function ClaimsPage() {
             {f.replace('_', ' ')}
           </button>
         ))}
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="ml-auto h-8 rounded-lg border border-border bg-card px-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-ring/40"
+        >
+          <option value="ALL">All expense heads</option>
+          {claimTypes.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
+        </select>
       </div>
 
       <Card>
@@ -229,7 +254,11 @@ export default function ClaimsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold">{c.title} · <span className="text-muted-foreground">{c.employee?.name ?? 'Employee'}</span></div>
                   <div className="text-xs text-muted-foreground">
-                    {c.type} · {fmt(c.createdAt)}{c.employee?.branch?.name ? ` · ${c.employee.branch.name}` : ''}
+                    {typeName(c)} · {fmt(c.createdAt)}{c.employee?.branch?.name ? ` · ${c.employee.branch.name}` : ''}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Claim ID {c.claimNoLabel ?? c.id.slice(-6).toUpperCase()}
+                    {c.voucherNoLabel && <> · <span className="font-semibold text-foreground">Voucher No {c.voucherNoLabel}</span></>}
                   </div>
                   {c.status === 'NEEDS_CLARIFICATION' && c.reviewerNote && (
                     <div className="mt-1 text-xs text-indigo-600">Asked: {c.reviewerNote}</div>
@@ -350,7 +379,12 @@ function ClaimDetailDialog({
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold">{c.title}</h2>
-            <div className="text-xs text-muted-foreground">Voucher No: CLM-{c.id.slice(-8).toUpperCase()}</div>
+            <div className="text-xs text-muted-foreground">
+              Claim ID: {c.claimNoLabel ?? c.id.slice(-6).toUpperCase()}
+              {c.voucherNoLabel
+                ? <> · <span className="font-semibold text-foreground">Voucher No: {c.voucherNoLabel}</span></>
+                : <> · <span className="italic">Voucher No issued on approval</span></>}
+            </div>
           </div>
           <span className={`chip ${statusChip[c.status] ?? 'bg-muted text-muted-foreground'}`}>
             {c.status.replace('_', ' ')}
@@ -360,7 +394,7 @@ function ClaimDetailDialog({
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Field label="Claimed by" value={`${c.employee?.name ?? '—'} (${c.employee?.employeeCode ?? '—'})`} />
           <Field label="Branch" value={c.employee?.branch?.name ?? '—'} />
-          <Field label="Type" value={c.type} />
+          <Field label="Claim Type" value={typeName(c)} />
           <Field label="Amount" value={inr(c.amount)} strong />
           <Field label="Submitted" value={fmtFull(c.createdAt)} />
           <Field

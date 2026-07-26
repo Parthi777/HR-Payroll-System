@@ -4,8 +4,36 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
-import { markCheckIn, markCheckOut, decideAttendanceApproval } from '../services/attendance/attendance.service.js';
+import { markCheckIn, markCheckOut, decideAttendanceApproval, markManualPunch } from '../services/attendance/attendance.service.js';
 import { getObjectBytes } from '../services/storage/storage.service.js';
+
+const HHMM = z.string().regex(/^\d{1,2}:\d{2}$/, 'Use a HH:MM time, e.g. 09:30');
+
+/** Shared shape for a manual / selfie punch, from either the app or the web admin. */
+const manualPunchSchema = z.object({
+  mode: z.enum(['MANUAL', 'SELFIE']).default('MANUAL'),
+  checkIn: HHMM.optional(),
+  checkOut: HHMM.optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  reason: z.string().min(3, 'Tell your manager why this punch is being raised'),
+});
+
+/**
+ * A manual punch arrives as JSON; a selfie punch arrives as multipart with the
+ * photo attached. Accept both on one route so clients pick whichever fits.
+ */
+async function parseManualPunch(req: FastifyRequest) {
+  if (!req.isMultipart()) {
+    return { fields: manualPunchSchema.parse(req.body), selfie: null as Buffer | null, employeeId: (req.body as { employeeId?: string })?.employeeId };
+  }
+  const raw: Record<string, string> = {};
+  let selfie: Buffer | null = null;
+  for await (const part of req.parts()) {
+    if (part.type === 'file') selfie = await part.toBuffer();
+    else raw[part.fieldname] = String(part.value);
+  }
+  return { fields: manualPunchSchema.parse(raw), selfie, employeeId: raw.employeeId };
+}
 
 /** Parse the selfie file + lat/lng/accuracy fields from a multipart request (any part order). */
 async function parseCheckinParts(req: FastifyRequest) {
@@ -70,6 +98,47 @@ export async function attendanceRoutes(app: FastifyInstance) {
     return markCheckOut(app.prisma, req.user.sub, selfie, lat, lng);
   });
 
+  /**
+   * Manual / selfie punch (employee). The escape hatch for when the normal
+   * gate can't be satisfied — face verification failing, or working away from
+   * the branch geofence. Geofence, face match and shift-time checks are all
+   * skipped; the punch lands as PENDING and pays only once the reporting
+   * manager approves it.
+   */
+  app.post('/attendance/manual-punch', { preHandler: authenticate }, async (req) => {
+    const { fields, selfie } = await parseManualPunch(req);
+    return markManualPunch(app.prisma, {
+      employeeId: req.user.sub,
+      mode: fields.mode,
+      checkIn: fields.checkIn,
+      checkOut: fields.checkOut,
+      date: fields.date ? new Date(`${fields.date}T00:00:00`) : undefined,
+      reason: fields.reason,
+      selfie,
+    });
+  });
+
+  // Same punch, raised by HR on an employee's behalf. Still goes to the
+  // reporting manager's approval queue — HR entering it is not an approval.
+  app.post(
+    '/admin/attendance/manual-punch',
+    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') },
+    async (req) => {
+      const { fields, selfie, employeeId } = await parseManualPunch(req);
+      if (!employeeId) throw new AppError('Select an employee', 400);
+      return markManualPunch(app.prisma, {
+        employeeId,
+        mode: fields.mode,
+        checkIn: fields.checkIn,
+        checkOut: fields.checkOut,
+        date: fields.date ? new Date(`${fields.date}T00:00:00`) : undefined,
+        reason: fields.reason,
+        selfie,
+        raisedByAdminId: req.user.sub,
+      });
+    },
+  );
+
   app.get('/attendance/today', { preHandler: authenticate }, async (req) => {
     const { start, end } = todayRange();
     const today = await app.prisma.attendance.findFirst({
@@ -101,7 +170,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     async () => {
       const { start, end } = todayRange();
       const rows = await app.prisma.attendance.findMany({
-        where: { date: { gte: start, lt: end } },
+        where: { date: { gte: start, lt: end }, employee: { status: 'ACTIVE' } },
         orderBy: { checkIn: 'desc' },
         include: { employee: { include: { branch: true } } },
       });
@@ -112,6 +181,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
         checkIn: fmtTime(r.checkIn),
         checkOut: fmtTime(r.checkOut),
         status: displayStatus[r.status] ?? r.status,
+        punchMode: r.punchMode,
+        approvalStatus: r.approvalStatus,
       }));
     },
   );
@@ -123,7 +194,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
     { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'CASHIER') },
     async () => {
       const { start, end } = todayRange();
-      const where = { date: { gte: start, lt: end } };
+      // Deactivated staff never count toward any admin figure.
+      const where = { date: { gte: start, lt: end }, employee: { status: 'ACTIVE' } };
 
       const [totalStaff, branches, todays, lateArrivals, onLeave, pendingApprovals] = await Promise.all([
         app.prisma.employee.count({ where: { status: 'ACTIVE' } }),
@@ -166,7 +238,9 @@ export async function attendanceRoutes(app: FastifyInstance) {
         start.setDate(start.getDate() - i);
         const end = new Date(start);
         end.setDate(end.getDate() + 1);
-        const atts = await app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } });
+        const atts = await app.prisma.attendance.findMany({
+          where: { date: { gte: start, lt: end }, employee: { status: 'ACTIVE' } },
+        });
         const present = atts.filter((a) => a.checkIn && (a.status === 'PRESENT' || a.status === 'LATE')).length;
         const late = atts.filter((a) => a.status === 'LATE').length;
         days.push({
@@ -179,7 +253,9 @@ export async function attendanceRoutes(app: FastifyInstance) {
 
       const { start, end } = todayRange();
       const branches = await app.prisma.branch.findMany({ include: { employees: { where: { status: 'ACTIVE' }, select: { id: true } } } });
-      const todayAtts = await app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end }, checkIn: { not: null } } });
+      const todayAtts = await app.prisma.attendance.findMany({
+        where: { date: { gte: start, lt: end }, checkIn: { not: null }, employee: { status: 'ACTIVE' } },
+      });
       const presentByEmp = new Set(todayAtts.map((a) => a.employeeId));
       const branchStats = branches.map((b) => ({
         branch: b.name,
@@ -206,7 +282,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
 
       const [totalStaff, atts] = await Promise.all([
         app.prisma.employee.count({ where: { status: 'ACTIVE' } }),
-        app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } }),
+        app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end }, employee: { status: 'ACTIVE' } } }),
       ]);
       const key = (d: Date) => `${d.getDate()}`;
       const byDay = new Map<string, typeof atts>();
@@ -255,7 +331,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
           include: { branch: true },
           orderBy: { name: 'asc' },
         }),
-        app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } }),
+        app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end }, employee: { status: 'ACTIVE' } } }),
       ]);
 
       const byEmp = new Map<string, typeof rows>();
@@ -366,7 +442,10 @@ export async function attendanceRoutes(app: FastifyInstance) {
 
   app.get('/admin/attendance/approvals', { preHandler: approvalGuard }, async (req) => {
     // Branch managers only see their own reports' pending check-ins.
-    const where: { approvalStatus: string; employeeId?: { in: string[] } } = { approvalStatus: 'PENDING' };
+    const where: { approvalStatus: string; employee: { status: string }; employeeId?: { in: string[] } } = {
+      approvalStatus: 'PENDING',
+      employee: { status: 'ACTIVE' },
+    };
     if (req.user.role === 'BRANCH_MANAGER') {
       const reports = await app.prisma.employee.findMany({
         where: { reportingManagerId: req.user.sub },
@@ -387,7 +466,11 @@ export async function attendanceRoutes(app: FastifyInstance) {
         branch: r.employee.branch.name,
         date: fmtDate(r.date),
         checkIn: fmtTime(r.checkIn),
+        checkOut: fmtTime(r.checkOut),
         reason: r.flagReason,
+        punchMode: r.punchMode, // GEO | MANUAL | SELFIE
+        punchReason: r.punchReason,
+        raisedByHr: !!r.raisedBy,
         hasSelfie: !!r.checkInSelfie,
       })),
     };

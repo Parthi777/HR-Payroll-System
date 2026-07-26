@@ -127,6 +127,23 @@ class AdminEmployeesViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Delete the enrolled face template. The employee cannot mark attendance
+     * again until a new photo is enrolled — used for a bad enrollment photo,
+     * a changed appearance, or off-boarding.
+     */
+    fun deleteFace(employeeId: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(enrollingId = employeeId, error = null)
+            runCatching { repository.deleteFace(employeeId) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(enrollingId = null, notice = "Face deleted — re-enroll to allow attendance")
+                    refresh()
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(enrollingId = null, error = it.userMessage()) }
+        }
+    }
+
     fun consumeNotice() {
         _uiState.value = _uiState.value.copy(notice = null)
     }

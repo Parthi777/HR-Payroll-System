@@ -6,7 +6,7 @@ import { fetcher, api, apiUpload } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent } from '@/components/ui/card';
 import { PasswordInput } from '@/components/password-input';
-import { UserPlus, Loader2, X, ScanFace, Check, Pencil, Trash2, Upload, KeyRound, Search } from 'lucide-react';
+import { UserPlus, Loader2, X, ScanFace, Check, Pencil, Trash2, Upload, KeyRound, Search, UserRoundX } from 'lucide-react';
 
 /** Client-side CSV download. */
 function downloadCsv(filename: string, header: string[], rows: (string | number | null | undefined)[][]) {
@@ -153,7 +153,7 @@ export default function EmployeesPage() {
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
-                <EnrollFaceButton employee={e} onEnrolled={() => mutate()} />
+                <EnrollFaceButton employee={e} onEnrolled={() => mutate()} onDeleted={() => mutate()} />
               </CardContent>
             </Card>
           ))}
@@ -294,12 +294,31 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
   );
 }
 
-function EnrollFaceButton({ employee, onEnrolled }: { employee: EmployeeRow; onEnrolled: () => void }) {
+function EnrollFaceButton({ employee, onEnrolled, onDeleted }: {
+  employee: EmployeeRow; onEnrolled: () => void; onDeleted: () => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>(
     employee.faceTemplateId ? 'done' : 'idle',
   );
   const [msg, setMsg] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteFace() {
+    if (!confirm(`Delete ${employee.name}'s enrolled face?\n\nThey will not be able to mark attendance until a new photo is enrolled.`)) return;
+    setDeleting(true);
+    setMsg(null);
+    try {
+      await api(`/admin/employees/${employee.id}/face`, { method: 'DELETE' });
+      setStatus('idle');
+      onDeleted();
+    } catch (err) {
+      setStatus('error');
+      setMsg(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -324,24 +343,37 @@ function EnrollFaceButton({ employee, onEnrolled }: { employee: EmployeeRow; onE
   return (
     <div>
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onPick} />
-      <button
-        onClick={() => inputRef.current?.click()}
-        disabled={status === 'uploading'}
-        className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium ${
-          enrolled
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-            : 'border-border text-muted-foreground hover:bg-muted/50'
-        }`}
-      >
-        {status === 'uploading' ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : enrolled ? (
-          <Check className="h-3.5 w-3.5" />
-        ) : (
-          <ScanFace className="h-3.5 w-3.5" />
+      <div className="flex gap-1.5">
+        <button
+          onClick={() => inputRef.current?.click()}
+          disabled={status === 'uploading' || deleting}
+          className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60 ${
+            enrolled
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-border text-muted-foreground hover:bg-muted/50'
+          }`}
+        >
+          {status === 'uploading' ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : enrolled ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : (
+            <ScanFace className="h-3.5 w-3.5" />
+          )}
+          {status === 'uploading' ? 'Enrolling…' : enrolled ? 'Face enrolled — re-enroll' : 'Enroll Face'}
+        </button>
+        {enrolled && (
+          <button
+            onClick={deleteFace}
+            disabled={deleting}
+            title="Delete enrolled face"
+            aria-label={`Delete ${employee.name}'s enrolled face`}
+            className="flex items-center justify-center rounded-xl border border-rose-200 px-2.5 text-rose-600 hover:bg-rose-50 disabled:opacity-60"
+          >
+            {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserRoundX className="h-3.5 w-3.5" />}
+          </button>
         )}
-        {status === 'uploading' ? 'Enrolling…' : enrolled ? 'Face enrolled — re-enroll' : 'Enroll Face'}
-      </button>
+      </div>
       {msg && <p className="mt-1 text-[11px] text-destructive">{msg}</p>}
     </div>
   );

@@ -38,7 +38,8 @@ export async function payrollRoutes(app: FastifyInstance) {
   app.get('/admin/payroll/payslips/:month/:year', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN', 'HR_MANAGER') }, async (req) => {
     const { month, year } = req.params as { month: string; year: string };
     const payslips = await app.prisma.payslip.findMany({
-      where: { month: Number(month), year: Number(year) },
+      // Reports and registers cover active employees only.
+      where: { month: Number(month), year: Number(year), employee: { status: 'ACTIVE' } },
       include: { employee: { select: { name: true, employeeCode: true } } },
       orderBy: { netSalary: 'desc' },
     });
@@ -49,7 +50,7 @@ export async function payrollRoutes(app: FastifyInstance) {
   app.get('/admin/payroll/register/:month/:year/pdf', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN', 'HR_MANAGER') }, async (req, reply) => {
     const { month, year } = req.params as { month: string; year: string };
     const payslips = await app.prisma.payslip.findMany({
-      where: { month: Number(month), year: Number(year) },
+      where: { month: Number(month), year: Number(year), employee: { status: 'ACTIVE' } },
       include: { employee: { select: { name: true, employeeCode: true, branch: { select: { name: true } } } } },
       orderBy: { employee: { employeeCode: 'asc' } },
     });
@@ -87,7 +88,9 @@ export async function payrollRoutes(app: FastifyInstance) {
 
   app.get('/admin/payroll/preview/:month/:year', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN') }, async (req) => {
     const { month, year } = req.params as { month: string; year: string };
-    const payslips = await app.prisma.payslip.findMany({ where: { month: Number(month), year: Number(year) } });
+    const payslips = await app.prisma.payslip.findMany({
+      where: { month: Number(month), year: Number(year), employee: { status: 'ACTIVE' } },
+    });
     return { month: Number(month), year: Number(year), preview: payslips };
   });
 

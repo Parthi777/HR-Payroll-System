@@ -454,6 +454,10 @@ GET    /api/attendance/history          # Employee's history
 GET    /api/admin/attendance/live       # Real-time all employees (SSE/WebSocket)
 GET    /api/admin/attendance/report     # Filtered report
 PATCH  /api/admin/attendance/:id/override  # Manual correction
+POST   /api/attendance/manual-punch     # Manual/selfie punch (employee) — needs manager approval
+POST   /api/admin/attendance/manual-punch  # Same, raised by HR on an employee's behalf
+GET    /api/admin/attendance/approvals  # Punches awaiting sign-off
+PATCH  /api/admin/attendance/:id/approve | /reject
 ```
 
 ### Geofence
@@ -472,6 +476,7 @@ GET    /api/admin/employees/:id
 PUT    /api/admin/employees/:id
 DELETE /api/admin/employees/:id
 POST   /api/admin/employees/:id/enroll-face    # Upload face template
+DELETE /api/admin/employees/:id/face           # Delete the enrolled face template
 POST   /api/admin/employees/bulk-import        # Excel upload
 ```
 
@@ -501,6 +506,28 @@ GET    /api/admin/payroll/preview/:month/:year
 GET    /api/payroll/my-payslips
 GET    /api/payroll/my-payslips/:id/pdf
 POST   /api/admin/payroll/send-slips       # Send all payslips via WhatsApp
+```
+
+### Claims
+```
+GET    /api/claims/types                   # Canonical expense-head list
+POST   /api/claims                         # Employee submits (allocates Claim ID)
+GET    /api/claims/:id/file?which=photo|pdf  # The scanned bill (owner or any admin incl. CASHIER)
+GET    /api/claims/:id/voucher             # A5 voucher PDF
+PATCH  /api/admin/claims/:id/approve       # Allocates the Voucher No
+PATCH  /api/admin/claims/:id/reject | /clarify | /pay
+```
+
+### Reports
+All report endpoints take `?format=json|xlsx|pdf` (json is the default) and
+cover ACTIVE employees only. `branchId` filters optionally.
+```
+GET    /api/admin/reports/daily?date=
+GET    /api/admin/reports/monthly?month=&year=
+GET    /api/admin/reports/payroll-summary?month=&year=     # Owner's salary sheet
+GET    /api/admin/reports/monthly-performance?month=&year= # Day-by-day muster grid
+GET    /api/admin/reports/employee/:id?month=&year=
+GET    /api/admin/reports/late?month=&year=
 ```
 
 ### WhatsApp
@@ -600,20 +627,42 @@ Edge cases:
 ```
 
 ### 3. Payroll Calculation Engine
-```typescript
-calculateNetSalary(employee, attendanceSummary, month, year) {
-  // 1. Working days in month (minus holidays)
-  // 2. Present days from attendance
-  // 3. Leave days (paid vs LOP)
-  // 4. Effective salary days = present + paid leaves
-  // 5. Per-day salary = grossSalary / workingDays
-  // 6. Earned gross = perDay * effectiveDays
-  // 7. PF = 12% of basic (if basic > 15000, cap at 1800)
-  // 8. ESI = 0.75% of gross (if gross <= 21000)
-  // 9. PT = per state slab
-  // 10. Net = earnedGross - PF - ESI - PT - TDS - advances
-}
+
+`computeMonthlyPayroll()` in `backend/src/services/payroll/payroll-run.service.ts`
+is the single source of truth — the payroll run persists it as a Payslip and the
+payroll report renders it live, so a report can never disagree with a payslip.
+
+Owner-specified rules:
 ```
+Per-day salary  = monthly salary / 30 (regardless of the month's length)
+Sundays/holidays = paid weekly-offs (counted as paid days, never absent)
+Sunday duty     = +1 EXTRA full day's pay — a half day on a Sunday still pays a FULL OT day
+Half day        = pays 0.5 AND adds 0.5 to absentDays
+                  (2 absences + 1 half day reports as 2.5)
+Casual leave    = paid up to 12 days/calendar year; beyond the quota it becomes LOP
+Overtime        = duty past (shift end + Shift.otAfterMinutes); 10 OT hours = 1 day's pay, pro-rated
+Approval gate   = out-of-geofence / late / manual / selfie punches pay only once APPROVED
+PF              = 12% of earned salary, capped ₹1800 (only when Employee.pfEnabled)
+ESI             = 0.75% of gross if gross <= ₹21,000 (only when Employee.esiEnabled)
+Net (payable)   = earned + OT pay + Sunday pay − PF − ESI
+Invariant       : paidDays + absentDays + lopDays === daysInMonth
+```
+
+### 3a. Half-day policy (`attendance-policy.ts`)
+
+A punch inside the midday window (default 12:30–14:00, env
+`HALF_DAY_WINDOW_START` / `HALF_DAY_WINDOW_END`) marks the day HALF_DAY:
+
+- arrives inside the window **after the shift started** → half day
+- leaves inside the window **before the shift closed** → half day
+- anything outside the window is a normal full day (LATE past the grace period)
+
+The mid-shift guard is what keeps evening (14:00) and night (22:00) shifts from
+being mis-marked. `effectiveStatus()` re-derives stored rows against the current
+policy, so a rule change applies to history too — but rows an admin set to
+ON_LEAVE / ABSENT are left alone. A late arrival that also lands in the window
+reports as HALF_DAY while still counting as a late punch for the discipline
+policy (`isLateArrival()` is tracked separately).
 
 ### 4. Shift Anomaly Detection
 - Flag if check-in time is >1 hour before shift start
@@ -797,6 +846,13 @@ When working in this repo, Claude should:
 | No internet on check-in | Store in Room DB, sync via WorkManager when connected |
 | GPS unavailable | Block check-in, show "Enable GPS" prompt |
 | Face not enrolled / match fails | Block check-in/out with 403 and a clear message (strict since 2026-07-15) |
+| Employee can't pass the face/geofence gate | Manual or selfie punch: times typed by hand, geofence + face + shift-time checks skipped, held PENDING for the reporting manager. Not paid until approved. |
+| Half day (in or out at midday) | Pays 0.5 and adds 0.5 to the absent count — see "Half-day policy" |
+| Employee works a Sunday | Sunday stays a paid weekly-off AND earns one extra full day's pay (even for a half day) |
+| Deactivated employee | Excluded from every report, export, payslip list and dashboard figure |
+| Claim numbering | Two never-reset sequences, printed zero-padded (001): `claimNo` on receipt (every claim), `voucherNo` only on approval. Both `@unique`; allocation retries on P2002. |
+| Claim expense heads | 20 owner-defined heads in `services/claim/claim-types.ts` (source of truth). Backend rejects unknown codes; legacy TRAVEL/FOOD/etc. still render a label. Run `scripts/migrate-claims.ts` to migrate + backfill. |
+| Cashier verifying a bill | Sees the scanned bill before disbursing — image bills inline, PDF bills via "View bill PDF" (Android) / the PDF button (web) |
 | Employee checks in from home | Geofence will flag; HR to investigate |
 | Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days |
 | Same employee multiple devices | Block — only registered device allowed (device fingerprint) |
@@ -816,4 +872,4 @@ When working in this repo, Claude should:
 
 ---
 
-*Last updated: June 2026 | Project: AI HR Payroll System | Stack: Kotlin + Next.js + Node.js*
+*Last updated: July 2026 | Project: AI HR Payroll System | Stack: Kotlin + Next.js + Node.js*

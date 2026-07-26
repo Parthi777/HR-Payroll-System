@@ -20,6 +20,9 @@ class ClaimRepository @Inject constructor(
     /** Raw bytes of the printable A5 voucher PDF. */
     suspend fun voucherPdf(id: String): ByteArray = api.claimVoucher(id).bytes()
 
+    /** Raw bytes of the attached bill ("photo" or "pdf"). */
+    suspend fun claimFile(id: String, which: String): ByteArray = api.claimFile(id, which).bytes()
+
     suspend fun submit(
         type: String,
         title: String,

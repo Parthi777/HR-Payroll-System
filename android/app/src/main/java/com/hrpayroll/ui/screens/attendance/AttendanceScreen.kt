@@ -20,18 +20,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -69,6 +79,23 @@ fun AttendanceScreen(
     viewModel: AttendanceViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(state.manualNotice) {
+        state.manualNotice?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.consumeManualNotice()
+        }
+    }
+
+    if (state.manualOpen) {
+        ManualPunchDialog(
+            busy = state.manualBusy,
+            error = state.manualError,
+            onDismiss = viewModel::closeManualPunch,
+            onSubmit = viewModel::submitManualPunch,
+        )
+    }
 
     // Refresh history whenever the screen resumes (e.g. returning from a successful check-in).
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -218,9 +245,19 @@ fun AttendanceScreen(
                 }
             }
 
+            // Fallback when the normal gate can't be met — face check failing, or
+            // working away from the branch zone. Always needs manager approval.
+            TextButton(
+                onClick = viewModel::openManualPunch,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+            ) {
+                Icon(Icons.Filled.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("  Can't check in/out? Manual or selfie punch", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+
             Text(
                 "One check-in and one check-out per day",
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 fontSize = 11.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
@@ -386,4 +423,138 @@ private fun LegendDot(color: Color, label: String) {
         Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(color))
         Text("  $label", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
     }
+}
+
+/**
+ * Manual / selfie punch sheet.
+ *
+ * The escape hatch for a day that can't go through the normal gate — face
+ * verification failing, or the employee working away from the branch geofence.
+ * Geofence and shift-time checks are skipped; the punch is held for the
+ * reporting manager, so it counts for payroll only once they approve it.
+ */
+@Composable
+private fun ManualPunchDialog(
+    busy: Boolean,
+    error: String?,
+    onDismiss: () -> Unit,
+    onSubmit: (mode: String, reason: String, checkIn: String?, checkOut: String?, selfie: ByteArray?) -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var mode by remember { mutableStateOf("MANUAL") }
+    var checkIn by remember { mutableStateOf("") }
+    var checkOut by remember { mutableStateOf("") }
+    var reason by remember { mutableStateOf("") }
+    var selfie by remember { mutableStateOf<ByteArray?>(null) }
+    var selfieUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicture(),
+    ) { ok ->
+        val uri = selfieUri
+        if (ok && uri != null) selfie = com.hrpayroll.utils.MediaUtils.compressImage(context, uri)
+    }
+
+    fun takeSelfie() {
+        val file = java.io.File(context.cacheDir, "manual-punch-${System.currentTimeMillis()}.jpg")
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file,
+        )
+        selfieUri = uri
+        cameraLauncher.launch(uri)
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Manual / selfie punch", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(
+                    "Use this when you could not check in or out normally. Your reporting manager has to approve it " +
+                        "before it counts for payroll.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+                Spacer(Modifier.height(12.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = mode == "MANUAL",
+                        onClick = { mode = "MANUAL" },
+                        label = { Text("Manual", fontSize = 13.sp) },
+                    )
+                    FilterChip(
+                        selected = mode == "SELFIE",
+                        onClick = { mode = "SELFIE" },
+                        label = { Text("With selfie", fontSize = 13.sp) },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = checkIn,
+                        onValueChange = { checkIn = it },
+                        label = { Text("Check-in", fontSize = 12.sp) },
+                        placeholder = { Text("09:30") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = checkOut,
+                        onValueChange = { checkOut = it },
+                        label = { Text("Check-out", fontSize = 12.sp) },
+                        placeholder = { Text("18:00") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Text(
+                    "24-hour time, e.g. 09:30 / 18:00. Fill only the punch you missed.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                )
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("Reason", fontSize = 12.sp) },
+                    placeholder = { Text("e.g. Customer site visit, outside the branch zone") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                )
+
+                if (mode == "SELFIE") {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(onClick = { takeSelfie() }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(if (selfie != null) "  Selfie captured ✓ — retake" else "  Take selfie")
+                    }
+                }
+
+                if (error != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(error, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSubmit(mode, reason, checkIn, checkOut, selfie) },
+                enabled = !busy,
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                } else {
+                    Text("Send for approval")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+        },
+    )
 }

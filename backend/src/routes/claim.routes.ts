@@ -17,6 +17,8 @@ import {
   claimStats,
 } from '../services/claim/claim.service.js';
 import { generateClaimVoucherPdf } from '../services/claim/claim-voucher-pdf.service.js';
+import { CLAIM_TYPES, claimTypeLabel } from '../services/claim/claim-types.js';
+import { formatDocNo } from '../services/claim/claim-number.js';
 import { getDriveFileStream } from '../services/storage/drive.service.js';
 import { getSignedSelfieUrl } from '../services/storage/storage.service.js';
 
@@ -68,6 +70,9 @@ async function serveClaimFile(
 }
 
 export async function claimRoutes(app: FastifyInstance) {
+  // Canonical expense-head list for the claim pickers (any signed-in user).
+  app.get('/claims/types', { preHandler: authenticate }, async () => ({ types: CLAIM_TYPES }));
+
   // ── Employee ──
   app.post('/claims', { preHandler: authenticate }, async (req) => {
     const { fields, photo, pdf } = await parseClaimParts(req);
@@ -91,7 +96,7 @@ export async function claimRoutes(app: FastifyInstance) {
       await notifyAdmins(app.prisma, await approverIds(app.prisma, emp), {
         type: 'CLAIM_SUBMITTED',
         title: 'New claim to approve',
-        body: `${emp.name}: ${fields.title} — Rs.${amount.toLocaleString('en-IN')}`,
+        body: `${emp.name}: ${claimTypeLabel(fields.type)} — Rs.${amount.toLocaleString('en-IN')}`,
         claimId: claim.id,
       });
     }
@@ -148,10 +153,19 @@ export async function claimRoutes(app: FastifyInstance) {
   app.get('/claims/:id/voucher', { preHandler: authenticate }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const claim = await getClaim(app.prisma, id, req.user);
-    const pdf = await generateClaimVoucherPdf(claim);
+    // Same company source as the payroll reports, so every printed document
+    // carries identical letterhead details.
+    const settings = await app.prisma.companySettings.findUnique({ where: { id: 'company' } });
+    const pdf = await generateClaimVoucherPdf({
+      ...claim,
+      company: settings ? { name: settings.name, address: settings.address } : null,
+    });
+    // Name the file after the voucher number once issued, else the claim number.
+    const ref = formatDocNo(claim.voucherNo) ?? formatDocNo(claim.claimNo) ?? claim.id.slice(-8);
+    const prefix = claim.voucherNo != null ? 'voucher' : 'claim';
     return reply
       .type('application/pdf')
-      .header('Content-Disposition', `inline; filename="claim-voucher-${claim.id.slice(-8)}.pdf"`)
+      .header('Content-Disposition', `inline; filename="${prefix}-${ref}.pdf"`)
       .send(pdf);
   });
 

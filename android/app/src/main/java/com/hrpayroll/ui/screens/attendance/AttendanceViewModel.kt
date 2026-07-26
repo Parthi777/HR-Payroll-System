@@ -36,6 +36,11 @@ data class AttendanceUiState(
     val calMonth: Int = java.time.LocalDate.now().monthValue,
     val calYear: Int = java.time.LocalDate.now().year,
     val calendar: AttendanceCalendarResponse? = null,
+    /** Manual / selfie punch sheet — the fallback when the normal gate can't be met. */
+    val manualOpen: Boolean = false,
+    val manualBusy: Boolean = false,
+    val manualError: String? = null,
+    val manualNotice: String? = null,
 )
 
 @HiltViewModel
@@ -106,6 +111,70 @@ class AttendanceViewModel @Inject constructor(
                 )
             }
             .onFailure { /* keep whatever we had; buttons stay enabled */ }
+    }
+
+    fun openManualPunch() {
+        _uiState.value = _uiState.value.copy(manualOpen = true, manualError = null)
+    }
+
+    fun closeManualPunch() {
+        _uiState.value = _uiState.value.copy(manualOpen = false, manualError = null)
+    }
+
+    fun consumeManualNotice() {
+        _uiState.value = _uiState.value.copy(manualNotice = null)
+    }
+
+    /**
+     * Raise a manual (typed times) or selfie punch. The backend skips the
+     * geofence, face-match and shift-time checks and holds the day for the
+     * reporting manager, so it is not paid until they approve it.
+     */
+    fun submitManualPunch(
+        mode: String,
+        reason: String,
+        checkIn: String?,
+        checkOut: String?,
+        selfie: ByteArray?,
+    ) {
+        if (checkIn.isNullOrBlank() && checkOut.isNullOrBlank()) {
+            _uiState.value = _uiState.value.copy(manualError = "Enter a check-in time, a check-out time, or both")
+            return
+        }
+        if (reason.trim().length < 3) {
+            _uiState.value = _uiState.value.copy(manualError = "Tell your manager why you are raising this punch")
+            return
+        }
+        if (mode == "SELFIE" && selfie == null) {
+            _uiState.value = _uiState.value.copy(manualError = "Take a selfie for a selfie punch")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(manualBusy = true, manualError = null)
+            runCatching {
+                repository.manualPunch(
+                    mode = mode,
+                    reason = reason.trim(),
+                    date = java.time.LocalDate.now().toString(),
+                    checkIn = checkIn?.takeIf { it.isNotBlank() },
+                    checkOut = checkOut?.takeIf { it.isNotBlank() },
+                    selfie = selfie,
+                )
+            }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        manualBusy = false,
+                        manualOpen = false,
+                        manualNotice = "Punch sent to your reporting manager for approval.",
+                    )
+                    loadHistory()
+                    loadCalendar()
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(manualBusy = false, manualError = it.userMessage())
+                }
+        }
     }
 
     /** ISO instant → "09:02 AM" in the device timezone (null passes through). */

@@ -8,9 +8,10 @@
 //   EmployeeStatus  : ACTIVE | INACTIVE | SUSPENDED
 //   GeofenceStatus  : INSIDE | OUTSIDE | BORDERLINE
 //   AttendanceStatus: PRESENT | ABSENT | LATE | HALF_DAY | ON_LEAVE | HOLIDAY
+//   PunchMode       : GEO | MANUAL | SELFIE
 //   LeaveType       : CL | SL | EL | LOP | HALF_DAY
 //   LeaveStatus     : PENDING | APPROVED | REJECTED | CANCELLED
-//   ClaimType       : TRAVEL | FOOD | MEDICAL | ACCOMMODATION | OTHER
+//   ClaimType       : expense-head list — see services/claim/claim-types.ts
 //   ClaimStatus     : PENDING | APPROVED | REJECTED | NEEDS_CLARIFICATION | PAID
 //   PayslipStatus   : DRAFT | FINALIZED | WITHHELD | SENT | PAID
 //   WAStatus        : QUEUED | SENT | DELIVERED | READ | FAILED
@@ -95,6 +96,12 @@ model Attendance {
   approvalStatus String?
   approvedBy     String? // admin id who decided
   approvedAt     DateTime?
+  // How the punch was made: GEO (normal selfie + geofence), MANUAL (typed times,
+  // no selfie) or SELFIE (selfie only — geofence/face/shift checks skipped).
+  // MANUAL/SELFIE punches always start as PENDING and pay only once approved.
+  punchMode      String  @default("GEO")
+  punchReason    String? // employee's justification for a manual / selfie punch
+  raisedBy       String? // admin id when HR raised the punch on the employee's behalf
 
   employee Employee @relation(fields: [employeeId], references: [id])
   gpsLogs  GPSLog[]
@@ -189,8 +196,15 @@ model Leave {
 
 model Claim {
   id             String  @id @default(cuid())
+  // Human-facing running numbers, both printed on the voucher and both starting
+  // at 1 (rendered zero-padded: 001, 002 …). They are separate sequences:
+  //   claimNo   — allocated the moment the claim is received (every claim gets one)
+  //   voucherNo — allocated only when the claim is APPROVED, so voucher numbers
+  //               form an unbroken series across approved claims alone.
+  claimNo        Int?    @unique
+  voucherNo      Int?    @unique
   employeeId     String
-  type           String // ClaimType
+  type           String // ClaimType — see services/claim/claim-types.ts
   title          String
   amount         Float
   description    String?
@@ -250,9 +264,18 @@ model Payslip {
   employeeId      String
   month           Int
   year            Int
-  presentDays     Int
-  absentDays      Int
+  // Fractional — a half day counts 0.5 on both presentDays and absentDays
+  // (2 absents + 1 half day reads as 2.5 absent).
+  presentDays     Float
+  absentDays      Float
+  halfDays        Float  @default(0)
   lopDays         Float
+  // Casual-leave days consumed this month and the money withheld for the
+  // days that were not paid (absent + LOP), both shown on the payroll report.
+  clDays          Float  @default(0)
+  leaveDeduction  Float  @default(0)
+  perDaySalary    Float  @default(0)
+  daysInMonth     Int    @default(30)
   // OT & Sunday-duty metrics (owner policy: >10h/day accrues OT; 10 OT hours = 1 day's pay)
   otHours         Float  @default(0)
   otDays          Float  @default(0)

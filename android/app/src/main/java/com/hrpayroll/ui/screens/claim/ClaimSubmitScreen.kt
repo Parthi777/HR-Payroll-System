@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -182,45 +183,42 @@ fun ClaimSubmitScreen(
     }
 }
 
-/** Claim type picker — a proper dropdown with a short hint for each type. */
+/**
+ * Expense-head picker. The list is long (20 heads), so the menu is a plain
+ * scrollable list of labels rather than label + hint.
+ */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ClaimTypeDropdown(selected: String, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    val hints = mapOf(
-        "TRAVEL" to "Cab, bus, train, fuel",
-        "FOOD" to "Meals during duty / client visits",
-        "MEDICAL" to "Medicines, consultation",
-        "ACCOMMODATION" to "Hotel / lodge stay",
-        "OTHER" to "Anything else — describe below",
-    )
     androidx.compose.material3.ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = it },
     ) {
         OutlinedTextField(
-            value = selected,
+            value = claimTypeLabel(selected),
             onValueChange = {},
             readOnly = true,
             label = { Text("Claim type") },
-            supportingText = { Text(hints[selected] ?: "") },
+            supportingText = { Text("Pick the expense head this bill belongs to") },
             trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier.fillMaxWidth().menuAnchor(),
         )
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 380.dp),
         ) {
             CLAIM_TYPES.forEach { t ->
                 androidx.compose.material3.DropdownMenuItem(
                     text = {
-                        Column {
-                            Text(t, fontWeight = FontWeight.SemiBold)
-                            Text(hints[t] ?: "", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        }
+                        Text(
+                            t.label,
+                            fontWeight = if (t.code == selected) FontWeight.Bold else FontWeight.Normal,
+                        )
                     },
                     onClick = {
-                        onSelect(t)
+                        onSelect(t.code)
                         expanded = false
                     },
                 )

@@ -25,6 +25,11 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Hotel
 import androidx.compose.material.icons.filled.MedicalServices
+import androidx.compose.material.icons.filled.LocalGasStation
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Send
@@ -154,12 +159,17 @@ fun MyClaimsScreen(
     }
 }
 
-/** Icon per claim type — shown in a tinted circle on each card. */
+/** Icon per expense head — shown in a tinted circle on each card. */
 private fun typeIcon(type: String?) = when (type) {
-    "TRAVEL" -> Icons.Filled.DirectionsCar
-    "FOOD" -> Icons.Filled.Restaurant
-    "MEDICAL" -> Icons.Filled.MedicalServices
-    "ACCOMMODATION" -> Icons.Filled.Hotel
+    "TRAVEL_EXPENSES", "PARCEL" -> Icons.Filled.DirectionsCar
+    "PETROL_EXPENSES", "NEW_VEHICLE_PDI_PETROL" -> Icons.Filled.LocalGasStation
+    "STAFF_WELFARE_EXPENSES" -> Icons.Filled.Restaurant
+    "RENT", "UTILITIES_AND_OFFICE" -> Icons.Filled.Hotel
+    "SALARY", "SALES_INCENTIVES", "SERVICE_INCENTIVES", "NEW_VEHICLE_COMMISSION",
+    "NEW_VEHICLE_FITTINGS_INCENTIVES" -> Icons.Filled.Payments
+    "TRAINING" -> Icons.Filled.School
+    "MARKETING_EXPENSES", "DONATION" -> Icons.Filled.Campaign
+    "SERVICE_OUTWORK", "NEW_VEHICLE_PDI_PARTS", "UNLOADING_EXPENSES" -> Icons.Filled.Build
     else -> Icons.Filled.ReceiptLong
 }
 
@@ -186,7 +196,7 @@ private fun ClaimCard(
                 ) {
                     Icon(
                         typeIcon(claim.type),
-                        contentDescription = claim.type,
+                        contentDescription = claim.typeLabel ?: claim.type,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(22.dp),
                     )
@@ -254,7 +264,12 @@ private fun ClaimDetailDialog(
             Column {
                 Text(claim.title ?: "Claim", fontWeight = FontWeight.Bold)
                 Text(
-                    "Voucher No: CLM-${(claim.id ?: "").takeLast(8).uppercase()}",
+                    buildString {
+                        append("Claim ID: ")
+                        append(claim.claimNoLabel ?: (claim.id ?: "").takeLast(6).uppercase())
+                        // A voucher number exists only once the claim is approved.
+                        claim.voucherNoLabel?.let { append("   ·   Voucher No: $it") }
+                    },
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
@@ -262,7 +277,7 @@ private fun ClaimDetailDialog(
         },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                DetailRow("Type", claim.type ?: "—")
+                DetailRow("Type", claim.typeLabel ?: claimTypeLabel(claim.type))
                 DetailRow("Amount", "₹${claim.amount ?: 0.0}")
                 DetailRow("Status", label(claim.status))
                 DetailRow("Submitted", fullDate(claim.createdAt))

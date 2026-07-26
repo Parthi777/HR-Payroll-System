@@ -12,10 +12,42 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-val CLAIM_TYPES = listOf("TRAVEL", "FOOD", "MEDICAL", "ACCOMMODATION", "OTHER")
+/**
+ * Expense heads, mirroring backend `services/claim/claim-types.ts` (the source of
+ * truth — the backend rejects any code not on its list). `code` is stored;
+ * `label` is what the employee sees.
+ */
+data class ClaimTypeOption(val code: String, val label: String)
+
+val CLAIM_TYPES = listOf(
+    ClaimTypeOption("GENERAL_EXPENSES", "General Expenses"),
+    ClaimTypeOption("DONATION", "Donation"),
+    ClaimTypeOption("MARKETING_EXPENSES", "Marketing Expenses"),
+    ClaimTypeOption("NEW_VEHICLE_COMMISSION", "New Vehicle Commission"),
+    ClaimTypeOption("NEW_VEHICLE_FITTINGS_INCENTIVES", "New Vehicle Fittings Incentives"),
+    ClaimTypeOption("NEW_VEHICLE_PDI_PARTS", "New Vehicle PDI Parts"),
+    ClaimTypeOption("NEW_VEHICLE_PDI_PETROL", "New Vehicle PDI Petrol"),
+    ClaimTypeOption("OTHER", "Other"),
+    ClaimTypeOption("PARCEL", "Parcel"),
+    ClaimTypeOption("PETROL_EXPENSES", "Petrol Expenses"),
+    ClaimTypeOption("RENT", "Rent"),
+    ClaimTypeOption("SALARY", "Salary"),
+    ClaimTypeOption("SALES_INCENTIVES", "Sales Incentives"),
+    ClaimTypeOption("SERVICE_INCENTIVES", "Service Incentives"),
+    ClaimTypeOption("SERVICE_OUTWORK", "Service Outwork"),
+    ClaimTypeOption("STAFF_WELFARE_EXPENSES", "Staff Welfare Expenses"),
+    ClaimTypeOption("TRAINING", "Training"),
+    ClaimTypeOption("TRAVEL_EXPENSES", "Travel Expenses"),
+    ClaimTypeOption("UNLOADING_EXPENSES", "Unloading Expenses"),
+    ClaimTypeOption("UTILITIES_AND_OFFICE", "Utilities & Office"),
+)
+
+/** Display label for a stored code (falls back to the raw code if unknown). */
+fun claimTypeLabel(code: String?): String =
+    CLAIM_TYPES.firstOrNull { it.code == code }?.label ?: code.orEmpty()
 
 data class ClaimSubmitUiState(
-    val type: String = "TRAVEL",
+    val type: String = "GENERAL_EXPENSES",
     val title: String = "",
     val amount: String = "",
     val description: String = "",

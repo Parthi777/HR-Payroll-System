@@ -11,6 +11,8 @@ import { AppError } from '../../utils/AppError.js';
 import { isDriveEnabled, ensureEmployeeFolder, uploadToDrive } from '../storage/drive.service.js';
 import { isS3Enabled, uploadImage } from '../storage/storage.service.js';
 import { dispatchWhatsApp } from '../whatsapp/whatsapp.service.js';
+import { withNextNumber, formatDocNo } from './claim-number.js';
+import { claimTypeLabel, isValidClaimType } from './claim-types.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads', 'claims');
 
@@ -77,24 +79,32 @@ export async function createClaim(
     throw new AppError('You can raise a claim only on a day you are on duty. Please check in first.', 403);
   }
 
+  if (!isValidClaimType(input.type)) {
+    throw new AppError(`"${input.type}" is not a valid claim type`, 400);
+  }
+
   const folderId = await resolveFolder(prisma, employee);
   const photoRes = photo ? await storeFile(employee, folderId, photo, 'photo') : {};
   const pdfRes = pdf ? await storeFile(employee, folderId, pdf, 'doc') : {};
 
-  return prisma.claim.create({
-    data: {
-      employeeId,
-      type: input.type,
-      title: input.title,
-      amount: input.amount,
-      description: input.description ?? null,
-      photoFileId: photoRes.fileId ?? null,
-      photoUrl: photoRes.url ?? null,
-      documentFileId: pdfRes.fileId ?? null,
-      documentUrl: pdfRes.url ?? null,
-      status: 'PENDING',
-    },
-  });
+  // Every claim gets its running Claim ID the moment it is received.
+  return withNextNumber(prisma, 'claimNo', (claimNo) =>
+    prisma.claim.create({
+      data: {
+        claimNo,
+        employeeId,
+        type: input.type,
+        title: input.title,
+        amount: input.amount,
+        description: input.description ?? null,
+        photoFileId: photoRes.fileId ?? null,
+        photoUrl: photoRes.url ?? null,
+        documentFileId: pdfRes.fileId ?? null,
+        documentUrl: pdfRes.url ?? null,
+        status: 'PENDING',
+      },
+    }),
+  );
 }
 
 /** Employee responds to a clarification request: update files/description, back to PENDING. */
@@ -181,19 +191,39 @@ const claimInclude = {
 };
 
 /** Attach reviewerName / paidByName (AdminUser has no Prisma relation to Claim). */
-async function withAdminNames<T extends { reviewedBy: string | null; paidBy: string | null }>(
-  prisma: PrismaClient,
-  claims: T[],
-) {
+async function withAdminNames<
+  T extends {
+    reviewedBy: string | null;
+    paidBy: string | null;
+    type: string;
+    claimNo: number | null;
+    voucherNo: number | null;
+  },
+>(prisma: PrismaClient, claims: T[]) {
   const ids = [...new Set(claims.flatMap((c) => [c.reviewedBy, c.paidBy]).filter((x): x is string => !!x))];
-  if (ids.length === 0) return claims.map((c) => ({ ...c, reviewerName: null, paidByName: null }));
+  if (ids.length === 0) {
+    return claims.map((c) => ({ ...c, reviewerName: null, paidByName: null, ...displayFields(c) }));
+  }
   const admins = await prisma.adminUser.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
   const names = new Map(admins.map((a) => [a.id, a.name]));
   return claims.map((c) => ({
     ...c,
     reviewerName: c.reviewedBy ? (names.get(c.reviewedBy) ?? null) : null,
     paidByName: c.paidBy ? (names.get(c.paidBy) ?? null) : null,
+    ...displayFields(c),
   }));
+}
+
+/**
+ * Display-ready extras every client needs: the expense-head label and the
+ * zero-padded running numbers, so no client has to re-implement the formatting.
+ */
+function displayFields(c: { type?: string; claimNo?: number | null; voucherNo?: number | null }) {
+  return {
+    typeLabel: claimTypeLabel(c.type),
+    claimNoLabel: formatDocNo(c.claimNo),
+    voucherNoLabel: formatDocNo(c.voucherNo),
+  };
 }
 
 export async function listMyClaims(prisma: PrismaClient, employeeId: string) {
@@ -268,14 +298,20 @@ export async function actOnClaim(
     });
   }
 
-  const updated = await prisma.claim.update({
-    where: { id: claimId },
-    data: { status, reviewedBy: adminId, reviewedAt: new Date(), reviewerNote: note ?? null },
-  });
+  const decision = { status, reviewedBy: adminId, reviewedAt: new Date(), reviewerNote: note ?? null };
+
+  // A voucher number is issued only on approval — and only once, so re-approving
+  // an already-approved claim never burns a second number.
+  const updated =
+    status === 'APPROVED' && claim.voucherNo == null
+      ? await withNextNumber(prisma, 'voucherNo', (voucherNo) =>
+          prisma.claim.update({ where: { id: claimId }, data: { ...decision, voucherNo } }),
+        )
+      : await prisma.claim.update({ where: { id: claimId }, data: decision });
 
   const msg =
     status === 'APPROVED'
-      ? `✅ *Claim Approved*\n${claim.title} — ₹${claim.amount}\nApproved by: ${admin?.name ?? 'Admin'}\nDownload your claim voucher PDF from the app.`
+      ? `✅ *Claim Approved*\nVoucher No: ${formatDocNo(updated.voucherNo)}\n${claimTypeLabel(claim.type)} — ${claim.title}\nAmount: ₹${claim.amount}\nApproved by: ${admin?.name ?? 'Admin'}\nDownload your claim voucher PDF from the app.`
       : status === 'REJECTED'
         ? `❌ *Claim Rejected*\n${claim.title}\nReason: ${note}`
         : `❓ *Claim — Clarification Needed*\n${claim.title}\n${note}\nPlease reply or resubmit in the app.`;

@@ -28,6 +28,8 @@ class AdminRepository @Inject constructor(
     suspend fun approveClaim(id: String) = api.approveClaim(id)
     suspend fun rejectClaim(id: String, note: String) = api.rejectClaim(id, mapOf("note" to note))
     suspend fun clarifyClaim(id: String, note: String) = api.clarifyClaim(id, mapOf("note" to note))
+    /** The attached bill, so a cashier can verify before disbursing. */
+    suspend fun claimFile(id: String, which: String): ByteArray = api.claimFile(id, which).bytes()
     suspend fun payClaim(id: String, note: String?) =
         api.payClaim(id, if (note.isNullOrBlank()) emptyMap() else mapOf("note" to note))
 
@@ -38,6 +40,8 @@ class AdminRepository @Inject constructor(
         id,
         MultipartBody.Part.createFormData("photo", "face.jpg", photo.toRequestBody("image/jpeg".toMediaType())),
     )
+
+    suspend fun deleteFace(id: String) = api.deleteFace(id)
 
     // Master data for the Add-Employee form
     suspend fun branches() = api.branches().branches

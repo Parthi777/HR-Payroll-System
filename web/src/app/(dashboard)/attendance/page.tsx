@@ -4,9 +4,9 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileSpreadsheet, FileText, Search, Check, X, Camera, Loader2, MapPinOff } from 'lucide-react';
+import { FileSpreadsheet, FileText, Search, Check, X, Camera, Loader2, MapPinOff, ClipboardPen } from 'lucide-react';
 import { useLiveAttendance, type LiveAttendanceRow } from '@/hooks/useApi';
-import { fetcher, api, apiBlobUrl } from '@/lib/api';
+import { fetcher, api, apiBlobUrl, apiUpload } from '@/lib/api';
 
 const esc = (v: string | number | null | undefined) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const escHtml = (v: string | null | undefined) =>
@@ -27,9 +27,15 @@ interface PendingApproval {
   branch: string;
   date: string;
   checkIn: string | null;
+  checkOut: string | null;
   reason: string | null;
+  punchMode: string;
+  punchReason: string | null;
+  raisedByHr: boolean;
   hasSelfie: boolean;
 }
+
+interface EmployeeOption { id: string; name: string; employeeCode?: string; status?: string }
 
 const noRows: LiveAttendanceRow[] = [];
 
@@ -97,6 +103,7 @@ export default function AttendancePage() {
       </PageHero>
 
       <ApprovalsCard />
+      <ManualPunchCard />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
@@ -161,7 +168,10 @@ export default function AttendancePage() {
   );
 }
 
-/** Out-of-geofence selfie check-ins waiting for HR/admin sign-off. Hidden when empty. */
+/**
+ * Punches waiting for the reporting manager / HR to sign off: out-of-geofence
+ * check-ins, late arrivals, and manual / selfie punches. Hidden when empty.
+ */
 function ApprovalsCard() {
   const { data, mutate } = useSWR<{ approvals: PendingApproval[] }>(
     '/admin/attendance/approvals',
@@ -172,7 +182,7 @@ function ApprovalsCard() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function decide(id: string, action: 'approve' | 'reject') {
-    if (action === 'reject' && !confirm('Reject this check-in? The day will be marked absent.')) return;
+    if (action === 'reject' && !confirm('Reject this punch? The day will not be paid.')) return;
     setBusyId(id);
     try {
       await api(`/admin/attendance/${id}/${action}`, { method: 'PATCH' });
@@ -199,7 +209,7 @@ function ApprovalsCard() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <MapPinOff className="h-4 w-4 text-amber-600" />
-          Outside-geofence check-ins awaiting approval ({approvals.length})
+          Punches awaiting approval ({approvals.length})
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -207,7 +217,15 @@ function ApprovalsCard() {
           <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
             <div className="min-w-0 flex-1">
               <div className="font-semibold">{a.name} <span className="text-xs text-muted-foreground">({a.employeeCode}) · {a.branch}</span></div>
-              <div className="text-xs text-muted-foreground">{a.date} · Check-in {a.checkIn ?? '—'}</div>
+              <div className="text-xs text-muted-foreground">
+                {a.date} · In {a.checkIn ?? '—'} · Out {a.checkOut ?? '—'}
+                {a.punchMode !== 'GEO' && (
+                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                    {a.punchMode === 'SELFIE' ? 'SELFIE PUNCH' : 'MANUAL PUNCH'}
+                    {a.raisedByHr ? ' · BY HR' : ''}
+                  </span>
+                )}
+              </div>
               {a.reason && <div className="mt-1 text-xs text-amber-700">{a.reason}</div>}
             </div>
             {a.hasSelfie && (
@@ -223,7 +241,165 @@ function ApprovalsCard() {
             </button>
           </div>
         ))}
-        <p className="text-xs text-muted-foreground">Approved check-ins count for attendance & payroll. Rejected ones are marked absent.</p>
+        <p className="text-xs text-muted-foreground">
+          Approved punches count for attendance &amp; payroll. Rejected ones are not paid. Manual and selfie punches skip the
+          geofence and shift-time checks by design — approve only what you can verify.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Raise a manual or selfie punch on an employee's behalf — for when the normal
+ * gate can't be satisfied (face verification failing, or the employee working
+ * away from the branch geofence).
+ *
+ * Geofence and shift-time checks are skipped by design; the punch still lands
+ * in the reporting manager's approval queue, so HR entering it is not approval.
+ */
+function ManualPunchCard() {
+  const { data } = useSWR<{ employees: EmployeeOption[] }>('/admin/employees', fetcher, { shouldRetryOnError: false });
+  const employees = (data?.employees ?? []).filter((e) => e.status !== 'INACTIVE');
+  const { mutate: refreshApprovals } = useSWR<{ approvals: PendingApproval[] }>('/admin/attendance/approvals', fetcher, { shouldRetryOnError: false });
+
+  const [open, setOpen] = useState(false);
+  const [employeeId, setEmployeeId] = useState('');
+  const [mode, setMode] = useState<'MANUAL' | 'SELFIE'>('MANUAL');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [checkIn, setCheckIn] = useState('');
+  const [checkOut, setCheckOut] = useState('');
+  const [reason, setReason] = useState('');
+  const [selfie, setSelfie] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  function reset() {
+    setEmployeeId(''); setMode('MANUAL'); setCheckIn(''); setCheckOut('');
+    setReason(''); setSelfie(null); setErr(null);
+  }
+
+  async function submit() {
+    setErr(null); setOk(null);
+    if (!employeeId) { setErr('Select an employee'); return; }
+    if (!checkIn && !checkOut) { setErr('Enter a check-in time, a check-out time, or both'); return; }
+    if (reason.trim().length < 3) { setErr('Add a reason the manager can act on'); return; }
+    if (mode === 'SELFIE' && !selfie) { setErr('Attach the selfie for a selfie punch'); return; }
+
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('employeeId', employeeId);
+      fd.append('mode', mode);
+      fd.append('date', date);
+      if (checkIn) fd.append('checkIn', checkIn);
+      if (checkOut) fd.append('checkOut', checkOut);
+      fd.append('reason', reason.trim());
+      if (selfie) fd.append('selfie', selfie);
+      await apiUpload('/admin/attendance/manual-punch', fd);
+      setOk('Punch recorded — sent to the reporting manager for approval.');
+      reset();
+      setOpen(false);
+      await refreshApprovals();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not record the punch');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const field = 'h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40';
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ClipboardPen className="h-4 w-4 text-brand-600" /> Manual / selfie punch
+        </CardTitle>
+        <button
+          onClick={() => { setOpen((v) => !v); setOk(null); }}
+          className="h-9 rounded-lg border border-border px-3 text-xs font-semibold text-brand-600 hover:bg-brand-50"
+        >
+          {open ? 'Close' : 'Raise a punch'}
+        </button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {ok && <p className="text-sm text-emerald-700">{ok}</p>}
+        {!open && !ok && (
+          <p className="text-xs text-muted-foreground">
+            For an employee who could not check in or out normally — face verification failing, or working away from the branch
+            geofence. Geofence and shift-time checks are skipped; the reporting manager still has to approve it before it is paid.
+          </p>
+        )}
+        {open && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-medium text-muted-foreground">
+                Employee
+                <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className={`mt-1 ${field}`}>
+                  <option value="">Select an employee…</option>
+                  {employees.map((e) => (
+                    <option key={e.id} value={e.id}>{e.name}{e.employeeCode ? ` (${e.employeeCode})` : ''}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-medium text-muted-foreground">
+                Punch type
+                <select value={mode} onChange={(e) => setMode(e.target.value as 'MANUAL' | 'SELFIE')} className={`mt-1 ${field}`}>
+                  <option value="MANUAL">Manual punch (typed times, no photo)</option>
+                  <option value="SELFIE">Selfie punch (photo attached)</option>
+                </select>
+              </label>
+              <label className="text-xs font-medium text-muted-foreground">
+                Date
+                <input type="date" value={date} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDate(e.target.value)} className={`mt-1 ${field}`} />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Check-in
+                  <input type="time" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} className={`mt-1 ${field}`} />
+                </label>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Check-out
+                  <input type="time" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} className={`mt-1 ${field}`} />
+                </label>
+              </div>
+            </div>
+
+            {mode === 'SELFIE' && (
+              <label className="block text-xs font-medium text-muted-foreground">
+                Selfie
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setSelfie(e.target.files?.[0] ?? null)}
+                  className="mt-1 block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-600"
+                />
+              </label>
+            )}
+
+            <label className="block text-xs font-medium text-muted-foreground">
+              Reason (shown to the approving manager)
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+                placeholder="e.g. Site visit at Erode — outside the branch zone all day"
+                className="mt-1 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+              />
+            </label>
+
+            {err && <p className="text-sm text-destructive">{err}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setOpen(false); reset(); }} className="h-10 rounded-xl border border-border px-4 text-sm font-medium">Cancel</button>
+              <button onClick={submit} disabled={busy} className="flex h-10 items-center gap-2 rounded-xl brand-gradient px-5 text-sm font-semibold text-white disabled:opacity-60">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Send for approval
+              </button>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

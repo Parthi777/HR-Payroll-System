@@ -36,6 +36,12 @@ import com.hrpayroll.ui.theme.MoneyGreen
 private val MONTHS = arrayOf("", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 private fun money(v: Double?) = "₹" + (v ?: 0.0).toInt().toString()
 
+/** Day counts are fractional (half days) — show "20" but keep "20.5". */
+private fun days(v: Double?): String {
+    val d = v ?: 0.0
+    return if (d % 1.0 == 0.0) d.toInt().toString() else d.toString()
+}
+
 /** Monthly payslip — wired to GET /payroll/my-payslips (latest payslip shown). */
 @Composable
 fun PayslipScreen(viewModel: PayslipViewModel = hiltViewModel()) {
@@ -115,7 +121,7 @@ private fun PayslipContent(slip: PayslipDto) {
                 Text("Gross Salary", fontSize = 12.sp, color = MoneyGreen)
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(money(slip.grossSalary), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MoneyGreen)
-                    Text("  ${slip.presentDays ?: 0} present days", fontSize = 12.sp, color = MoneyGreen.copy(alpha = 0.8f))
+                    Text("  ${days(slip.presentDays)} present days", fontSize = 12.sp, color = MoneyGreen.copy(alpha = 0.8f))
                 }
             }
         }

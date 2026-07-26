@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.ManageAccounts
+import androidx.compose.material.icons.filled.NoAccounts
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -38,6 +39,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -87,6 +89,8 @@ fun AdminEmployeesScreen(
     var showAdd by remember { mutableStateOf(false) }
     // Employee id whose face is being enrolled (drives the camera/gallery chooser).
     var enrollFor by remember { mutableStateOf<String?>(null) }
+    // Employee whose enrolled face is being deleted (drives the confirm dialog).
+    var deleteFaceFor by remember { mutableStateOf<AdminEmployeeDto?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var cameraTarget by remember { mutableStateOf<String?>(null) }
 
@@ -162,6 +166,7 @@ fun AdminEmployeesScreen(
                                 emp = emp,
                                 enrolling = state.enrollingId == emp.id,
                                 onEnroll = { emp.id?.let { enrollFor = it } },
+                                onDeleteFace = { emp.id?.let { deleteFaceFor = emp } },
                             )
                         }
                         item { Spacer(Modifier.height(84.dp)) } // clear the FAB
@@ -169,6 +174,26 @@ fun AdminEmployeesScreen(
                 }
             }
         }
+    }
+
+    // Deleting an enrolled face blocks attendance until a new photo is added — confirm first.
+    deleteFaceFor?.let { emp ->
+        AlertDialog(
+            onDismissRequest = { deleteFaceFor = null },
+            title = { Text("Delete enrolled face?") },
+            text = {
+                Text(
+                    "${emp.name ?: "This employee"} will not be able to mark attendance until a new photo is enrolled.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    emp.id?.let(viewModel::deleteFace)
+                    deleteFaceFor = null
+                }) { Text("Delete", color = StatusOff) }
+            },
+            dismissButton = { TextButton(onClick = { deleteFaceFor = null }) { Text("Cancel") } },
+        )
     }
 
     // Face photo source chooser
@@ -221,7 +246,12 @@ fun AdminEmployeesScreen(
 }
 
 @Composable
-private fun EmployeeCard(emp: AdminEmployeeDto, enrolling: Boolean, onEnroll: () -> Unit) {
+private fun EmployeeCard(
+    emp: AdminEmployeeDto,
+    enrolling: Boolean,
+    onEnroll: () -> Unit,
+    onDeleteFace: () -> Unit,
+) {
     Card(
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -271,6 +301,16 @@ private fun EmployeeCard(emp: AdminEmployeeDto, enrolling: Boolean, onEnroll: ()
                 } else {
                     Icon(Icons.Filled.Face, contentDescription = null, modifier = Modifier.size(16.dp))
                     Text(if (emp.faceTemplateId != null) " Re-enroll" else " Enroll")
+                }
+            }
+            if (emp.faceTemplateId != null) {
+                IconButton(onClick = onDeleteFace, enabled = !enrolling) {
+                    Icon(
+                        Icons.Filled.NoAccounts,
+                        contentDescription = "Delete enrolled face",
+                        tint = StatusOff,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
         }

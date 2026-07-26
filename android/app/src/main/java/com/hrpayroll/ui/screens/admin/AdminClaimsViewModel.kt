@@ -7,6 +7,9 @@ import com.hrpayroll.BuildConfig
 import com.hrpayroll.data.local.TokenStore
 import com.hrpayroll.data.remote.dto.ClaimDto
 import com.hrpayroll.data.repository.AdminRepository
+import com.hrpayroll.utils.MediaUtils
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,11 +27,15 @@ data class AdminClaimsUiState(
     val claims: List<ClaimDto> = emptyList(),
     val filter: String = "PENDING",
     val error: String? = null,
+    /** Claim id whose attached bill PDF is downloading. */
+    val openingBillId: String? = null,
+    val notice: String? = null,
 )
 
 @HiltViewModel
 class AdminClaimsViewModel @Inject constructor(
     private val repository: AdminRepository,
+    @ApplicationContext private val appContext: Context,
     tokenStore: TokenStore,
 ) : ViewModel() {
 
@@ -72,6 +79,27 @@ class AdminClaimsViewModel @Inject constructor(
             runCatching { block() }.onFailure { _uiState.value = _uiState.value.copy(error = it.userMessage()) }
             refresh()
         }
+    }
+
+    /**
+     * Open a bill that was attached as a PDF rather than a photo. Coil can only
+     * render the image bills, so without this a cashier has no way to see a
+     * scanned PDF bill before disbursing.
+     */
+    fun openBillPdf(claimId: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(openingBillId = claimId, error = null)
+            runCatching {
+                val bytes = repository.claimFile(claimId, "pdf")
+                MediaUtils.savePdfToDownloads(appContext, bytes, "bill-${claimId.takeLast(8)}.pdf")
+            }
+                .onSuccess { _uiState.value = _uiState.value.copy(openingBillId = null, notice = "Bill saved to $it") }
+                .onFailure { _uiState.value = _uiState.value.copy(openingBillId = null, error = it.userMessage()) }
+        }
+    }
+
+    fun consumeNotice() {
+        _uiState.value = _uiState.value.copy(notice = null)
     }
 
     /** Authenticated URL for a claim's receipt photo (loaded via Coil with a Bearer header). */

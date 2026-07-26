@@ -70,7 +70,10 @@ data class PayslipDto(
     val id: String? = null,
     val month: Int? = null,
     val year: Int? = null,
-    val presentDays: Int? = null,
+    val presentDays: Double? = null, // fractional — a half day counts 0.5
+    val absentDays: Double? = null,
+    val halfDays: Double? = null,
+    val otHours: Double? = null,
     val basicSalary: Double? = null,
     val hra: Double? = null,
     val da: Double? = null,
@@ -171,6 +174,11 @@ data class ClaimMessageDto(
 data class ClaimDto(
     val id: String? = null,
     val type: String? = null,
+    val typeLabel: String? = null, // human expense-head name, e.g. "Petrol Expenses"
+    val claimNo: Int? = null, // running Claim ID, issued on receipt
+    val voucherNo: Int? = null, // running Voucher No, issued only on approval
+    val claimNoLabel: String? = null, // zero-padded, e.g. "001"
+    val voucherNoLabel: String? = null,
     val title: String? = null,
     val amount: Double? = null,
     val description: String? = null,

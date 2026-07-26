@@ -31,6 +31,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -74,6 +76,13 @@ import com.hrpayroll.ui.theme.StatusPresentBg
 @Composable
 fun AdminClaimsScreen(viewModel: AdminClaimsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(state.notice) {
+        state.notice?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.consumeNotice()
+        }
+    }
     // Pending note dialog: (claimId, action) where action is "reject" | "clarify".
     var noteFor by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Claim awaiting the "mark paid" confirmation.
@@ -115,6 +124,8 @@ fun AdminClaimsScreen(viewModel: AdminClaimsViewModel = hiltViewModel()) {
                             authToken = viewModel.authToken,
                             canApprove = viewModel.canApprove,
                             canPay = viewModel.canPay,
+                            openingBill = state.openingBillId == claim.id,
+                            onOpenBillPdf = { claim.id?.let(viewModel::openBillPdf) },
                             onApprove = { claim.id?.let(viewModel::approve) },
                             onReject = { claim.id?.let { noteFor = it to "reject" } },
                             onClarify = { claim.id?.let { noteFor = it to "clarify" } },
@@ -158,6 +169,8 @@ private fun AdminClaimCard(
     authToken: String?,
     canApprove: Boolean,
     canPay: Boolean,
+    openingBill: Boolean,
+    onOpenBillPdf: () -> Unit,
     onApprove: () -> Unit,
     onReject: () -> Unit,
     onClarify: () -> Unit,
@@ -193,7 +206,13 @@ private fun AdminClaimCard(
 
             Spacer(Modifier.height(4.dp))
             Text(
-                "Voucher CLM-${(claim.id ?: "").takeLast(8).uppercase()} · Submitted ${fullDate(claim.createdAt)}",
+                buildString {
+                    append("Claim ID ")
+                    append(claim.claimNoLabel ?: (claim.id ?: "").takeLast(6).uppercase())
+                    claim.voucherNoLabel?.let { append(" · Voucher No $it") }
+                    append(" · ")
+                    append(fullDate(claim.createdAt))
+                },
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
             )
@@ -202,14 +221,22 @@ private fun AdminClaimCard(
             val (fg, bg) = statusColors(claim.status)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusChip(label(claim.status), fg, bg)
+                // A bill attached as a PDF can't render inline — offer to open it,
+                // so the cashier can always see the bill before disbursing.
                 if (hasPdf) {
-                    Spacer(Modifier.height(0.dp))
-                    Icon(
-                        Icons.Filled.PictureAsPdf,
-                        contentDescription = "PDF attached",
-                        tint = StatusOff,
-                        modifier = Modifier.padding(start = 8.dp).height(18.dp),
-                    )
+                    TextButton(onClick = onOpenBillPdf, enabled = !openingBill) {
+                        if (openingBill) {
+                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(
+                                Icons.Filled.PictureAsPdf,
+                                contentDescription = null,
+                                tint = StatusOff,
+                                modifier = Modifier.height(16.dp),
+                            )
+                        }
+                        Text(if (openingBill) "  Opening…" else "  View bill PDF", fontSize = 12.sp)
+                    }
                 }
             }
 

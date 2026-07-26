@@ -285,4 +285,35 @@ export async function employeeRoutes(app: FastifyInstance) {
     await app.prisma.employee.update({ where: { id }, data: { faceTemplateId: faceId, faceTemplateUrl } });
     return { id, faceId, enrolled: true };
   });
+
+  // Delete the enrolled face — drops the Rekognition template so the employee
+  // can be re-enrolled from scratch (bad photo, changed appearance, off-boarding).
+  // Attendance then blocks with "face not enrolled" until a new photo is added.
+  app.delete('/:id/face', async (req) => {
+    const { id } = req.params as { id: string };
+    const employee = await app.prisma.employee.findUnique({
+      where: { id },
+      select: { faceTemplateId: true, faceTemplateUrl: true, name: true },
+    });
+    if (!employee) throw AppError.notFound('Employee');
+    if (!employee.faceTemplateId && !employee.faceTemplateUrl) {
+      throw new AppError(`${employee.name} has no enrolled face to delete`, 409);
+    }
+
+    // Best-effort on the AWS side — the local record is cleared either way, so a
+    // stale collection entry can never keep granting attendance.
+    if (employee.faceTemplateId) {
+      try {
+        await removeFace(employee.faceTemplateId);
+      } catch (err) {
+        req.log.warn({ err, faceId: employee.faceTemplateId }, 'Failed to remove face template from Rekognition');
+      }
+    }
+
+    await app.prisma.employee.update({
+      where: { id },
+      data: { faceTemplateId: null, faceTemplateUrl: null },
+    });
+    return { id, deleted: true };
+  });
 }

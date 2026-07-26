@@ -37,6 +37,7 @@ import com.hrpayroll.data.remote.dto.ScheduleResponse
 import okhttp3.MultipartBody
 import okhttp3.ResponseBody
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.PATCH
@@ -69,6 +70,18 @@ interface HrApi {
         @Part("lat") lat: String,
         @Part("lng") lng: String,
     ): AttendanceDto
+
+    /**
+     * Manual / selfie punch — for when the normal gate can't be satisfied
+     * (face verification failing, or working away from the branch geofence).
+     * Geofence, face match and shift-time checks are skipped; the punch lands
+     * as PENDING until the reporting manager approves it.
+     *
+     * `selfie` is sent only for mode = SELFIE.
+     */
+    @Multipart
+    @POST("attendance/manual-punch")
+    suspend fun manualPunch(@Part parts: List<MultipartBody.Part>): AttendanceDto
 
     @GET("me")
     suspend fun me(): MeDto
@@ -149,6 +162,11 @@ interface HrApi {
     @GET("claims/{id}/voucher")
     suspend fun claimVoucher(@Path("id") id: String): ResponseBody
 
+    /** The attached bill itself — `which` is "photo" or "pdf". Used by the cashier to verify. */
+    @Streaming
+    @GET("claims/{id}/file")
+    suspend fun claimFile(@Path("id") id: String, @Query("which") which: String): ResponseBody
+
     // ── Claims (admin) ──
     @GET("admin/claims")
     suspend fun adminClaims(@Query("status") status: String?): ClaimListResponse
@@ -175,6 +193,10 @@ interface HrApi {
     @Multipart
     @POST("admin/employees/{id}/enroll-face")
     suspend fun enrollFace(@Path("id") id: String, @Part photo: MultipartBody.Part): EnrollFaceResponse
+
+    /** Drop the enrolled face template — the employee cannot punch until re-enrolled. */
+    @DELETE("admin/employees/{id}/face")
+    suspend fun deleteFace(@Path("id") id: String): EnrollFaceResponse
 
     // Master data (Add-Employee form dropdowns)
     @GET("attendance/calendar")
