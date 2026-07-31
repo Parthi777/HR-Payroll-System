@@ -19,9 +19,11 @@ export interface PayrollReportRow {
   designation: string;
   department: string;
   daysInMonth: number;
+  servedDays: number; // days of the month the employee was on the rolls (and elapsed)
   presentDays: number;
   halfDays: number;
-  absentDays: number; // includes the unworked half of each half day
+  absentDays: number; // includes the unworked half of each half day and pending punches
+  pendingDays: number; // the awaiting-approval subset of absentDays
   clDays: number;
   leaveDeduction: number;
   otHours: number;
@@ -83,9 +85,11 @@ export async function buildPayrollReport(
       designation: emp.designation?.name ?? '-',
       department: emp.department?.name ?? '-',
       daysInMonth: r.daysInMonth,
+      servedDays: r.servedDays,
       presentDays: r.presentDays,
       halfDays: r.halfDays,
       absentDays: r.absentDays,
+      pendingDays: r.pendingDays,
       clDays: r.clDays,
       leaveDeduction: r.leaveDeduction,
       otHours: r.otHours,

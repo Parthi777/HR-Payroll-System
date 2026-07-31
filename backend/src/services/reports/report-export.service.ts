@@ -163,8 +163,10 @@ const PAYROLL_COLS: PayrollCol[] = [
   { header: 'Designation', width: 18, value: (r) => r.designation },
   { header: 'Department', width: 16, value: (r) => r.department },
   { header: 'Days in Month', width: 12, value: (r) => r.daysInMonth, numeric: true },
+  { header: 'Days Served', width: 11, value: (r) => r.servedDays, numeric: true },
   { header: 'Present Days', width: 12, value: (r) => r.presentDays, numeric: true },
   { header: 'Absent Days', width: 12, value: (r) => r.absentDays, numeric: true },
+  { header: 'Held (PN)', width: 10, value: (r) => r.pendingDays, numeric: true },
   { header: 'CL Days', width: 10, value: (r) => r.clDays, numeric: true },
   { header: 'Leave Deduction', width: 15, value: (r) => r.leaveDeduction, numeric: true, money: true },
   { header: 'OT Hours', width: 10, value: (r) => r.otHours, numeric: true },
@@ -218,8 +220,9 @@ export async function payrollReportXlsx(report: PayrollReport): Promise<Buffer> 
   }
 
   const t = report.totals;
+  // Positional — keep in step with PAYROLL_COLS above.
   const totalRow = ws.addRow([
-    '', `TOTAL (${t.employees})`, '', '', '', '', '', t.absentDays, '', t.leaveDeduction,
+    '', `TOTAL (${t.employees})`, '', '', '', '', '', '', t.absentDays, '', '', t.leaveDeduction,
     t.otHours, '', t.salary, '', t.otSalary, t.payable,
   ]);
   totalRow.font = { bold: true };
@@ -249,11 +252,12 @@ export function payrollReportPdf(report: PayrollReport): Promise<Buffer> {
       { label: 'Code', w: 60, get: (r) => r.employeeCode },
       { label: 'Employee', w: 90, get: (r) => r.name },
       { label: 'Branch', w: 66, get: (r) => r.branch },
-      { label: 'Designation', w: 64, get: (r) => r.designation },
-      { label: 'Department', w: 56, get: (r) => r.department },
-      { label: 'Days', w: 26, align: 'right', get: (r) => String(r.daysInMonth) },
+      { label: 'Designation', w: 58, get: (r) => r.designation },
+      { label: 'Department', w: 50, get: (r) => r.department },
+      { label: 'Served', w: 30, align: 'right', get: (r) => String(r.servedDays) },
       { label: 'Present', w: 34, align: 'right', get: (r) => days(r.presentDays) },
       { label: 'Absent', w: 34, align: 'right', get: (r) => days(r.absentDays) },
+      { label: 'Held', w: 26, align: 'right', get: (r) => (r.pendingDays ? String(r.pendingDays) : '-') },
       { label: 'CL', w: 22, align: 'right', get: (r) => days(r.clDays) },
       { label: 'Leave Ded.', w: 52, align: 'right', get: (r) => rs(r.leaveDeduction) },
       { label: 'OT h', w: 30, align: 'right', get: (r) => days(r.otHours) },
@@ -329,8 +333,11 @@ export function payrollReportPdf(report: PayrollReport): Promise<Buffer> {
     }
     y += rowH + 12;
     doc.font('Helvetica').fontSize(6.8).fillColor('#777').text(
-      'Absent days include the unworked half of a half day (e.g. 2 absences + 1 half day = 2.5). Sundays are paid weekly-offs; ' +
-        'Sunday duty pays one extra full day, included in OT Salary. Red rows = payslip withheld under the late-punch policy.',
+      'Served = days of the month the employee was on the rolls (a mid-month joiner is paid pro-rata; days before joining are neither paid nor absent). ' +
+        'Absent days include the unworked half of a half day (e.g. 2 absences + 1 half day = 2.5) and Held days. ' +
+        'Held = punches awaiting approval — unpaid until signed off, then re-run payroll to pay them. ' +
+        'Sundays are paid weekly-offs; Sunday duty pays one extra full day, included in OT Salary. ' +
+        'Red rows = payslip withheld under the late-punch policy.',
       left,
       y,
       { width: tableW },
@@ -361,7 +368,9 @@ const codeColor = (c: MusterCode) => CODE_COLOR[c] ?? { pdf: INK, argb: 'FF1C1B2
 
 const LEGEND =
   'P = Present · HD = Half day (0.5) · A = Absent · WO = Weekly off (Sunday, paid) · WO* = Sunday duty (pays one extra full day) · ' +
-  'HL = Holiday · LV = Paid leave · LOP = Loss of pay · PN = Awaiting approval · # = manual/selfie punch';
+  'HL = Holiday · HL* = Holiday worked · LV = Paid leave · LOP = Loss of pay (unpaid) · ' +
+  'PN = Awaiting approval (unpaid, counted under Absent until signed off) · # = manual/selfie punch · ' +
+  'blank = before joining, or a date still to come.   Present + Absent + WO + HL + LV + LOP = days served this month.';
 
 export async function musterReportXlsx(report: MusterReport): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -387,8 +396,9 @@ export async function musterReportXlsx(report: MusterReport): Promise<Buffer> {
     // Block header 2 — identity + monthly totals
     const h2 = ws.addRow([
       'Empcode', emp.employeeCode, 'Name', emp.name, 'Branch', emp.branch, 'Designation', emp.designation,
-      'Present', emp.present, 'WO', emp.weeklyOff, 'HL', emp.holidays, 'LV', emp.leave, 'Absent', emp.absent,
-      'Paid Days', emp.paidDays, 'Sun Duty', emp.sundayDuty, 'Tot. Work+OT', emp.totalWorkPlusOt, 'Total OT', emp.totalOt,
+      'Present', emp.present, 'WO', emp.weeklyOff, 'HL', emp.holidays, 'LV', emp.leave, 'LOP', emp.lop,
+      'PN', emp.pending, 'Absent', emp.absent, 'Paid Days', emp.paidDays, 'Sun Duty', emp.sundayDuty,
+      'Served', emp.servedDays, 'Tot. Work+OT', emp.totalWorkPlusOt, 'Total OT', emp.totalOt,
     ]);
     h2.font = { size: 9 };
     h2.eachCell((cell, i) => {
@@ -485,8 +495,10 @@ export function musterReportPdf(report: MusterReport): Promise<Buffer> {
         `Empcode: ${emp.employeeCode}   Name: ${emp.name}   Branch: ${emp.branch}   Designation: ${emp.designation}`;
       const totLine =
         `Present ${days(emp.present)}  ·  WO ${emp.weeklyOff}  ·  HL ${emp.holidays}  ·  LV ${emp.leave}  ·  ` +
+        (emp.lop ? `LOP ${days(emp.lop)}  ·  ` : '') +
+        (emp.pending ? `PN ${emp.pending}  ·  ` : '') +
         `Absent ${days(emp.absent)}  ·  Paid ${days(emp.paidDays)}  ·  Sun Duty ${emp.sundayDuty}  ·  ` +
-        `Work+OT ${emp.totalWorkPlusOt}  ·  OT ${emp.totalOt}`;
+        `Served ${emp.servedDays}  ·  Work+OT ${emp.totalWorkPlusOt}  ·  OT ${emp.totalOt}`;
       doc.font('Helvetica-Bold').text(idLine, left + 3, y + 3, { width: tableW * 0.5, lineBreak: false });
       doc.font('Helvetica').fillColor('#333').text(totLine, left + tableW * 0.5, y + 3, {
         width: tableW * 0.5 - 4,

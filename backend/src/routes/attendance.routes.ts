@@ -5,9 +5,26 @@ import path from 'path';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { markCheckIn, markCheckOut, decideAttendanceApproval, markManualPunch } from '../services/attendance/attendance.service.js';
+import { classifyDay, type DayCode } from '../services/attendance/day-classify.js';
 import { getObjectBytes } from '../services/storage/storage.service.js';
+import { dayKey } from '../utils/time.js';
 
 const HHMM = z.string().regex(/^\d{1,2}:\d{2}$/, 'Use a HH:MM time, e.g. 09:30');
+
+/** Day code → the status word the employee calendar (app + web) already speaks. */
+const CALENDAR_STATUS: Record<DayCode, string> = {
+  P: 'PRESENT',
+  'WO*': 'PRESENT',
+  'HL*': 'PRESENT',
+  HD: 'HALF_DAY',
+  A: 'ABSENT',
+  WO: 'OFF',
+  HL: 'OFF',
+  LV: 'LEAVE',
+  LOP: 'LEAVE',
+  PN: 'PENDING_APPROVAL',
+  '': 'FUTURE', // not yet happened, or before the employee joined
+};
 
 /** Shared shape for a manual / selfie punch, from either the app or the web admin. */
 const manualPunchSchema = z.object({
@@ -392,46 +409,40 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const end = new Date(year, month, 1);
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    const [atts, leaves, holidays] = await Promise.all([
+    const [employee, atts, leaves, holidays] = await Promise.all([
+      app.prisma.employee.findUnique({ where: { id: employeeId }, include: { shift: true } }),
       app.prisma.attendance.findMany({ where: { employeeId, date: { gte: start, lt: end } } }),
       app.prisma.leave.findMany({
         where: { employeeId, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
       }),
       app.prisma.holiday.findMany({ where: { date: { gte: start, lt: end } } }),
     ]);
-    const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    const attByDay = new Map(atts.map((a) => [key(a.date), a]));
-    const holidaySet = new Set(holidays.map((h) => key(h.date)));
-    const now = new Date();
+    const attByDay = new Map(atts.map((a) => [dayKey(a.date), a]));
+    const holidaySet = new Set(holidays.map((h) => dayKey(h.date)));
 
     const days = [];
     const summary = { present: 0, late: 0, half: 0, absent: 0, leave: 0 };
     for (let dn = 1; dn <= daysInMonth; dn++) {
       const d = new Date(year, month - 1, dn);
-      const att = attByDay.get(key(d));
-      const counted = att && att.checkIn && (att.approvalStatus == null || att.approvalStatus === 'APPROVED');
-      const isOff = d.getDay() === 0 || holidaySet.has(key(d));
-      let status: string;
-      if (att?.approvalStatus === 'PENDING') {
-        status = 'PENDING_APPROVAL';
-      } else if (counted && (att!.status === 'PRESENT' || att!.status === 'LATE' || att!.status === 'HALF_DAY')) {
-        status = att!.status;
-        if (att!.status === 'PRESENT') summary.present += 1;
-        else if (att!.status === 'LATE') { summary.late += 1; summary.present += 1; }
-        else summary.half += 1;
-      } else if (isOff) {
-        status = 'OFF';
-      } else if (
-        leaves.some((lv) => lv.fromDate <= new Date(year, month - 1, dn, 23, 59, 59) && lv.toDate >= d)
-      ) {
-        status = 'LEAVE';
-        summary.leave += 1;
-      } else if (d > now) {
-        status = 'FUTURE';
-      } else {
-        status = 'ABSENT';
-        summary.absent += 1;
-      }
+      const att = attByDay.get(dayKey(d));
+      // Same classifier the muster grid and payroll use, so what an employee
+      // sees here matches what HR sees and what the payslip pays.
+      const day = classifyDay({
+        date: d,
+        att,
+        shift: employee?.shift,
+        leaves,
+        holidays: holidaySet,
+        joiningDate: employee?.joiningDate,
+      });
+      const status = day.late && day.code === 'P' ? 'LATE' : CALENDAR_STATUS[day.code];
+      if (day.code === 'P' || day.code === 'WO*' || day.code === 'HL*') {
+        summary.present += 1;
+        if (day.late) summary.late += 1;
+      } else if (day.code === 'HD') summary.half += 1;
+      else if (day.code === 'LV' || day.code === 'LOP') summary.leave += 1;
+      else if (day.code === 'A') summary.absent += 1;
+
       days.push({ day: dn, weekday: d.getDay(), status, checkIn: fmtTime(att?.checkIn ?? null), checkOut: fmtTime(att?.checkOut ?? null) });
     }
     return { month, year, days, summary };

@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { calculatePF, calculateESI } from './payroll.service.js';
-import { effectiveStatus } from '../attendance/attendance-policy.js';
-import { dayKey, endOfDay, minutesSinceMidnight, parseHHMM, startOfDay } from '../../utils/time.js';
+import { classifyDay, overtimeMinutes } from '../attendance/day-classify.js';
+import { dayKey } from '../../utils/time.js';
 
 /**
  * Payroll rules (owner-specified):
@@ -19,7 +19,10 @@ import { dayKey, endOfDay, minutesSinceMidnight, parseHHMM, startOfDay } from '.
  *    (Shift.otAfterMinutes) accumulates as OT hours; every OT_HOURS_PER_DAY (10)
  *    OT hours pays one extra day, pro-rated (15 OT hours → 1.5 days).
  *  - Punches that need sign-off (out-of-geofence, late, manual/selfie) count
- *    only once approved; PENDING / REJECTED attendance is not paid.
+ *    only once approved; PENDING / REJECTED attendance is not paid (a pending
+ *    day sits under absentDays until it is approved).
+ *  - Days before the employee's joining date are outside the month's service
+ *    window: never absent, never paid. A mid-month joiner is paid pro-rata.
  *  - Late marking uses the shift grace period (default 15 min) at check-in.
  *  - Late-punch discipline (configurable via PAYROLL_* env vars): salary is
  *    normally dated the 5th of the next month; LATE_SHIFT_AT (5) or more late
@@ -41,27 +44,32 @@ const PAY_DAY_LATE = Number(process.env.PAYROLL_PAY_DAY_LATE ?? 8);
 const DAY_MS = 86_400_000;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Attendance counts for pay only when it never needed approval or was approved. */
-const countsForPay = (a: { approvalStatus: string | null }) =>
-  a.approvalStatus == null || a.approvalStatus === 'APPROVED';
-
 /** The employee shape the monthly calculation needs. */
 export interface PayrollEmployee {
   id: string;
   salary: number;
   pfEnabled: boolean;
   esiEnabled: boolean;
+  joiningDate?: Date | null;
   shift?: { startTime: string; endTime: string; gracePeriod?: number | null; otAfterMinutes?: number | null } | null;
 }
 
 /** Everything the payslip and the payroll report need for one employee-month. */
 export interface MonthlyPayroll {
   daysInMonth: number;
-  /** Sundays + configured holidays in the month (paid weekly-offs). */
+  /**
+   * Days of the month inside the employee's service that have already happened.
+   * Equals daysInMonth for a full month; shorter for a mid-month joiner or a
+   * month still in progress. The invariant is
+   * paidDays + absentDays + lopDays === servedDays.
+   */
+  servedDays: number;
+  /** Sundays + configured holidays inside the served window (paid weekly-offs). */
   offDays: number;
   presentDays: number; // fractional — a half day counts 0.5
   halfDays: number; // number of half days (whole count)
-  absentDays: number; // fractional — includes the unworked half of a half day
+  absentDays: number; // fractional — half days and pending punches included
+  pendingDays: number; // the awaiting-sign-off subset of absentDays
   lopDays: number;
   clDays: number; // casual leave consumed inside this month
   paidDays: number;
@@ -97,6 +105,7 @@ export async function computeMonthlyPayroll(
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
   const daysInMonth = new Date(year, month, 0).getDate();
+  const now = new Date();
 
   const atts = await prisma.attendance.findMany({
     where: { employeeId: emp.id, date: { gte: start, lt: end } },
@@ -117,15 +126,16 @@ export async function computeMonthlyPayroll(
   const leaves = await prisma.leave.findMany({
     where: { employeeId: emp.id, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
   });
-  const leaveOn = (d: Date) => leaves.find((lv) => lv.fromDate <= endOfDay(d) && lv.toDate >= startOfDay(d));
 
   let paidDays = 0; // present + paid leave + paid weekly-offs/holidays
   let presentDays = 0;
   let halfDays = 0;
   let absentDays = 0;
+  let pendingDays = 0;
   let lopDays = 0;
   let clDays = 0; // CL consumed inside this month
   let offDays = 0;
+  let servedDays = 0;
   let sundayDays = 0; // each pays one EXTRA day
   let otMinutes = 0;
   let lateDays = 0; // late punches this month (discipline policy)
@@ -133,34 +143,37 @@ export async function computeMonthlyPayroll(
   for (let dn = 1; dn <= daysInMonth; dn++) {
     const d = new Date(year, month - 1, dn);
     const att = attByDay.get(dayKey(d));
-    // Re-derive against the current half-day policy so history stays consistent.
-    const status = att ? effectiveStatus(att, emp.shift) : null;
-    const attPaid =
-      !!att && !!att.checkIn && countsForPay(att) &&
-      (status === 'PRESENT' || status === 'LATE' || status === 'HALF_DAY');
+    // Classified by the same rules the muster grid and the reports use, so a
+    // day can never be paid here and shown absent there.
+    const day = classifyDay({
+      date: d,
+      att,
+      shift: emp.shift,
+      leaves,
+      holidays: holidaySet,
+      joiningDate: emp.joiningDate,
+      now,
+    });
 
     // OT = duty time worked PAST the shift close + the shift's OT grace (minutes).
     // Based on the actual check-out clock time, so leaving late earns OT.
-    if (attPaid && att!.checkOut) {
-      const shiftEndMin = parseHHMM(emp.shift?.endTime ?? '18:00');
-      let outMin = minutesSinceMidnight(att!.checkOut);
-      if (outMin < shiftEndMin) outMin += 1440; // checked out after midnight (night shift)
-      const grace = emp.shift?.otAfterMinutes ?? 0;
-      otMinutes += Math.max(0, outMin - (shiftEndMin + grace));
-    }
-    if (attPaid && status === 'LATE') lateDays += 1;
+    if (day.worked) otMinutes += overtimeMinutes(att!.checkOut, emp.shift);
 
-    const isOffDay = d.getDay() === 0 || holidaySet.has(dayKey(d));
-    if (isOffDay) {
+    // Before joining, or not yet happened — no pay, no absence.
+    if (!day.counts) continue;
+    servedDays += 1;
+    if (day.late) lateDays += 1;
+
+    if (day.isOff) {
       offDays += 1;
       paidDays += 1; // weekly-off / holiday is paid
       // Sunday duty = +1 extra day, at full rate even when only a half day was worked.
-      if (d.getDay() === 0 && attPaid) sundayDays += 1;
+      if (day.isSunday && day.worked) sundayDays += 1;
       continue;
     }
 
-    if (attPaid) {
-      if (status === 'HALF_DAY') {
+    if (day.worked) {
+      if (day.status === 'HALF_DAY') {
         halfDays += 1;
         paidDays += 0.5;
         presentDays += 0.5;
@@ -172,7 +185,15 @@ export async function computeMonthlyPayroll(
       continue;
     }
 
-    const lv = leaveOn(d);
+    // Held for sign-off: unpaid until approved, so it counts as an absence for
+    // this run — approving the punch and re-running pays it.
+    if (day.pending) {
+      pendingDays += 1;
+      absentDays += 1;
+      continue;
+    }
+
+    const lv = day.leave;
     if (lv) {
       if (lv.type === 'LOP') {
         lopDays += 1;
@@ -217,10 +238,12 @@ export async function computeMonthlyPayroll(
 
   return {
     daysInMonth,
+    servedDays,
     offDays,
     presentDays: round2(presentDays),
     halfDays,
     absentDays: round2(absentDays),
+    pendingDays,
     lopDays: round2(lopDays),
     clDays,
     paidDays: round2(paidDays),

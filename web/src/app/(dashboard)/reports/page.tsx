@@ -8,21 +8,42 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Download, FileSpreadsheet, FileText } from 'lucide-react';
 
 interface DailyRow {
-  employeeCode: string; name: string; branch: string; status: string;
-  checkIn: string | null; checkOut: string | null; workedHours: number | null;
-  geofence: string | null; punchMode: string | null; flagged: boolean;
+  employeeCode: string; name: string; branch: string; shift: string; status: string; code: string; late: boolean;
+  checkIn: string | null; checkOut: string | null; workedHours: number | null; otHours: number;
+  stillIn: boolean; geofence: string | null; punchMode: string | null; flagged: boolean;
 }
+interface DailySummary {
+  total: number; present: number; late: number; absent: number;
+  pending: number; leave: number; weeklyOff: number; notJoined: number;
+}
+interface DailyPerformance {
+  workedHours: number; otHours: number; avgHours: number;
+  onDuty: number; onTime: number; attendanceRate: number;
+}
+/** Daily table filters — the values the API's `status` param accepts. */
+const DAILY_FILTERS = [
+  { key: 'all', label: 'Everyone' },
+  { key: 'present', label: 'Present' },
+  { key: 'absent', label: 'Absent' },
+  { key: 'late', label: 'Late' },
+  { key: 'leave', label: 'On leave' },
+  { key: 'off', label: 'Weekly off' },
+  { key: 'pending', label: 'Awaiting approval' },
+] as const;
+type DailyFilter = (typeof DAILY_FILTERS)[number]['key'];
 interface MonthlyRow {
   employeeCode: string; name: string; branch: string; presentDays: number;
-  lateDays: number; halfDays: number; workedHours: number;
+  offDutyDays: number; lateDays: number; halfDays: number; absentDays: number; pendingDays: number;
+  leaveDays: number; lopDays: number; weeklyOffDays: number; workedHours: number;
   otHours: number | null; netSalary: number | null; payslipStatus: string | null;
 }
-interface BranchRow { branch: string; employees: number; presentDays: number; lateDays: number; workedHours: number }
+interface BranchRow { branch: string; employees: number; presentDays: number; absentDays: number; lateDays: number; workedHours: number }
 interface LateRow { employeeCode: string; name: string; branch: string; count: number; dates: string[]; checkIns: (string | null)[] }
 
 interface PayrollRow {
   employeeCode: string; name: string; branch: string; designation: string; department: string;
-  daysInMonth: number; presentDays: number; halfDays: number; absentDays: number;
+  daysInMonth: number; servedDays: number; presentDays: number; halfDays: number;
+  absentDays: number; pendingDays: number;
   clDays: number; leaveDeduction: number; otHours: number; sundayDays: number;
   salary: number; perDaySalary: number; otSalary: number; payable: number;
   lateDays: number; withheld: boolean;
@@ -40,8 +61,9 @@ interface MusterDay {
 }
 interface MusterEmployee {
   employeeCode: string; name: string; branch: string; department: string; designation: string; shift: string;
-  present: number; weeklyOff: number; holidays: number; leave: number; absent: number;
-  paidDays: number; sundayDuty: number; totalWorkPlusOt: string; totalOt: string;
+  present: number; weeklyOff: number; holidays: number; leave: number; lop: number; absent: number;
+  pending: number; paidDays: number; sundayDuty: number; holidayDuty: number; lateDays: number;
+  servedDays: number; totalWorkPlusOt: string; totalOt: string;
   days: MusterDay[];
 }
 interface MusterReport { label: string; daysInMonth: number; employees: MusterEmployee[] }
@@ -182,33 +204,93 @@ function ServerExports({ path, filename }: { path: string; filename: string }) {
 }
 
 function DailyReport({ date, bq }: { date: string; bq: string }) {
-  const { data, isLoading } = useSWR<{ summary: { total: number; present: number; late: number; absent: number }; rows: DailyRow[] }>(
-    `/admin/reports/daily?date=${date}${bq}`, fetcher, { shouldRetryOnError: false },
+  // Which group the table lists. Filtering runs on the server so the Excel and
+  // PDF downloads contain exactly these rows; the cards always count everyone.
+  const [filter, setFilter] = useState<DailyFilter>('all');
+  const [q, setQ] = useState('');
+  const path = `/admin/reports/daily?date=${date}${bq}${filter === 'all' ? '' : `&status=${filter}`}`;
+  const { data, isLoading } = useSWR<{
+    summary: DailySummary; performance: DailyPerformance; rows: DailyRow[];
+  }>(path, fetcher, { shouldRetryOnError: false });
+
+  const term = q.trim().toLowerCase();
+  const rows = (data?.rows ?? []).filter(
+    (r) => !term || r.name.toLowerCase().includes(term) || r.employeeCode.toLowerCase().includes(term),
   );
-  const rows = data?.rows ?? [];
+  const s = data?.summary;
+  const p = data?.performance;
+  const isToday = date === iso(today);
+  const label = DAILY_FILTERS.find((f) => f.key === filter)!.label;
+
   return (
     <>
-      {data && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Stat label="Employees" value={data.summary.total} />
-          <Stat label="Present" value={data.summary.present} tint="text-emerald-600" />
-          <Stat label="Late" value={data.summary.late} tint="text-amber-600" />
-          <Stat label="Absent" value={data.summary.absent} tint="text-rose-600" />
+      {s && (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <Stat label="Employees" value={s.total} onClick={() => setFilter('all')} active={filter === 'all'} />
+          <Stat label="Present" value={s.present} tint="text-emerald-600" onClick={() => setFilter('present')} active={filter === 'present'} />
+          <Stat label="Late" value={s.late} tint="text-amber-600" onClick={() => setFilter('late')} active={filter === 'late'} />
+          <Stat label="Absent" value={s.absent} tint="text-rose-600" onClick={() => setFilter('absent')} active={filter === 'absent'} />
+          <Stat label="Weekly off / holiday" value={s.weeklyOff} tint="text-blue-600" onClick={() => setFilter('off')} active={filter === 'off'} />
+          <Stat label="On leave" value={s.leave} tint="text-violet-600" onClick={() => setFilter('leave')} active={filter === 'leave'} />
         </div>
       )}
+
+      {p && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-2 p-4 text-sm">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {isToday ? "Today's performance" : 'Performance'}
+            </span>
+            <span>Hours worked <b className="text-brand-600">{p.workedHours}h</b></span>
+            <span>Average <b>{p.avgHours}h</b> / head</span>
+            <span>Overtime <b className="text-amber-600">{p.otHours}h</b></span>
+            <span>On time <b className="text-emerald-600">{p.onTime}</b> of {s?.present ?? 0}</span>
+            <span>Attendance <b className="text-emerald-600">{p.attendanceRate}%</b></span>
+            {p.onDuty > 0 && <span className="text-blue-600">{p.onDuty} still on duty</span>}
+          </CardContent>
+        </Card>
+      )}
+
+      {!!s?.pending && (
+        <p className="text-xs text-amber-700">
+          {s.pending} punch(es) awaiting approval — not counted present until signed off.{' '}
+          <button onClick={() => setFilter('pending')} className="font-semibold underline">Show them</button>
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {DAILY_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`h-9 rounded-lg px-3 text-xs font-semibold ${
+              filter === f.key ? 'brand-gradient text-white shadow-brand' : 'border border-border bg-card text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search name or code…"
+          className="h-9 w-48 rounded-lg border border-border bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-ring/40"
+        />
+      </div>
+
       <TableCard
-        title={`Daily attendance — ${date}`}
+        title={`${filter === 'all' ? 'Daily attendance' : label} — ${date}${data ? ` · ${rows.length}` : ''}`}
         loading={isLoading}
-        empty={rows.length === 0 ? 'No employees found.' : null}
-        exportPath={`/admin/reports/daily?date=${date}${bq}`}
-        exportName={`daily-attendance-${date}`}
-        onExport={() => downloadCsv(`daily-${date}.csv`,
-          ['Code', 'Name', 'Branch', 'Status', 'Check-In', 'Check-Out', 'Hours', 'Geofence', 'Punch'],
-          rows.map((r) => [r.employeeCode, r.name, r.branch, r.status, r.checkIn, r.checkOut, r.workedHours, r.geofence, r.punchMode]))}
+        empty={rows.length === 0 ? `No employees ${filter === 'all' ? 'found' : `under “${label}”`} for this date.` : null}
+        exportPath={path}
+        exportName={`daily-attendance-${filter === 'all' ? '' : `${filter}-`}${date}`}
+        onExport={() => downloadCsv(`daily-${filter === 'all' ? '' : `${filter}-`}${date}.csv`,
+          ['Code', 'Name', 'Branch', 'Shift', 'Status', 'Check-In', 'Check-Out', 'Hours', 'OT h', 'Geofence', 'Punch'],
+          rows.map((r) => [r.employeeCode, r.name, r.branch, r.shift, r.status, r.checkIn, r.checkOut, r.workedHours, r.otHours, r.geofence, r.punchMode]))}
       >
         <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <th className={th}>Employee</th><th className={th}>Branch</th><th className={th}>Status</th>
-          <th className={th}>Check-In</th><th className={th}>Check-Out</th><th className={th}>Hours</th>
+          <th className={th}>Check-In</th><th className={th}>Check-Out</th><th className={th}>Hours</th><th className={th}>OT</th>
         </tr></thead>
         <tbody>
           {rows.map((r) => (
@@ -220,8 +302,11 @@ function DailyReport({ date, bq }: { date: string; bq: string }) {
               <td className={`${td} text-muted-foreground`}>{r.branch}</td>
               <td className={td}><StatusChip status={r.status} /></td>
               <td className={td}>{r.checkIn ?? '—'}</td>
-              <td className={td}>{r.checkOut ?? '—'}</td>
+              <td className={td}>
+                {r.checkOut ?? (r.stillIn ? <span className="text-blue-600">on duty</span> : '—')}
+              </td>
               <td className={td}>{r.workedHours != null ? `${r.workedHours}h` : '—'}</td>
+              <td className={td}>{r.otHours ? <span className="text-amber-600">{r.otHours}h</span> : '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -246,11 +331,13 @@ function MonthlyReport({ month, year, bq }: { month: number; year: number; bq: s
         exportPath={`/admin/reports/monthly?month=${month}&year=${year}${bq}`}
         exportName={`monthly-attendance-${tag}`}
         onExport={() => downloadCsv(`monthly-employees-${tag}.csv`,
-          ['Code', 'Name', 'Branch', 'Present', 'Late', 'Half', 'Worked h', 'OT h', 'Net Salary', 'Slip'],
-          rows.map((r) => [r.employeeCode, r.name, r.branch, r.presentDays, r.lateDays, r.halfDays, r.workedHours, r.otHours, r.netSalary, r.payslipStatus]))}
+          ['Code', 'Name', 'Branch', 'Present', 'Late', 'Half', 'Absent', 'Leave', 'W/Off', 'Off Duty', 'Worked h', 'OT h', 'Net Salary', 'Slip'],
+          rows.map((r) => [r.employeeCode, r.name, r.branch, r.presentDays, r.lateDays, r.halfDays,
+            r.absentDays, r.leaveDays + r.lopDays, r.weeklyOffDays, r.offDutyDays, r.workedHours, r.otHours, r.netSalary, r.payslipStatus]))}
       >
         <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <th className={th}>Employee</th><th className={th}>Branch</th><th className={th}>Present</th>
+          <th className={th}>Absent</th><th className={th}>Leave</th>
           <th className={th}>Late</th><th className={th}>Worked</th><th className={th}>OT</th><th className={th}>Net</th>
         </tr></thead>
         <tbody>
@@ -258,7 +345,23 @@ function MonthlyReport({ month, year, bq }: { month: number; year: number; bq: s
             <tr key={r.employeeCode} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
               <td className={`${td} font-medium`}>{r.name} <span className="text-xs text-muted-foreground">{r.employeeCode}</span></td>
               <td className={`${td} text-muted-foreground`}>{r.branch}</td>
-              <td className={td}>{days(r.presentDays + r.lateDays + r.halfDays * 0.5)}d</td>
+              <td className={td}>
+                {days(r.presentDays)}d
+                {r.offDutyDays > 0 && (
+                  <span className="ml-1 text-[10px] text-emerald-600" title="Sundays / holidays worked — paid as extra days">
+                    +{r.offDutyDays} duty
+                  </span>
+                )}
+              </td>
+              <td className={td}>
+                {r.absentDays > 0 ? <span className="text-rose-600">{days(r.absentDays)}d</span> : '—'}
+                {r.pendingDays > 0 && (
+                  <span className="ml-1 text-[10px] text-amber-600" title="awaiting approval — included in absent">
+                    ({r.pendingDays} PN)
+                  </span>
+                )}
+              </td>
+              <td className={td}>{r.leaveDays + r.lopDays > 0 ? `${days(r.leaveDays + r.lopDays)}d` : '—'}</td>
               <td className={td}>{r.lateDays > 0 ? <span className={r.lateDays >= 5 ? 'font-semibold text-rose-600' : 'text-amber-600'}>{r.lateDays}d</span> : '—'}</td>
               <td className={td}>{r.workedHours}h</td>
               <td className={td}>{r.otHours ? `${r.otHours}h` : '—'}</td>
@@ -276,12 +379,12 @@ function MonthlyReport({ month, year, bq }: { month: number; year: number; bq: s
         loading={isLoading}
         empty={branches.length === 0 ? 'No data.' : null}
         onExport={() => downloadCsv(`monthly-branches-${tag}.csv`,
-          ['Branch', 'Employees', 'Present days', 'Late days', 'Worked h'],
-          branches.map((b) => [b.branch, b.employees, b.presentDays, b.lateDays, b.workedHours]))}
+          ['Branch', 'Employees', 'Present days', 'Absent days', 'Late days', 'Worked h'],
+          branches.map((b) => [b.branch, b.employees, b.presentDays, b.absentDays, b.lateDays, b.workedHours]))}
       >
         <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <th className={th}>Branch</th><th className={th}>Employees</th><th className={th}>Present days</th>
-          <th className={th}>Late days</th><th className={th}>Worked hours</th>
+          <th className={th}>Absent days</th><th className={th}>Late days</th><th className={th}>Worked hours</th>
         </tr></thead>
         <tbody>
           {branches.map((b) => (
@@ -289,12 +392,18 @@ function MonthlyReport({ month, year, bq }: { month: number; year: number; bq: s
               <td className={`${td} font-medium`}>{b.branch}</td>
               <td className={td}>{b.employees}</td>
               <td className={td}>{days(b.presentDays)}</td>
+              <td className={td}>{days(b.absentDays)}</td>
               <td className={td}>{b.lateDays}</td>
               <td className={td}>{b.workedHours}h</td>
             </tr>
           ))}
         </tbody>
       </TableCard>
+      <p className="text-xs text-muted-foreground">
+        Present counts working days worked — late days included, a half day as 0.5. Sundays and holidays worked show
+        as “+n duty”: they stay paid weekly-offs and pay one extra day each. Absent includes punches still awaiting
+        approval (PN). Days before an employee joined are counted neither present nor absent.
+      </p>
     </>
   );
 }
@@ -325,17 +434,18 @@ function PayrollReportTab({ month, year, bq }: { month: number; year: number; bq
         exportPath={`/admin/reports/payroll-summary?month=${month}&year=${year}${bq}`}
         exportName={`payroll-summary-${tag}`}
         onExport={() => downloadCsv(`payroll-summary-${tag}.csv`,
-          ['Code', 'Employee', 'Branch', 'Designation', 'Department', 'Days in Month', 'Present Days',
-            'Absent Days', 'CL Days', 'Leave Deduction', 'OT Hours', 'Sunday Duty', 'Salary',
+          ['Code', 'Employee', 'Branch', 'Designation', 'Department', 'Days in Month', 'Days Served', 'Present Days',
+            'Absent Days', 'Held (PN)', 'CL Days', 'Leave Deduction', 'OT Hours', 'Sunday Duty', 'Salary',
             'Per Day Salary', 'OT Salary', 'Payable'],
           rows.map((r) => [r.employeeCode, r.name, r.branch, r.designation, r.department, r.daysInMonth,
-            r.presentDays, r.absentDays, r.clDays, r.leaveDeduction, r.otHours, r.sundayDays,
+            r.servedDays, r.presentDays, r.absentDays, r.pendingDays, r.clDays, r.leaveDeduction, r.otHours, r.sundayDays,
             r.salary, r.perDaySalary, r.otSalary, r.payable]))}
       >
         <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <th className={th}>Employee</th><th className={th}>Branch</th><th className={th}>Designation</th>
           <th className={th}>Department</th>
           <th className={`${th} text-right`}>Days</th>
+          <th className={`${th} text-right`}>Present</th>
           <th className={`${th} text-right`}>Absent</th>
           <th className={`${th} text-right`}>CL</th>
           <th className={`${th} text-right`}>Leave Ded.</th>
@@ -355,8 +465,23 @@ function PayrollReportTab({ month, year, bq }: { month: number; year: number; bq
               <td className={`${td} text-muted-foreground`}>{r.branch}</td>
               <td className={`${td} text-muted-foreground`}>{r.designation}</td>
               <td className={`${td} text-muted-foreground`}>{r.department}</td>
-              <td className={`${td} text-right`}>{r.daysInMonth}</td>
-              <td className={`${td} text-right ${r.absentDays > 0 ? 'text-rose-600' : ''}`}>{days(r.absentDays)}</td>
+              <td className={`${td} text-right`}>
+                {r.servedDays}
+                {r.servedDays !== r.daysInMonth && (
+                  <span className="ml-1 text-[10px] text-muted-foreground" title="days on the rolls this month">
+                    /{r.daysInMonth}
+                  </span>
+                )}
+              </td>
+              <td className={`${td} text-right`}>{days(r.presentDays)}</td>
+              <td className={`${td} text-right ${r.absentDays > 0 ? 'text-rose-600' : ''}`}>
+                {days(r.absentDays)}
+                {r.pendingDays > 0 && (
+                  <span className="ml-1 text-[10px] text-amber-600" title="awaiting approval — included in absent">
+                    ({r.pendingDays} PN)
+                  </span>
+                )}
+              </td>
               <td className={`${td} text-right`}>{days(r.clDays)}</td>
               <td className={`${td} text-right`}>{money(r.leaveDeduction)}</td>
               <td className={`${td} text-right`}>
@@ -372,7 +497,7 @@ function PayrollReportTab({ month, year, bq }: { month: number; year: number; bq
           {t && rows.length > 0 && (
             <tr className="border-t-2 border-border bg-muted/50 font-semibold">
               <td className={td}>TOTAL ({t.employees})</td>
-              <td className={td} colSpan={4} />
+              <td className={td} colSpan={5} />
               <td className={`${td} text-right`}>{days(t.absentDays)}</td>
               <td className={td} />
               <td className={`${td} text-right`}>{money(t.leaveDeduction)}</td>
@@ -386,7 +511,9 @@ function PayrollReportTab({ month, year, bq }: { month: number; year: number; bq
         </tbody>
       </TableCard>
       <p className="text-xs text-muted-foreground">
-        Absent days include the unworked half of a half day (2 absences + 1 half day = 2.5). Sundays are paid weekly-offs;
+        Days = days served this month (a mid-month joiner is paid pro-rata — dates before joining are neither paid nor
+        absent). Absent days include the unworked half of a half day (2 absences + 1 half day = 2.5) and punches still
+        awaiting approval (PN) — approve them and re-run payroll to pay those days. Sundays are paid weekly-offs;
         working a Sunday pays one extra full day — even for a half day — and is included in OT Salary.
       </p>
     </>
@@ -431,8 +558,12 @@ function PerformanceReport({ month, year, bq }: { month: number; year: number; b
                 <span className="text-emerald-600">Present <b>{days(e.present)}</b></span>
                 <span className="text-blue-600">WO <b>{e.weeklyOff}</b></span>
                 <span className="text-violet-600">HL <b>{e.holidays}</b> · LV <b>{e.leave}</b></span>
-                <span className="text-rose-600">Absent <b>{days(e.absent)}</b></span>
-                <span>Paid <b>{days(e.paidDays)}</b></span>
+                {e.lop > 0 && <span className="text-rose-600">LOP <b>{days(e.lop)}</b></span>}
+                <span className="text-rose-600">
+                  Absent <b>{days(e.absent)}</b>
+                  {e.pending > 0 && <span className="ml-1 text-amber-600">({e.pending} PN)</span>}
+                </span>
+                <span>Paid <b>{days(e.paidDays)}</b> / {e.servedDays}</span>
                 {e.sundayDuty > 0 && <span className="text-emerald-600">Sun duty <b>{e.sundayDuty}</b></span>}
                 <span>Work+OT <b>{e.totalWorkPlusOt}</b></span>
                 <span>OT <b>{e.totalOt}</b></span>
@@ -476,7 +607,9 @@ function PerformanceReport({ month, year, bq }: { month: number; year: number; b
         {employees.length > 0 && (
           <p className="text-[11px] text-muted-foreground">
             P = Present · HD = Half day (0.5) · A = Absent · WO = Weekly off (Sunday, paid) · WO* = Sunday duty (pays one extra
-            full day) · HL = Holiday · LV = Paid leave · LOP = Loss of pay · PN = Awaiting approval · # = manual/selfie punch
+            full day) · HL = Holiday · HL* = Holiday worked · LV = Paid leave · LOP = Loss of pay (unpaid) ·
+            PN = Awaiting approval (unpaid, counted under Absent until signed off) · # = manual/selfie punch ·
+            blank = before joining, or a date still to come. Present + Absent + WO + HL + LV + LOP = days served.
           </p>
         )}
       </CardContent>
@@ -523,12 +656,21 @@ function LateReport({ month, year, bq }: { month: number; year: number; bq: stri
   );
 }
 
-function Stat({ label, value, tint = '' }: { label: string; value: number; tint?: string }) {
-  return (
-    <Card><CardContent className="p-5">
+/** A figure card. Pass `onClick` to make it a filter button for the table below. */
+function Stat({ label, value, tint = '', onClick, active }: {
+  label: string; value: number; tint?: string; onClick?: () => void; active?: boolean;
+}) {
+  const card = (
+    <Card className={active ? 'ring-2 ring-brand-500' : undefined}><CardContent className="p-5 text-left">
       <div className={`text-2xl font-bold ${tint}`}>{days(value)}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
     </CardContent></Card>
+  );
+  if (!onClick) return card;
+  return (
+    <button type="button" onClick={onClick} aria-pressed={active} className="text-left transition hover:opacity-80">
+      {card}
+    </button>
   );
 }
 
@@ -549,13 +691,23 @@ function PunchTag({ mode }: { mode: string }) {
   );
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  WEEKLY_OFF: 'WEEKLY OFF',
+  WEEKLY_OFF_WORKED: 'SUNDAY DUTY',
+  HOLIDAY_WORKED: 'HOLIDAY DUTY',
+  HALF_DAY: 'HALF DAY',
+  ON_LEAVE: 'ON LEAVE',
+  PENDING: 'AWAITING APPROVAL',
+  NOT_JOINED: 'NOT JOINED',
+};
+
 function StatusChip({ status }: { status: string }) {
-  const cls = status === 'PRESENT' ? 'chip-present'
-    : status === 'LATE' ? 'chip-half'
-    : status === 'ABSENT' ? 'chip-off'
-    : status.includes('approval') ? 'chip-half'
+  const cls = status === 'PRESENT' || status === 'WEEKLY_OFF_WORKED' || status === 'HOLIDAY_WORKED' ? 'chip-present'
+    : status === 'LATE' || status === 'HALF_DAY' || status === 'PENDING' ? 'chip-half'
+    : status === 'ABSENT' || status === 'LOP' ? 'chip-off'
+    : status === 'WEEKLY_OFF' || status === 'HOLIDAY' || status === 'NOT_JOINED' ? 'chip-off'
     : 'chip-leave';
-  return <span className={`chip ${cls}`}>{status.replace('_', ' ')}</span>;
+  return <span className={`chip ${cls}`}>{STATUS_LABEL[status] ?? status.replace('_', ' ')}</span>;
 }
 
 function TableCard({ title, loading, empty, onExport, exportPath, exportName, children }: {
@@ -594,7 +746,7 @@ function EmployeeReport({ month, year }: { month: number; year: number }) {
   const { data, isLoading } = useSWR<{
     employee: { name: string; employeeCode: string; branch: string; shift: string };
     days: EmpDay[];
-    summary: { present: number; late: number; half: number; absent: number; off: number; workedHours: number };
+    summary: { present: number; offDuty: number; late: number; half: number; absent: number; pending: number; leave: number; lop: number; off: number; workedHours: number };
   }>(empId ? `/admin/reports/employee/${empId}?month=${month}&year=${year}` : null, fetcher, { shouldRetryOnError: false });
   const tag = `${year}-${String(month).padStart(2, '0')}`;
 
@@ -610,10 +762,11 @@ function EmployeeReport({ month, year }: { month: number; year: number }) {
       </Card>
 
       {empId && data && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          <Stat label="Present" value={data.summary.present} tint="text-emerald-600" />
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <Stat label={data.summary.offDuty ? `Present (+${data.summary.offDuty} duty)` : 'Present'} value={data.summary.present} tint="text-emerald-600" />
           <Stat label="Half days" value={data.summary.half} tint="text-amber-600" />
-          <Stat label="Absent" value={data.summary.absent} tint="text-rose-600" />
+          <Stat label={data.summary.pending ? `Absent (${data.summary.pending} PN)` : 'Absent'} value={data.summary.absent} tint="text-rose-600" />
+          <Stat label="Leave" value={data.summary.leave + data.summary.lop} tint="text-violet-600" />
           <Stat label="Off/Holiday" value={data.summary.off} />
           <Stat label="Worked hrs" value={data.summary.workedHours} tint="text-brand-600" />
         </div>
