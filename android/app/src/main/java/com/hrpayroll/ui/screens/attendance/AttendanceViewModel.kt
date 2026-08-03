@@ -4,6 +4,7 @@ import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.remote.dto.AttendanceCalendarResponse
+import com.hrpayroll.data.remote.dto.MissingCheckoutDto
 import com.hrpayroll.data.repository.AttendanceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +42,16 @@ data class AttendanceUiState(
     val manualBusy: Boolean = false,
     val manualError: String? = null,
     val manualNotice: String? = null,
+    /**
+     * An earlier day the employee checked in on but never checked out of. While
+     * this is set, check-in is blocked (server-side too) until that day's
+     * check-out is sent for approval.
+     */
+    val missingCheckout: MissingCheckoutDto? = null,
+    /** The "you forgot to check out" alert, raised when Check In is tapped. */
+    val missingPromptOpen: Boolean = false,
+    /** Set while the manual punch sheet is settling a specific earlier day. */
+    val manualForDay: MissingCheckoutDto? = null,
 )
 
 @HiltViewModel
@@ -111,14 +122,52 @@ class AttendanceViewModel @Inject constructor(
                 )
             }
             .onFailure { /* keep whatever we had; buttons stay enabled */ }
+
+        runCatching { repository.missingCheckout() }
+            .onSuccess { _uiState.value = _uiState.value.copy(missingCheckout = it) }
+            .onFailure { /* the backend blocks the check-in anyway */ }
     }
 
+    /**
+     * Check In was tapped. When an earlier day is still open the employee has
+     * to settle it first, so raise the alert instead of opening the camera.
+     * Returns true when the check-in may proceed.
+     */
+    fun onCheckInTapped(): Boolean {
+        if (_uiState.value.missingCheckout == null) return true
+        _uiState.value = _uiState.value.copy(missingPromptOpen = true)
+        return false
+    }
+
+    fun dismissMissingPrompt() {
+        _uiState.value = _uiState.value.copy(missingPromptOpen = false)
+    }
+
+    /** Open the punch sheet pre-filled to settle the day that was left open. */
+    fun settleMissingCheckout() {
+        val missing = _uiState.value.missingCheckout ?: return
+        _uiState.value = _uiState.value.copy(
+            missingPromptOpen = false,
+            manualOpen = true,
+            manualError = null,
+            manualForDay = missing,
+        )
+    }
+
+    /**
+     * The general punch sheet. While a day is left open the backend rejects a
+     * punch for any later date, so send the employee to settle that day first.
+     */
     fun openManualPunch() {
-        _uiState.value = _uiState.value.copy(manualOpen = true, manualError = null)
+        _uiState.value = _uiState.value.copy(
+            manualOpen = true,
+            manualError = null,
+            manualForDay = _uiState.value.missingCheckout,
+        )
     }
 
     fun closeManualPunch() {
-        _uiState.value = _uiState.value.copy(manualOpen = false, manualError = null)
+        _uiState.value = _uiState.value.copy(manualOpen = false, manualError = null, manualForDay = null)
     }
 
     fun consumeManualNotice() {
@@ -150,13 +199,15 @@ class AttendanceViewModel @Inject constructor(
             return
         }
 
+        // Settling a day that was left open? Punch against that date, not today.
+        val forDay = _uiState.value.manualForDay
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(manualBusy = true, manualError = null)
             runCatching {
                 repository.manualPunch(
                     mode = mode,
                     reason = reason.trim(),
-                    date = java.time.LocalDate.now().toString(),
+                    date = forDay?.date ?: java.time.LocalDate.now().toString(),
                     checkIn = checkIn?.takeIf { it.isNotBlank() },
                     checkOut = checkOut?.takeIf { it.isNotBlank() },
                     selfie = selfie,
@@ -166,7 +217,14 @@ class AttendanceViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         manualBusy = false,
                         manualOpen = false,
-                        manualNotice = "Punch sent to your reporting manager for approval.",
+                        manualForDay = null,
+                        // The block lifts as soon as the day is in for approval,
+                        // so the employee can check in without waiting.
+                        manualNotice = if (forDay != null) {
+                            "Check-out for ${forDay.dateLabel ?: "that day"} sent for approval. You can check in now."
+                        } else {
+                            "Punch sent to your reporting manager for approval."
+                        },
                     )
                     loadHistory()
                     loadCalendar()

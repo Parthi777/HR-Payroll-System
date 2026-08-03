@@ -17,6 +17,13 @@ const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 // Toggle off with LATE_REQUIRES_APPROVAL=false.
 const LATE_REQUIRES_APPROVAL = process.env.LATE_REQUIRES_APPROVAL !== 'false';
 
+// How far back we look for a punch the employee left open (checked in, never
+// checked out). Bounded so rows predating this rule can't lock someone out for
+// good — only recent forgotten check-outs block the next check-in.
+const OPEN_PUNCH_LOOKBACK_DAYS = Number(process.env.OPEN_PUNCH_LOOKBACK_DAYS ?? 7);
+
+const COMPANY_TZ = process.env.COMPANY_TZ ?? 'Asia/Kolkata';
+
 function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -65,6 +72,83 @@ async function requireFaceMatch(
   return fm.score;
 }
 
+/** A past day the employee checked in on but never checked out of. */
+export interface OpenPunchDay {
+  attendanceId: string;
+  /** yyyy-MM-dd — pre-fills the manual punch form. */
+  date: string;
+  /** "Mon, Aug 3" — for the message shown to the employee. */
+  dateLabel: string;
+  /** That day's check-in, e.g. "09:02 AM". */
+  checkIn: string | null;
+  /** The shift's closing time ("18:00"), a sane default for the time picker. */
+  shiftEnd: string | null;
+  /** How many days are still open in the lookback window. */
+  openDays: number;
+}
+
+/**
+ * Days the employee left open — checked in, never checked out — oldest first,
+ * within the lookback window. Days an admin already settled (absent / leave /
+ * holiday) don't need a check-out and are ignored.
+ */
+async function findOpenPunchRows(prisma: PrismaClient, employeeId: string) {
+  const today = startOfToday();
+  const from = new Date(today);
+  from.setDate(from.getDate() - OPEN_PUNCH_LOOKBACK_DAYS);
+  return prisma.attendance.findMany({
+    where: {
+      employeeId,
+      date: { gte: from, lt: today },
+      checkIn: { not: null },
+      checkOut: null,
+      status: { notIn: ['ABSENT', 'ON_LEAVE', 'HOLIDAY'] },
+    },
+    orderBy: { date: 'asc' },
+    include: { employee: { include: { shift: true } } },
+  });
+}
+
+/** The oldest day still waiting for a check-out, or null when there is none. */
+export async function findOpenPunch(
+  prisma: PrismaClient,
+  employeeId: string,
+): Promise<OpenPunchDay | null> {
+  const rows = await findOpenPunchRows(prisma, employeeId);
+  if (!rows.length) return null;
+  const r = rows[0];
+  return {
+    attendanceId: r.id,
+    date: `${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, '0')}-${String(r.date.getDate()).padStart(2, '0')}`,
+    dateLabel: r.date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      timeZone: COMPANY_TZ,
+    }),
+    checkIn: r.checkIn
+      ? r.checkIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: COMPANY_TZ })
+      : null,
+    shiftEnd: r.employee.shift?.endTime ?? null,
+    openDays: rows.length,
+  };
+}
+
+/**
+ * The block an employee hits when an earlier day is still open. Carries the day
+ * itself in `details` so the app can jump straight into a pre-filled manual
+ * punch instead of making the employee work out what is wrong.
+ */
+function missingCheckOutError(open: OpenPunchDay): AppError {
+  const more = open.openDays > 1 ? ` (${open.openDays} days are still open)` : '';
+  return new AppError(
+    `Please enter your check-out time for ${open.dateLabel} — you checked in at ${open.checkIn ?? '—'} but never checked out${more}. ` +
+      'Send that day for approval and you can check in again.',
+    409,
+    { code: 'MISSING_CHECKOUT', ...open },
+  );
+}
+
 export interface MarkResult {
   id: string;
   status: string;
@@ -94,6 +178,13 @@ export async function markCheckIn(
     include: { branch: true, shift: true },
   });
   if (!employee) throw AppError.notFound('Employee not found');
+
+  // A day left open (checked in, never checked out) has to be settled first —
+  // otherwise it silently stays unpaid. The employee raises the missing
+  // check-out as a manual punch; once it is in for approval this clears and
+  // the check-in goes through (approval is not required to check in again).
+  const open = await findOpenPunch(prisma, employeeId);
+  if (open) throw missingCheckOutError(open);
 
   // (0,0) means the phone had no GPS fix — reject with a human message instead
   // of computing an absurd distance to Null Island.
@@ -198,18 +289,29 @@ export async function markCheckOut(
   lat: number,
   lng: number,
 ): Promise<MarkResult> {
-  const today = startOfToday();
-  const existing = await prisma.attendance.findUnique({
-    where: { employeeId_date: { employeeId, date: today } },
-  });
-  if (!existing?.checkIn) throw new AppError('No check-in found for today', 409);
-  if (existing.checkOut) throw new AppError('Already checked out today', 409);
-
   // Same identity gate as check-in — nobody can check out on a colleague's behalf.
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
     include: { branch: true, shift: true },
   });
+
+  const today = startOfToday();
+  let existing = await prisma.attendance.findUnique({
+    where: { employeeId_date: { employeeId, date: today } },
+  });
+  // A night shift starts on one calendar day and closes on the next, so when
+  // there is nothing open today, fall back to yesterday's still-open punch.
+  if (!existing?.checkIn && employee?.shift?.isNightShift) {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    existing = await prisma.attendance.findUnique({
+      where: { employeeId_date: { employeeId, date: yesterday } },
+    });
+    if (existing?.checkOut) existing = null; // already closed — nothing to do
+  }
+  if (!existing?.checkIn) throw new AppError('No check-in found for today', 409);
+  if (existing.checkOut) throw new AppError('Already checked out today', 409);
+
   await requireFaceMatch(employee?.faceTemplateId ?? null, selfie, employeeId);
 
   if (lat === 0 && lng === 0) {
@@ -292,6 +394,16 @@ export async function markManualPunch(
   const day = input.date ? startOfDay(input.date) : startOfToday();
   if (day.getTime() > startOfToday().getTime()) {
     throw new AppError('You cannot punch for a future date', 400);
+  }
+
+  // Same gate as check-in, so a manual punch can't hop over a day left open —
+  // but the punch that settles that day (or an earlier one) always goes through,
+  // and HR raising a punch on someone's behalf is never blocked.
+  if (!input.raisedByAdminId) {
+    const open = await findOpenPunch(prisma, employeeId);
+    if (open && day.getTime() > startOfDay(new Date(`${open.date}T00:00:00`)).getTime()) {
+      throw missingCheckOutError(open);
+    }
   }
 
   const existing = await prisma.attendance.findUnique({

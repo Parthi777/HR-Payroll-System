@@ -92,9 +92,22 @@ fun AttendanceScreen(
         ManualPunchDialog(
             busy = state.manualBusy,
             error = state.manualError,
+            forDay = state.manualForDay,
             onDismiss = viewModel::closeManualPunch,
             onSubmit = viewModel::submitManualPunch,
         )
+    }
+
+    // Forgot to check out on an earlier day — that day has to be sent for
+    // approval before a new check-in is allowed (the backend enforces it too).
+    if (state.missingPromptOpen) {
+        state.missingCheckout?.let { missing ->
+            MissingCheckoutDialog(
+                missing = missing,
+                onDismiss = viewModel::dismissMissingPrompt,
+                onEnter = viewModel::settleMissingCheckout,
+            )
+        }
     }
 
     // Refresh history whenever the screen resumes (e.g. returning from a successful check-in).
@@ -138,6 +151,16 @@ fun AttendanceScreen(
                             fontSize = 11.sp,
                             color = StatusHalf,
                             modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                    state.missingCheckout?.let { missing ->
+                        Text(
+                            "You did not check out on ${missing.dateLabel ?: "an earlier day"} — " +
+                                "enter that time before checking in again",
+                            fontSize = 11.sp,
+                            color = StatusHalf,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                     }
@@ -202,7 +225,9 @@ fun AttendanceScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Button(
-                    onClick = onCheckIn,
+                    // An earlier day left open blocks the camera: ask for that
+                    // check-out first instead of failing after the selfie.
+                    onClick = { if (viewModel.onCheckInTapped()) onCheckIn() },
                     enabled = !checkedIn,
                     modifier = Modifier.weight(1f).height(54.dp),
                     shape = MaterialTheme.shapes.medium,
@@ -252,7 +277,15 @@ fun AttendanceScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
             ) {
                 Icon(Icons.Filled.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("  Can't check in/out? Manual or selfie punch", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (state.missingCheckout != null) {
+                        "  Enter check-out for ${state.missingCheckout?.dateLabel ?: "the missed day"}"
+                    } else {
+                        "  Can't check in/out? Manual or selfie punch"
+                    },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
 
             Text(
@@ -426,25 +459,162 @@ private fun LegendDot(color: Color, label: String) {
 }
 
 /**
+ * "You forgot to check out" alert. Raised when Check In is tapped while an
+ * earlier day is still open — the employee has to send that day's check-out for
+ * approval before a new check-in is allowed.
+ */
+@Composable
+private fun MissingCheckoutDialog(
+    missing: com.hrpayroll.data.remote.dto.MissingCheckoutDto,
+    onDismiss: () -> Unit,
+    onEnter: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Please enter previous day check-out time", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+        text = {
+            Column {
+                Text(
+                    "You checked in on ${missing.dateLabel ?: "an earlier day"}" +
+                        (missing.checkIn?.let { " at $it" } ?: "") +
+                        " but never checked out. Enter that day's check-out time and send it to your " +
+                        "reporting manager — then you can check in today.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                )
+                if (missing.openDays > 1) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "${missing.openDays} days are still open — start with the oldest.",
+                        fontSize = 12.sp,
+                        color = StatusHalf,
+                    )
+                }
+            }
+        },
+        confirmButton = { Button(onClick = onEnter) { Text("Enter check-out time") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+    )
+}
+
+/** "18:00" (or "9:5") → minutes since midnight; null when unparseable. */
+private fun parseHhMm(t: String?): Pair<Int, Int>? {
+    val parts = t?.split(":") ?: return null
+    if (parts.size < 2) return null
+    val h = parts[0].trim().toIntOrNull() ?: return null
+    val m = parts[1].trim().toIntOrNull() ?: return null
+    return if (h in 0..23 && m in 0..59) h to m else null
+}
+
+/** 18, 0 → "06:00 PM" for display (the API always receives 24-hour "HH:MM"). */
+private fun display12h(hour: Int, minute: Int): String {
+    val h12 = when {
+        hour == 0 -> 12
+        hour > 12 -> hour - 12
+        else -> hour
+    }
+    val suffix = if (hour < 12) "AM" else "PM"
+    return "%02d:%02d %s".format(h12, minute, suffix)
+}
+
+/**
+ * 12-hour clock picker. Times are typed nowhere — the employee dials them in,
+ * so a punch can't arrive as "25:70" or in the wrong half of the day.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TimePickerDialog(
+    title: String,
+    initial: Pair<Int, Int>,
+    onDismiss: () -> Unit,
+    onPick: (hour: Int, minute: Int) -> Unit,
+) {
+    val stateTp = androidx.compose.material3.rememberTimePickerState(
+        initialHour = initial.first,
+        initialMinute = initial.second,
+        is24Hour = false,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        text = {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.TimePicker(state = stateTp)
+            }
+        },
+        confirmButton = { Button(onClick = { onPick(stateTp.hour, stateTp.minute) }) { Text("Set") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/**
+ * One read-only time field that opens the 12-hour picker. `value` is the
+ * 24-hour "HH:MM" sent to the API; the field shows it as "06:00 PM".
+ */
+@Composable
+private fun TimeField(
+    label: String,
+    value: String,
+    fallback: Pair<Int, Int>,
+    modifier: Modifier = Modifier,
+    onChange: (String) -> Unit,
+) {
+    var picking by remember { mutableStateOf(false) }
+    val picked = parseHhMm(value)
+
+    if (picking) {
+        TimePickerDialog(
+            title = "Select $label",
+            initial = picked ?: fallback,
+            onDismiss = { picking = false },
+            onPick = { h, m ->
+                onChange("%02d:%02d".format(h, m))
+                picking = false
+            },
+        )
+    }
+
+    OutlinedButton(
+        onClick = { picking = true },
+        modifier = modifier.height(56.dp),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            Text(
+                picked?.let { display12h(it.first, it.second) } ?: "Tap to set",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+/**
  * Manual / selfie punch sheet.
  *
  * The escape hatch for a day that can't go through the normal gate — face
  * verification failing, or the employee working away from the branch geofence.
  * Geofence and shift-time checks are skipped; the punch is held for the
  * reporting manager, so it counts for payroll only once they approve it.
+ *
+ * When `forDay` is set the sheet is settling a day that was left open: the date
+ * is fixed, and only the missing check-out is asked for.
  */
 @Composable
 private fun ManualPunchDialog(
     busy: Boolean,
     error: String?,
+    forDay: com.hrpayroll.data.remote.dto.MissingCheckoutDto?,
     onDismiss: () -> Unit,
     onSubmit: (mode: String, reason: String, checkIn: String?, checkOut: String?, selfie: ByteArray?) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var mode by remember { mutableStateOf("MANUAL") }
     var checkIn by remember { mutableStateOf("") }
-    var checkOut by remember { mutableStateOf("") }
-    var reason by remember { mutableStateOf("") }
+    // Settling an open day: default the picker to that shift's closing time.
+    var checkOut by remember { mutableStateOf(if (forDay != null) forDay.shiftEnd.orEmpty() else "") }
+    var reason by remember { mutableStateOf(if (forDay != null) "Forgot to check out" else "") }
     var selfie by remember { mutableStateOf<ByteArray?>(null) }
     var selfieUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
@@ -468,51 +638,69 @@ private fun ManualPunchDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Manual / selfie punch", fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                if (forDay != null) "Check-out for ${forDay.dateLabel ?: "the missed day"}" else "Manual / selfie punch",
+                fontWeight = FontWeight.Bold,
+            )
+        },
         text = {
             Column {
                 Text(
-                    "Use this when you could not check in or out normally. Your reporting manager has to approve it " +
-                        "before it counts for payroll.",
+                    if (forDay != null) {
+                        "You checked in at ${forDay.checkIn ?: "—"} that day but never checked out. " +
+                            "Set the time you left — your reporting manager has to approve it before it is paid."
+                    } else {
+                        "Use this when you could not check in or out normally. Your reporting manager has to approve it " +
+                            "before it counts for payroll."
+                    },
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
                 Spacer(Modifier.height(12.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = mode == "MANUAL",
-                        onClick = { mode = "MANUAL" },
-                        label = { Text("Manual", fontSize = 13.sp) },
-                    )
-                    FilterChip(
-                        selected = mode == "SELFIE",
-                        onClick = { mode = "SELFIE" },
-                        label = { Text("With selfie", fontSize = 13.sp) },
-                    )
+                // A selfie taken today proves nothing about a day already past,
+                // so settling an open day is always a plain manual punch.
+                if (forDay == null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = mode == "MANUAL",
+                            onClick = { mode = "MANUAL" },
+                            label = { Text("Manual", fontSize = 13.sp) },
+                        )
+                        FilterChip(
+                            selected = mode == "SELFIE",
+                            onClick = { mode = "SELFIE" },
+                            label = { Text("With selfie", fontSize = 13.sp) },
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
                 }
-                Spacer(Modifier.height(12.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = checkIn,
-                        onValueChange = { checkIn = it },
-                        label = { Text("Check-in", fontSize = 12.sp) },
-                        placeholder = { Text("09:30") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
+                    if (forDay == null) {
+                        TimeField(
+                            label = "Check-in",
+                            value = checkIn,
+                            fallback = 9 to 0,
+                            modifier = Modifier.weight(1f),
+                            onChange = { checkIn = it },
+                        )
+                    }
+                    TimeField(
+                        label = "Check-out",
                         value = checkOut,
-                        onValueChange = { checkOut = it },
-                        label = { Text("Check-out", fontSize = 12.sp) },
-                        placeholder = { Text("18:00") },
-                        singleLine = true,
+                        fallback = parseHhMm(forDay?.shiftEnd) ?: (18 to 0),
                         modifier = Modifier.weight(1f),
+                        onChange = { checkOut = it },
                     )
                 }
                 Text(
-                    "24-hour time, e.g. 09:30 / 18:00. Fill only the punch you missed.",
+                    if (forDay != null) {
+                        "Tap to pick the time you actually left."
+                    } else {
+                        "Tap a field to pick the time. Set only the punch you missed."
+                    },
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )

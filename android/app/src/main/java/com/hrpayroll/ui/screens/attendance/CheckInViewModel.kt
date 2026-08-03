@@ -19,6 +19,11 @@ data class CheckInUiState(
     val resultStatus: String? = null, // PRESENT | LATE | ...
     val approvalStatus: String? = null, // PENDING when late / out-of-zone
     val error: String? = null,
+    /**
+     * Set when an earlier day was left open — check-in is refused until that
+     * day's check-out is sent for approval, so there is no point taking a selfie.
+     */
+    val blockedMessage: String? = null,
 )
 
 /** Uploads the captured selfie + GPS to the check-in or check-out endpoint
@@ -33,6 +38,26 @@ class CheckInViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(CheckInUiState())
     val uiState: StateFlow<CheckInUiState> = _uiState.asStateFlow()
+
+    init {
+        // Catch a day left open before the camera is used, not after — the
+        // backend refuses the check-in either way.
+        if (!isCheckOut) {
+            viewModelScope.launch {
+                runCatching { repository.missingCheckout() }
+                    .onSuccess { missing ->
+                        if (missing != null) {
+                            _uiState.value = _uiState.value.copy(
+                                blockedMessage = "You checked in on ${missing.dateLabel ?: "an earlier day"}" +
+                                    (missing.checkIn?.let { " at $it" } ?: "") +
+                                    " but never checked out. Open Attendance → \"Can't check in/out?\" and send that " +
+                                    "day's check-out time for approval — then you can check in.",
+                            )
+                        }
+                    }
+            }
+        }
+    }
 
     fun submit(selfie: File, lat: Double, lng: Double, accuracy: Float) {
         if (_uiState.value.isSubmitting) return

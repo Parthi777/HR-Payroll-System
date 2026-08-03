@@ -3,6 +3,7 @@ package com.hrpayroll.data.repository
 import com.hrpayroll.data.remote.HrApi
 import com.hrpayroll.data.remote.dto.AttendanceDto
 import com.hrpayroll.data.remote.dto.AttendanceHistoryDto
+import com.hrpayroll.data.remote.dto.MissingCheckoutDto
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -60,6 +61,9 @@ class AttendanceRepository @Inject constructor(
     )
 
     suspend fun today(): AttendanceDto = api.today()
+
+    /** The day the employee forgot to check out of (null when nothing is open). */
+    suspend fun missingCheckout(): MissingCheckoutDto? = api.missingCheckout().pending
 
     suspend fun history(): List<AttendanceHistoryDto> = api.history()
 

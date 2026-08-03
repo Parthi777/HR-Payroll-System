@@ -451,6 +451,7 @@ POST   /api/attendance/checkin          # Upload selfie + GPS → AI face match 
 POST   /api/attendance/checkout         # Upload selfie + GPS → mark checkout
 GET    /api/attendance/today            # Employee's today status
 GET    /api/attendance/history          # Employee's history
+GET    /api/attendance/missing-checkout # The day left open, if any — blocks check-in
 GET    /api/admin/attendance/live       # Real-time all employees (SSE/WebSocket)
 GET    /api/admin/attendance/report     # Filtered report
 PATCH  /api/admin/attendance/:id/override  # Manual correction
@@ -869,6 +870,7 @@ When working in this repo, Claude should:
 | GPS unavailable | Block check-in, show "Enable GPS" prompt |
 | Face not enrolled / match fails | Block check-in/out with 403 and a clear message (strict since 2026-07-15) |
 | Employee can't pass the face/geofence gate | Manual or selfie punch: times typed by hand, geofence + face + shift-time checks skipped, held PENDING for the reporting manager. Not paid until approved. |
+| Forgot to check out on an earlier day | The next check-in is blocked (409 `MISSING_CHECKOUT`) until that day's check-out is raised as a manual punch — the app prompts "please enter previous day check-out time" and opens the sheet pre-filled. **Submitting** it clears the block; approval is not waited on. A manual punch can't hop over the open day either, but HR raising one is exempt. Only open days inside `OPEN_PUNCH_LOOKBACK_DAYS` (default 7) block, and days already settled as absent/leave/holiday never do. |
 | Half day (in or out at midday) | Pays 0.5 and adds 0.5 to the absent count — see "Half-day policy" |
 | Employee works a Sunday | Sunday stays a paid weekly-off AND earns one extra full day's pay (even for a half day) |
 | Employee joins mid-month | Days before `joiningDate` are neither paid nor absent (blank in the grid); salary is pro-rata on the days served |
@@ -879,7 +881,7 @@ When working in this repo, Claude should:
 | Claim expense heads | 20 owner-defined heads in `services/claim/claim-types.ts` (source of truth). Backend rejects unknown codes; legacy TRAVEL/FOOD/etc. still render a label. Run `scripts/migrate-claims.ts` to migrate + backfill. |
 | Cashier verifying a bill | Sees the scanned bill before disbursing — image bills inline, PDF bills via "View bill PDF" (Android) / the PDF button (web) |
 | Employee checks in from home | Geofence will flag; HR to investigate |
-| Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days |
+| Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days. Check-out finds nothing open today and falls back to yesterday's open punch (`Shift.isNightShift` only). |
 | Same employee multiple devices | Block — only registered device allowed (device fingerprint) |
 | WhatsApp delivery failure | Retry 3 times via BullMQ, then log as failed |
 | Payroll run mid-month | System allows partial month calculation (pro-rata) |

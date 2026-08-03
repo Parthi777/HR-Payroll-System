@@ -21,6 +21,7 @@ import com.hrpayroll.data.remote.dto.EmployeeCreatedResponse
 import com.hrpayroll.data.remote.dto.EmployeeListResponse
 import com.hrpayroll.data.remote.dto.EnrollFaceResponse
 import com.hrpayroll.data.remote.dto.MasterItemDto
+import com.hrpayroll.data.remote.dto.MissingCheckoutResponse
 import com.hrpayroll.data.remote.dto.ShiftListResponse
 import com.hrpayroll.data.remote.dto.LeaveCreatedResponse
 import com.hrpayroll.data.remote.dto.LeaveListResponse
@@ -88,6 +89,13 @@ interface HrApi {
 
     @GET("attendance/today")
     suspend fun today(): AttendanceDto
+
+    /**
+     * The day the employee forgot to check out of, if any. Check-in stays
+     * blocked until that day's check-out is sent for approval.
+     */
+    @GET("attendance/missing-checkout")
+    suspend fun missingCheckout(): MissingCheckoutResponse
 
     @GET("attendance/history")
     suspend fun history(): List<AttendanceHistoryDto>

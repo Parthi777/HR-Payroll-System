@@ -31,6 +31,25 @@ data class AttendanceHistoryDto(
     val status: String? = null,
 )
 
+/**
+ * A past day the employee checked in on but never checked out of. Check-in is
+ * blocked until that day's check-out is raised for approval.
+ */
+@JsonClass(generateAdapter = true)
+data class MissingCheckoutDto(
+    val attendanceId: String? = null,
+    val date: String? = null, // yyyy-MM-dd — pre-fills the manual punch
+    val dateLabel: String? = null, // "Mon, Aug 3"
+    val checkIn: String? = null, // that day's check-in, "09:02 AM"
+    val shiftEnd: String? = null, // "18:00" — default for the time picker
+    val openDays: Int = 0,
+)
+
+@JsonClass(generateAdapter = true)
+data class MissingCheckoutResponse(
+    val pending: MissingCheckoutDto? = null,
+)
+
 // ── Leaves ──
 @JsonClass(generateAdapter = true)
 data class ApplyLeaveRequest(

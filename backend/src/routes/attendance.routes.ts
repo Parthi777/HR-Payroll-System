@@ -4,7 +4,13 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
-import { markCheckIn, markCheckOut, decideAttendanceApproval, markManualPunch } from '../services/attendance/attendance.service.js';
+import {
+  markCheckIn,
+  markCheckOut,
+  decideAttendanceApproval,
+  markManualPunch,
+  findOpenPunch,
+} from '../services/attendance/attendance.service.js';
 import { classifyDay, type DayCode } from '../services/attendance/day-classify.js';
 import { getObjectBytes } from '../services/storage/storage.service.js';
 import { dayKey } from '../utils/time.js';
@@ -155,6 +161,15 @@ export async function attendanceRoutes(app: FastifyInstance) {
       });
     },
   );
+
+  /**
+   * The day the employee forgot to check out of, if any. Check-in is blocked
+   * until that day's check-out is raised as a manual punch, so the app asks for
+   * it up front rather than letting the employee take a selfie and be refused.
+   */
+  app.get('/attendance/missing-checkout', { preHandler: authenticate }, async (req) => {
+    return { pending: await findOpenPunch(app.prisma, req.user.sub) };
+  });
 
   app.get('/attendance/today', { preHandler: authenticate }, async (req) => {
     const { start, end } = todayRange();

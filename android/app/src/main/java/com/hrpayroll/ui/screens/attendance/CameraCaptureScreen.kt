@@ -94,6 +94,21 @@ fun CameraCaptureScreen(
     val needsApprovalNotice = state.success && state.approvalStatus == "PENDING"
     LaunchedEffect(state.success) { if (state.success && state.approvalStatus != "PENDING") onDone() }
 
+    // An earlier day was left open: the check-in cannot go through, so say so
+    // before the selfie rather than after it.
+    state.blockedMessage?.let { blocked ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { onCancel() },
+            title = { androidx.compose.material3.Text("Please enter previous day check-out time") },
+            text = { androidx.compose.material3.Text(blocked) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { onCancel() }) {
+                    androidx.compose.material3.Text("OK, got it")
+                }
+            },
+        )
+    }
+
     if (needsApprovalNotice) {
         val isLate = state.resultStatus == "LATE"
         androidx.compose.material3.AlertDialog(
