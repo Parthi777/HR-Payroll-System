@@ -19,7 +19,9 @@ export async function appRoutes(app: FastifyInstance) {
       available: true,
       versionCode,
       versionName: meta?.versionname ?? '',
-      url: await getSignedSelfieUrl(APK_KEY, 3600),
+      // 6h, not 1h: a ~60 MB APK over a weak mobile link can outlive a short
+      // signature and 403 mid-download, which leaves the device prompting again.
+      url: await getSignedSelfieUrl(APK_KEY, 6 * 3600),
     };
   });
 

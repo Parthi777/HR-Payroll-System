@@ -877,6 +877,7 @@ When working in this repo, Claude should:
 | Report run for the current month | Dates still to come are blank, not absent — totals cover the days served so far |
 | Punch awaiting approval (PN) | Unpaid, shown as PN in the grid and counted under Absent; approve it and re-run payroll to pay the day |
 | Deactivated employee | Excluded from every report, export, payslip list and dashboard figure |
+| App update prompt | Asked at most once per day per versionCode (`UpdatePrefs`), never on every launch. "Update now" downloads via DownloadManager and opens the system installer — it does not hand off to a browser. The published versionCode is read from the APK by `scripts/publish-apk.ts`, never typed. |
 | Claim numbering | Two never-reset sequences, printed zero-padded (001): `claimNo` on receipt (every claim), `voucherNo` only on approval. Both `@unique`; allocation retries on P2002. |
 | Claim expense heads | 20 owner-defined heads in `services/claim/claim-types.ts` (source of truth). Backend rejects unknown codes; legacy TRAVEL/FOOD/etc. still render a label. Run `scripts/migrate-claims.ts` to migrate + backfill. |
 | Cashier verifying a bill | Sees the scanned bill before disbursing — image bills inline, PDF bills via "View bill PDF" (Android) / the PDF button (web) |
