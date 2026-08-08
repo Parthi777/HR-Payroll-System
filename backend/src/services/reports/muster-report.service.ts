@@ -88,7 +88,7 @@ export async function buildMusterReport(
   prisma: PrismaClient,
   month: number,
   year: number,
-  filter: { branchId?: string; employeeId?: string } = {},
+  filter: { branchId?: string; departmentId?: string; designationId?: string; employeeId?: string } = {},
 ): Promise<MusterReport> {
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
@@ -99,6 +99,8 @@ export async function buildMusterReport(
     where: {
       status: 'ACTIVE',
       ...(filter.branchId ? { branchId: filter.branchId } : {}),
+      ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
+      ...(filter.designationId ? { designationId: filter.designationId } : {}),
       ...(filter.employeeId ? { id: filter.employeeId } : {}),
     },
     include: {

@@ -59,10 +59,15 @@ export async function buildPayrollReport(
   prisma: PrismaClient,
   month: number,
   year: number,
-  filter: { branchId?: string } = {},
+  filter: { branchId?: string; departmentId?: string; designationId?: string } = {},
 ): Promise<PayrollReport> {
   const employees = await prisma.employee.findMany({
-    where: { status: 'ACTIVE', ...(filter.branchId ? { branchId: filter.branchId } : {}) },
+    where: {
+      status: 'ACTIVE',
+      ...(filter.branchId ? { branchId: filter.branchId } : {}),
+      ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
+      ...(filter.designationId ? { designationId: filter.designationId } : {}),
+    },
     include: {
       branch: { select: { name: true } },
       department: { select: { name: true } },

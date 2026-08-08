@@ -50,16 +50,23 @@ export default function AttendancePage() {
   const { data: rows, isLive } = useLiveAttendance(noRows);
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('ALL');
+  const [departmentFilter, setDepartmentFilter] = useState('ALL');
+  const [designationFilter, setDesignationFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
   const branches = [...new Set(rows.map((r) => r.branch).filter(Boolean))];
+  const departments = [...new Set(rows.map((r) => r.department).filter(Boolean))].sort();
+  const designations = [...new Set(rows.map((r) => r.designation).filter(Boolean))].sort();
   const statuses = [...new Set(rows.map((r) => r.status).filter(Boolean))];
   const q = search.trim().toLowerCase();
   const filtered = rows.filter((r) => {
     const mBranch = branchFilter === 'ALL' || r.branch === branchFilter;
+    const mDept = departmentFilter === 'ALL' || r.department === departmentFilter;
+    const mDesig = designationFilter === 'ALL' || r.designation === designationFilter;
     const mStatus = statusFilter === 'ALL' || r.status === statusFilter;
-    const mSearch = !q || (r.name?.toLowerCase().includes(q) ?? false) || (r.branch?.toLowerCase().includes(q) ?? false);
-    return mBranch && mStatus && mSearch;
+    const mSearch = !q || [r.name, r.branch, r.department, r.designation]
+      .some((v) => v?.toLowerCase().includes(q) ?? false);
+    return mBranch && mDept && mDesig && mStatus && mSearch;
   });
 
   const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -67,8 +74,8 @@ export default function AttendancePage() {
   function exportExcel() {
     downloadCsv(
       `live-attendance-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Employee', 'Branch', 'Check-In', 'Check-Out', 'Status'],
-      filtered.map((r) => [r.name, r.branch, r.checkIn, r.checkOut, r.status]),
+      ['Employee', 'Branch', 'Department', 'Designation', 'Check-In', 'Check-Out', 'Status'],
+      filtered.map((r) => [r.name, r.branch, r.department, r.designation, r.checkIn, r.checkOut, r.status]),
     );
   }
 
@@ -76,14 +83,14 @@ export default function AttendancePage() {
     const w = window.open('', '_blank');
     if (!w) { alert('Allow pop-ups to export the PDF'); return; }
     const body = filtered.map((r) =>
-      `<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.branch)}</td><td>${escHtml(r.checkIn ?? '—')}</td><td>${escHtml(r.checkOut ?? '—')}</td><td>${escHtml(r.status)}</td></tr>`,
+      `<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.branch)}</td><td>${escHtml(r.department)}</td><td>${escHtml(r.designation)}</td><td>${escHtml(r.checkIn ?? '—')}</td><td>${escHtml(r.checkOut ?? '—')}</td><td>${escHtml(r.status)}</td></tr>`,
     ).join('');
     w.document.write(`<!doctype html><html><head><title>Live Attendance ${today}</title>
       <style>body{font-family:Arial,sans-serif;padding:24px;color:#1c1b2e}h2{margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:13px}
       table{width:100%;border-collapse:collapse;font-size:13px}th{background:#2F55F4;color:#fff;text-align:left;padding:8px}td{padding:8px;border-bottom:1px solid #eee}</style>
       </head><body><h2>Live Attendance</h2><p>${today} · ${filtered.length} record(s)</p>
-      <table><thead><tr><th>Employee</th><th>Branch</th><th>Check-In</th><th>Check-Out</th><th>Status</th></tr></thead>
-      <tbody>${body || '<tr><td colspan="5">No records</td></tr>'}</tbody></table>
+      <table><thead><tr><th>Employee</th><th>Branch</th><th>Department</th><th>Designation</th><th>Check-In</th><th>Check-Out</th><th>Status</th></tr></thead>
+      <tbody>${body || '<tr><td colspan="7">No records</td></tr>'}</tbody></table>
       <script>window.onload=function(){window.print()}</script></body></html>`);
     w.document.close();
   }
@@ -112,13 +119,21 @@ export default function AttendancePage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search employee or branch…"
+            placeholder="Search employee, branch, department or designation…"
             className="h-10 w-full rounded-xl border border-border bg-card pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
           />
         </div>
         <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40">
           <option value="ALL">All branches</option>
           {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40">
+          <option value="ALL">All departments</option>
+          {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={designationFilter} onChange={(e) => setDesignationFilter(e.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40">
+          <option value="ALL">All designations</option>
+          {designations.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40">
           <option value="ALL">All statuses</option>
@@ -135,6 +150,8 @@ export default function AttendancePage() {
                 <tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <th className="px-6 py-3 font-medium">Employee</th>
                   <th className="px-6 py-3 font-medium">Branch</th>
+                  <th className="px-6 py-3 font-medium">Department</th>
+                  <th className="px-6 py-3 font-medium">Designation</th>
                   <th className="px-6 py-3 font-medium">Check-In</th>
                   <th className="px-6 py-3 font-medium">Check-Out</th>
                   <th className="px-6 py-3 font-medium">Status</th>
@@ -143,7 +160,7 @@ export default function AttendancePage() {
               <tbody>
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-muted-foreground">
+                    <td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">
                       {rows.length === 0 ? (isLive ? 'No check-ins yet today' : 'Waiting for live data…') : 'No records match your filters'}
                     </td>
                   </tr>
@@ -152,6 +169,8 @@ export default function AttendancePage() {
                   <tr key={r.id} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
                     <td className="px-6 py-4 font-medium">{r.name}</td>
                     <td className="px-6 py-4 text-muted-foreground">{r.branch}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{r.department ?? '—'}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{r.designation ?? '—'}</td>
                     <td className="px-6 py-4">{r.checkIn ?? '—'}</td>
                     <td className="px-6 py-4">{r.checkOut ?? '—'}</td>
                     <td className="px-6 py-4">

@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Download, FileSpreadsheet, FileText } from 'lucide-react';
 
 interface DailyRow {
-  employeeCode: string; name: string; branch: string; shift: string; status: string; code: string; late: boolean;
+  employeeCode: string; name: string; branch: string; department: string; designation: string;
+  shift: string; status: string; code: string; late: boolean;
   checkIn: string | null; checkOut: string | null; workedHours: number | null; otHours: number;
   stillIn: boolean; geofence: string | null; punchMode: string | null; flagged: boolean;
 }
@@ -32,13 +33,16 @@ const DAILY_FILTERS = [
 ] as const;
 type DailyFilter = (typeof DAILY_FILTERS)[number]['key'];
 interface MonthlyRow {
-  employeeCode: string; name: string; branch: string; presentDays: number;
+  employeeCode: string; name: string; branch: string; department: string; designation: string; presentDays: number;
   offDutyDays: number; lateDays: number; halfDays: number; absentDays: number; pendingDays: number;
   leaveDays: number; lopDays: number; weeklyOffDays: number; workedHours: number;
   otHours: number | null; netSalary: number | null; payslipStatus: string | null;
 }
 interface BranchRow { branch: string; employees: number; presentDays: number; absentDays: number; lateDays: number; workedHours: number }
-interface LateRow { employeeCode: string; name: string; branch: string; count: number; dates: string[]; checkIns: (string | null)[] }
+interface LateRow {
+  employeeCode: string; name: string; branch: string; department: string; designation: string;
+  count: number; dates: string[]; checkIns: (string | null)[];
+}
 
 interface PayrollRow {
   employeeCode: string; name: string; branch: string; designation: string; department: string;
@@ -68,7 +72,7 @@ interface MusterEmployee {
 }
 interface MusterReport { label: string; daysInMonth: number; employees: MusterEmployee[] }
 
-interface Branch { id: string; name: string }
+interface Named { id: string; name: string }
 
 const TABS = ['Daily', 'Monthly', 'Payroll', 'Performance', 'Employee', 'Late Punches'] as const;
 type Tab = (typeof TABS)[number];
@@ -104,10 +108,22 @@ export default function ReportsPage() {
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
   const [branchId, setBranchId] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
+  const [designationId, setDesignationId] = useState('');
 
-  const { data: branchData } = useSWR<{ branches: Branch[] }>('/admin/branches', fetcher, { shouldRetryOnError: false });
+  const { data: branchData } = useSWR<{ branches: Named[] }>('/admin/branches', fetcher, { shouldRetryOnError: false });
+  const { data: deptData } = useSWR<{ departments: Named[] }>('/admin/departments', fetcher, { shouldRetryOnError: false });
+  const { data: desigData } = useSWR<{ designations: Named[] }>('/admin/designations', fetcher, { shouldRetryOnError: false });
   const branches = branchData?.branches ?? [];
-  const bq = branchId ? `&branchId=${branchId}` : '';
+  const departments = deptData?.departments ?? [];
+  const designations = desigData?.designations ?? [];
+
+  // Every report narrows the same way — branch, department, designation — and the
+  // server applies it, so the Excel / PDF downloads match what is on screen.
+  const fq =
+    (branchId ? `&branchId=${branchId}` : '') +
+    (departmentId ? `&departmentId=${departmentId}` : '') +
+    (designationId ? `&designationId=${designationId}` : '');
 
   return (
     <div className="space-y-6">
@@ -136,6 +152,14 @@ export default function ReportsPage() {
           <option value="">All branches</option>
           {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
+        <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className="h-10 rounded-xl bg-white/15 px-3 text-sm text-white ring-1 ring-white/25 [&>option]:text-black">
+          <option value="">All departments</option>
+          {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <select value={designationId} onChange={(e) => setDesignationId(e.target.value)} className="h-10 rounded-xl bg-white/15 px-3 text-sm text-white ring-1 ring-white/25 [&>option]:text-black">
+          <option value="">All designations</option>
+          {designations.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
       </PageHero>
 
       <div className="flex flex-wrap gap-2">
@@ -154,12 +178,12 @@ export default function ReportsPage() {
         Reports cover active employees only. Deactivated staff are excluded everywhere.
       </p>
 
-      {tab === 'Daily' && <DailyReport date={date} bq={bq} />}
-      {tab === 'Monthly' && <MonthlyReport month={month} year={year} bq={bq} />}
-      {tab === 'Payroll' && <PayrollReportTab month={month} year={year} bq={bq} />}
-      {tab === 'Performance' && <PerformanceReport month={month} year={year} bq={bq} />}
+      {tab === 'Daily' && <DailyReport date={date} fq={fq} />}
+      {tab === 'Monthly' && <MonthlyReport month={month} year={year} fq={fq} />}
+      {tab === 'Payroll' && <PayrollReportTab month={month} year={year} fq={fq} />}
+      {tab === 'Performance' && <PerformanceReport month={month} year={year} fq={fq} />}
       {tab === 'Employee' && <EmployeeReport month={month} year={year} />}
-      {tab === 'Late Punches' && <LateReport month={month} year={year} bq={bq} />}
+      {tab === 'Late Punches' && <LateReport month={month} year={year} fq={fq} />}
     </div>
   );
 }
@@ -203,12 +227,12 @@ function ServerExports({ path, filename }: { path: string; filename: string }) {
   );
 }
 
-function DailyReport({ date, bq }: { date: string; bq: string }) {
+function DailyReport({ date, fq }: { date: string; fq: string }) {
   // Which group the table lists. Filtering runs on the server so the Excel and
   // PDF downloads contain exactly these rows; the cards always count everyone.
   const [filter, setFilter] = useState<DailyFilter>('all');
   const [q, setQ] = useState('');
-  const path = `/admin/reports/daily?date=${date}${bq}${filter === 'all' ? '' : `&status=${filter}`}`;
+  const path = `/admin/reports/daily?date=${date}${fq}${filter === 'all' ? '' : `&status=${filter}`}`;
   const { data, isLoading } = useSWR<{
     summary: DailySummary; performance: DailyPerformance; rows: DailyRow[];
   }>(path, fetcher, { shouldRetryOnError: false });
@@ -285,11 +309,12 @@ function DailyReport({ date, bq }: { date: string; bq: string }) {
         exportPath={path}
         exportName={`daily-attendance-${filter === 'all' ? '' : `${filter}-`}${date}`}
         onExport={() => downloadCsv(`daily-${filter === 'all' ? '' : `${filter}-`}${date}.csv`,
-          ['Code', 'Name', 'Branch', 'Shift', 'Status', 'Check-In', 'Check-Out', 'Hours', 'OT h', 'Geofence', 'Punch'],
-          rows.map((r) => [r.employeeCode, r.name, r.branch, r.shift, r.status, r.checkIn, r.checkOut, r.workedHours, r.otHours, r.geofence, r.punchMode]))}
+          ['Code', 'Name', 'Branch', 'Department', 'Designation', 'Shift', 'Status', 'Check-In', 'Check-Out', 'Hours', 'OT h', 'Geofence', 'Punch'],
+          rows.map((r) => [r.employeeCode, r.name, r.branch, r.department, r.designation, r.shift, r.status, r.checkIn, r.checkOut, r.workedHours, r.otHours, r.geofence, r.punchMode]))}
       >
         <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
-          <th className={th}>Employee</th><th className={th}>Branch</th><th className={th}>Status</th>
+          <th className={th}>Employee</th><th className={th}>Branch</th>
+          <th className={th}>Department</th><th className={th}>Designation</th><th className={th}>Status</th>
           <th className={th}>Check-In</th><th className={th}>Check-Out</th><th className={th}>Hours</th><th className={th}>OT</th>
         </tr></thead>
         <tbody>
@@ -300,6 +325,8 @@ function DailyReport({ date, bq }: { date: string; bq: string }) {
                 {r.punchMode && r.punchMode !== 'GEO' && <PunchTag mode={r.punchMode} />}
               </td>
               <td className={`${td} text-muted-foreground`}>{r.branch}</td>
+              <td className={`${td} text-muted-foreground`}>{r.department}</td>
+              <td className={`${td} text-muted-foreground`}>{r.designation}</td>
               <td className={td}><StatusChip status={r.status} /></td>
               <td className={td}>{r.checkIn ?? '—'}</td>
               <td className={td}>
@@ -315,9 +342,9 @@ function DailyReport({ date, bq }: { date: string; bq: string }) {
   );
 }
 
-function MonthlyReport({ month, year, bq }: { month: number; year: number; bq: string }) {
+function MonthlyReport({ month, year, fq }: { month: number; year: number; fq: string }) {
   const { data, isLoading } = useSWR<{ rows: MonthlyRow[]; branches: BranchRow[] }>(
-    `/admin/reports/monthly?month=${month}&year=${year}${bq}`, fetcher, { shouldRetryOnError: false },
+    `/admin/reports/monthly?month=${month}&year=${year}${fq}`, fetcher, { shouldRetryOnError: false },
   );
   const rows = data?.rows ?? [];
   const branches = data?.branches ?? [];
@@ -328,15 +355,16 @@ function MonthlyReport({ month, year, bq }: { month: number; year: number; bq: s
         title={`Employee-wise — ${tag}`}
         loading={isLoading}
         empty={rows.length === 0 ? 'No data for this month.' : null}
-        exportPath={`/admin/reports/monthly?month=${month}&year=${year}${bq}`}
+        exportPath={`/admin/reports/monthly?month=${month}&year=${year}${fq}`}
         exportName={`monthly-attendance-${tag}`}
         onExport={() => downloadCsv(`monthly-employees-${tag}.csv`,
-          ['Code', 'Name', 'Branch', 'Present', 'Late', 'Half', 'Absent', 'Leave', 'W/Off', 'Off Duty', 'Worked h', 'OT h', 'Net Salary', 'Slip'],
-          rows.map((r) => [r.employeeCode, r.name, r.branch, r.presentDays, r.lateDays, r.halfDays,
+          ['Code', 'Name', 'Branch', 'Department', 'Designation', 'Present', 'Late', 'Half', 'Absent', 'Leave', 'W/Off', 'Off Duty', 'Worked h', 'OT h', 'Net Salary', 'Slip'],
+          rows.map((r) => [r.employeeCode, r.name, r.branch, r.department, r.designation, r.presentDays, r.lateDays, r.halfDays,
             r.absentDays, r.leaveDays + r.lopDays, r.weeklyOffDays, r.offDutyDays, r.workedHours, r.otHours, r.netSalary, r.payslipStatus]))}
       >
         <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
-          <th className={th}>Employee</th><th className={th}>Branch</th><th className={th}>Present</th>
+          <th className={th}>Employee</th><th className={th}>Branch</th>
+          <th className={th}>Department</th><th className={th}>Designation</th><th className={th}>Present</th>
           <th className={th}>Absent</th><th className={th}>Leave</th>
           <th className={th}>Late</th><th className={th}>Worked</th><th className={th}>OT</th><th className={th}>Net</th>
         </tr></thead>
@@ -345,6 +373,8 @@ function MonthlyReport({ month, year, bq }: { month: number; year: number; bq: s
             <tr key={r.employeeCode} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
               <td className={`${td} font-medium`}>{r.name} <span className="text-xs text-muted-foreground">{r.employeeCode}</span></td>
               <td className={`${td} text-muted-foreground`}>{r.branch}</td>
+              <td className={`${td} text-muted-foreground`}>{r.department}</td>
+              <td className={`${td} text-muted-foreground`}>{r.designation}</td>
               <td className={td}>
                 {days(r.presentDays)}d
                 {r.offDutyDays > 0 && (
@@ -409,9 +439,9 @@ function MonthlyReport({ month, year, bq }: { month: number; year: number; bq: s
 }
 
 /** The owner's salary sheet: days, leave, OT and what is payable per employee. */
-function PayrollReportTab({ month, year, bq }: { month: number; year: number; bq: string }) {
+function PayrollReportTab({ month, year, fq }: { month: number; year: number; fq: string }) {
   const { data, isLoading } = useSWR<PayrollReport>(
-    `/admin/reports/payroll-summary?month=${month}&year=${year}${bq}`, fetcher, { shouldRetryOnError: false },
+    `/admin/reports/payroll-summary?month=${month}&year=${year}${fq}`, fetcher, { shouldRetryOnError: false },
   );
   const rows = data?.rows ?? [];
   const t = data?.totals;
@@ -431,7 +461,7 @@ function PayrollReportTab({ month, year, bq }: { month: number; year: number; bq
         title={`Payroll summary — ${data?.label ?? tag}`}
         loading={isLoading}
         empty={rows.length === 0 ? 'No active employees for this month.' : null}
-        exportPath={`/admin/reports/payroll-summary?month=${month}&year=${year}${bq}`}
+        exportPath={`/admin/reports/payroll-summary?month=${month}&year=${year}${fq}`}
         exportName={`payroll-summary-${tag}`}
         onExport={() => downloadCsv(`payroll-summary-${tag}.csv`,
           ['Code', 'Employee', 'Branch', 'Designation', 'Department', 'Days in Month', 'Days Served', 'Present Days',
@@ -528,9 +558,9 @@ const CODE_CLASS: Record<string, string> = {
 };
 
 /** Day-by-day muster grid — mirrors the biometric monthly performance report. */
-function PerformanceReport({ month, year, bq }: { month: number; year: number; bq: string }) {
+function PerformanceReport({ month, year, fq }: { month: number; year: number; fq: string }) {
   const { data, isLoading } = useSWR<MusterReport>(
-    `/admin/reports/monthly-performance?month=${month}&year=${year}${bq}`, fetcher, { shouldRetryOnError: false },
+    `/admin/reports/monthly-performance?month=${month}&year=${year}${fq}`, fetcher, { shouldRetryOnError: false },
   );
   const employees = data?.employees ?? [];
   const tag = `${year}-${String(month).padStart(2, '0')}`;
@@ -540,7 +570,7 @@ function PerformanceReport({ month, year, bq }: { month: number; year: number; b
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">Monthly performance — {data?.label ?? tag}</CardTitle>
         <ServerExports
-          path={`/admin/reports/monthly-performance?month=${month}&year=${year}${bq}`}
+          path={`/admin/reports/monthly-performance?month=${month}&year=${year}${fq}`}
           filename={`monthly-performance-${tag}`}
         />
       </CardHeader>
@@ -617,9 +647,9 @@ function PerformanceReport({ month, year, bq }: { month: number; year: number; b
   );
 }
 
-function LateReport({ month, year, bq }: { month: number; year: number; bq: string }) {
+function LateReport({ month, year, fq }: { month: number; year: number; fq: string }) {
   const { data, isLoading } = useSWR<{ rows: LateRow[] }>(
-    `/admin/reports/late?month=${month}&year=${year}${bq}`, fetcher, { shouldRetryOnError: false },
+    `/admin/reports/late?month=${month}&year=${year}${fq}`, fetcher, { shouldRetryOnError: false },
   );
   const rows = data?.rows ?? [];
   const tag = `${year}-${String(month).padStart(2, '0')}`;
@@ -628,20 +658,24 @@ function LateReport({ month, year, bq }: { month: number; year: number; bq: stri
       title={`Late punches — ${tag}`}
       loading={isLoading}
       empty={rows.length === 0 ? 'No late punches this month. 🎉' : null}
-      exportPath={`/admin/reports/late?month=${month}&year=${year}${bq}`}
+      exportPath={`/admin/reports/late?month=${month}&year=${year}${fq}`}
       exportName={`late-punches-${tag}`}
       onExport={() => downloadCsv(`late-punches-${tag}.csv`,
-        ['Code', 'Name', 'Branch', 'Late count', 'Dates'],
-        rows.map((r) => [r.employeeCode, r.name, r.branch, r.count, r.dates.join(' | ')]))}
+        ['Code', 'Name', 'Branch', 'Department', 'Designation', 'Late count', 'Dates'],
+        rows.map((r) => [r.employeeCode, r.name, r.branch, r.department, r.designation, r.count, r.dates.join(' | ')]))}
     >
       <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
-        <th className={th}>Employee</th><th className={th}>Branch</th><th className={th}>Late days</th><th className={th}>Dates (check-in)</th>
+        <th className={th}>Employee</th><th className={th}>Branch</th>
+        <th className={th}>Department</th><th className={th}>Designation</th>
+        <th className={th}>Late days</th><th className={th}>Dates (check-in)</th>
       </tr></thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.employeeCode} className="border-b border-border/40 align-top last:border-0 hover:bg-muted/40">
             <td className={`${td} font-medium`}>{r.name} <span className="text-xs text-muted-foreground">{r.employeeCode}</span></td>
             <td className={`${td} text-muted-foreground`}>{r.branch}</td>
+            <td className={`${td} text-muted-foreground`}>{r.department}</td>
+            <td className={`${td} text-muted-foreground`}>{r.designation}</td>
             <td className={td}>
               <span className={r.count > 8 ? 'font-bold text-rose-600' : r.count >= 5 ? 'font-semibold text-amber-600' : ''}>{r.count}</span>
               {r.count >= 5 && <span className="ml-1 text-[10px] text-muted-foreground">{r.count > 8 ? '(slip withheld)' : '(pay date → 8th)'}</span>}
@@ -744,7 +778,7 @@ function EmployeeReport({ month, year }: { month: number; year: number }) {
   const list = (emps?.employees ?? []).filter((e) => e.status !== 'INACTIVE');
   const [empId, setEmpId] = useState('');
   const { data, isLoading } = useSWR<{
-    employee: { name: string; employeeCode: string; branch: string; shift: string };
+    employee: { name: string; employeeCode: string; branch: string; department: string; designation: string; shift: string };
     days: EmpDay[];
     summary: { present: number; offDuty: number; late: number; half: number; absent: number; pending: number; leave: number; lop: number; off: number; workedHours: number };
   }>(empId ? `/admin/reports/employee/${empId}?month=${month}&year=${year}` : null, fetcher, { shouldRetryOnError: false });
@@ -760,6 +794,12 @@ function EmployeeReport({ month, year }: { month: number; year: number }) {
           </select>
         </CardContent>
       </Card>
+
+      {empId && data && (
+        <p className="text-xs text-muted-foreground">
+          {data.employee.branch} · {data.employee.department} · {data.employee.designation} · {data.employee.shift}
+        </p>
+      )}
 
       {empId && data && (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">

@@ -70,10 +70,26 @@ const DAILY_FILTER_LABEL: Record<DailyFilter, string> = {
 };
 
 const formatSchema = z.enum(['json', 'xlsx', 'pdf']).default('json');
+
+/** Every report narrows the same three ways: branch, department, designation. */
+const scopeSchema = {
+  branchId: z.string().optional(),
+  departmentId: z.string().optional(),
+  designationId: z.string().optional(),
+};
+type Scope = { branchId?: string; departmentId?: string; designationId?: string };
+
+/** The Prisma `where` those three filters add to an Employee query. */
+const scopeWhere = (s: Scope) => ({
+  ...(s.branchId ? { branchId: s.branchId } : {}),
+  ...(s.departmentId ? { departmentId: s.departmentId } : {}),
+  ...(s.designationId ? { designationId: s.designationId } : {}),
+});
+
 const monthSchema = z.object({
   month: z.coerce.number().min(1).max(12),
   year: z.coerce.number(),
-  branchId: z.string().optional(),
+  ...scopeSchema,
   format: formatSchema,
 });
 
@@ -123,10 +139,10 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ── Daily attendance report ──
   app.get('/admin/reports/daily', { preHandler: guard }, async (req, reply) => {
-    const { date, branchId, format, status: want } = z
+    const { date, format, status: want, ...scope } = z
       .object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        branchId: z.string().optional(),
+        ...scopeSchema,
         format: formatSchema,
         status: dailyFilterSchema,
       })
@@ -137,8 +153,13 @@ export async function reportsRoutes(app: FastifyInstance) {
 
     const [employees, atts, holidays, leaves] = await Promise.all([
       app.prisma.employee.findMany({
-        where: { status: 'ACTIVE', ...(branchId ? { branchId } : {}) },
-        include: { branch: { select: { name: true } }, shift: true },
+        where: { status: 'ACTIVE', ...scopeWhere(scope) },
+        include: {
+          branch: { select: { name: true } },
+          department: { select: { name: true } },
+          designation: { select: { name: true } },
+          shift: true,
+        },
         orderBy: { employeeCode: 'asc' },
       }),
       app.prisma.attendance.findMany({ where: { date: { gte: dayStart, lt: dayEnd } } }),
@@ -167,6 +188,8 @@ export async function reportsRoutes(app: FastifyInstance) {
         employeeCode: e.employeeCode,
         name: e.name,
         branch: e.branch.name,
+        department: e.department?.name ?? '-',
+        designation: e.designation?.name ?? '-',
         shift: e.shift.name,
         status: day.late && day.code === 'P' ? 'LATE' : DAILY_STATUS[day.code],
         code: day.code,
@@ -222,6 +245,8 @@ export async function reportsRoutes(app: FastifyInstance) {
           { header: 'Code', width: 12 },
           { header: 'Employee', width: 24 },
           { header: 'Branch', width: 16 },
+          { header: 'Department', width: 16 },
+          { header: 'Designation', width: 18 },
           { header: 'Shift', width: 14 },
           { header: 'Status', width: 16 },
           { header: 'Check-In', width: 12, align: 'right' },
@@ -232,8 +257,8 @@ export async function reportsRoutes(app: FastifyInstance) {
           { header: 'Punch', width: 10 },
         ],
         rows: shown.map((r) => [
-          r.employeeCode, r.name, r.branch, r.shift, r.status, r.checkIn, r.checkOut,
-          r.workedHours, r.otHours || null, r.geofence, r.punchMode,
+          r.employeeCode, r.name, r.branch, r.department, r.designation, r.shift, r.status,
+          r.checkIn, r.checkOut, r.workedHours, r.otHours || null, r.geofence, r.punchMode,
         ]),
         note:
           `Present ${summary.present} · Absent ${summary.absent} · Late ${summary.late} · On leave ${summary.leave} · ` +
@@ -249,11 +274,11 @@ export async function reportsRoutes(app: FastifyInstance) {
   // Built on the muster grid so the summary numbers on this page and the
   // day-by-day performance grid can never disagree.
   app.get('/admin/reports/monthly', { preHandler: guard }, async (req, reply) => {
-    const { month, year, branchId, format } = monthSchema.parse(req.query);
+    const { month, year, format, ...scope } = monthSchema.parse(req.query);
     const tag = `${year}-${String(month).padStart(2, '0')}`;
 
     const [muster, payslips] = await Promise.all([
-      buildMusterReport(app.prisma, month, year, { branchId }),
+      buildMusterReport(app.prisma, month, year, scope),
       app.prisma.payslip.findMany({ where: { month, year } }),
     ]);
     const slipByEmp = new Map(payslips.map((p) => [p.employeeId, p]));
@@ -266,6 +291,8 @@ export async function reportsRoutes(app: FastifyInstance) {
           employeeCode: e.employeeCode,
           name: e.name,
           branch: e.branch,
+          department: e.department,
+          designation: e.designation,
           // Working days actually worked, a half day as 0.5. Late days are
           // present days too — broken out separately below, never subtracted.
           // Duty on a Sunday/holiday is reported in its own column, exactly as
@@ -310,6 +337,8 @@ export async function reportsRoutes(app: FastifyInstance) {
           { header: 'Code', width: 12 },
           { header: 'Employee', width: 24 },
           { header: 'Branch', width: 18 },
+          { header: 'Department', width: 16 },
+          { header: 'Designation', width: 18 },
           { header: 'Present', width: 10, align: 'right' },
           { header: 'Late', width: 8, align: 'right' },
           { header: 'Half', width: 8, align: 'right' },
@@ -323,7 +352,8 @@ export async function reportsRoutes(app: FastifyInstance) {
           { header: 'Slip', width: 11 },
         ],
         rows: rows.map((r) => [
-          r.employeeCode, r.name, r.branch, r.presentDays, r.lateDays, r.halfDays,
+          r.employeeCode, r.name, r.branch, r.department, r.designation,
+          r.presentDays, r.lateDays, r.halfDays,
           r.absentDays, r.leaveDays + r.lopDays, r.weeklyOffDays, r.offDutyDays,
           r.workedHours, r.otHours, r.netSalary, r.payslipStatus,
         ]),
@@ -335,8 +365,8 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ── Payroll summary: the owner's salary sheet for the month ──
   app.get('/admin/reports/payroll-summary', { preHandler: guard }, async (req, reply) => {
-    const { month, year, branchId, format } = monthSchema.parse(req.query);
-    const report = await buildPayrollReport(app.prisma, month, year, { branchId });
+    const { month, year, format, ...scope } = monthSchema.parse(req.query);
+    const report = await buildPayrollReport(app.prisma, month, year, scope);
     const filename = `payroll-summary-${year}-${String(month).padStart(2, '0')}`;
     if (format === 'json') return report;
     const buf = format === 'xlsx' ? await payrollReportXlsx(report) : await payrollReportPdf(report);
@@ -345,10 +375,10 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ── Monthly performance: the day-by-day muster grid ──
   app.get('/admin/reports/monthly-performance', { preHandler: guard }, async (req, reply) => {
-    const { month, year, branchId, format, employeeId } = monthSchema
+    const { month, year, format, ...scope } = monthSchema
       .extend({ employeeId: z.string().optional() })
       .parse(req.query);
-    const report = await buildMusterReport(app.prisma, month, year, { branchId, employeeId });
+    const report = await buildMusterReport(app.prisma, month, year, scope);
     const filename = `monthly-performance-${year}-${String(month).padStart(2, '0')}`;
     if (format === 'json') return report;
     const buf = format === 'xlsx' ? await musterReportXlsx(report) : await musterReportPdf(report);
@@ -363,7 +393,12 @@ export async function reportsRoutes(app: FastifyInstance) {
       .parse(req.query);
     const employee = await app.prisma.employee.findUnique({
       where: { id },
-      include: { branch: { select: { name: true } }, shift: true },
+      include: {
+        branch: { select: { name: true } },
+        department: { select: { name: true } },
+        designation: { select: { name: true } },
+        shift: true,
+      },
     });
     if (!employee) throw AppError.notFound('Employee');
     if (employee.status !== 'ACTIVE') throw new AppError('Reports cover active employees only', 400);
@@ -404,7 +439,9 @@ export async function reportsRoutes(app: FastifyInstance) {
       `employee-${employee.employeeCode}-${tag}`,
       {
         title: `${employee.name} (${employee.employeeCode}) — Attendance`,
-        subtitle: `${tag} · ${employee.branch.name} · ${employee.shift.name}`,
+        subtitle:
+          `${tag} · ${employee.branch.name} · ${employee.department?.name ?? '-'} · ` +
+          `${employee.designation?.name ?? '-'} · ${employee.shift.name}`,
         company: await company(),
         columns: [
           { header: 'Date', width: 14 },
@@ -425,6 +462,8 @@ export async function reportsRoutes(app: FastifyInstance) {
         employee: {
           name: employee.name, employeeCode: employee.employeeCode,
           branch: employee.branch.name, shift: employee.shift.name,
+          department: employee.department?.name ?? '-',
+          designation: employee.designation?.name ?? '-',
         },
         month, year, days,
         summary: { ...summary, workedHours: Math.round((summary.worked / 60) * 10) / 10 },
@@ -434,7 +473,7 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ── Late-punch report: who was late, when, how often ──
   app.get('/admin/reports/late', { preHandler: guard }, async (req, reply) => {
-    const { month, year, branchId, format } = monthSchema.parse(req.query);
+    const { month, year, format, ...scope } = monthSchema.parse(req.query);
     const start = new Date(year, month - 1, 1);
     const end = new Date(year, month, 1);
     const tag = `${year}-${String(month).padStart(2, '0')}`;
@@ -444,17 +483,35 @@ export async function reportsRoutes(app: FastifyInstance) {
         date: { gte: start, lt: end },
         status: 'LATE',
         // Inactive employees never appear in a report.
-        employee: { status: 'ACTIVE', ...(branchId ? { branchId } : {}) },
+        employee: { status: 'ACTIVE', ...scopeWhere(scope) },
       },
-      include: { employee: { select: { name: true, employeeCode: true, branch: { select: { name: true } } } } },
+      include: {
+        employee: {
+          select: {
+            name: true,
+            employeeCode: true,
+            branch: { select: { name: true } },
+            department: { select: { name: true } },
+            designation: { select: { name: true } },
+          },
+        },
+      },
       orderBy: { date: 'asc' },
     });
 
-    const byEmp = new Map<string, { employeeCode: string; name: string; branch: string; dates: string[]; checkIns: (string | null)[] }>();
+    const byEmp = new Map<string, { employeeCode: string; name: string; branch: string; department: string; designation: string; dates: string[]; checkIns: (string | null)[] }>();
     for (const a of lates) {
       if (!counted(a)) continue;
       const key = a.employee.employeeCode;
-      const e = byEmp.get(key) ?? { employeeCode: key, name: a.employee.name, branch: a.employee.branch.name, dates: [], checkIns: [] };
+      const e = byEmp.get(key) ?? {
+        employeeCode: key,
+        name: a.employee.name,
+        branch: a.employee.branch.name,
+        department: a.employee.department?.name ?? '-',
+        designation: a.employee.designation?.name ?? '-',
+        dates: [],
+        checkIns: [],
+      };
       e.dates.push(a.date.toISOString().slice(0, 10));
       e.checkIns.push(fmtTime(a.checkIn));
       byEmp.set(key, e);
@@ -475,11 +532,13 @@ export async function reportsRoutes(app: FastifyInstance) {
           { header: 'Code', width: 12 },
           { header: 'Employee', width: 24 },
           { header: 'Branch', width: 18 },
+          { header: 'Department', width: 16 },
+          { header: 'Designation', width: 18 },
           { header: 'Late Days', width: 10, align: 'right' },
           { header: 'Dates (check-in time)', width: 60 },
         ],
         rows: rows.map((r) => [
-          r.employeeCode, r.name, r.branch, r.count,
+          r.employeeCode, r.name, r.branch, r.department, r.designation, r.count,
           r.dates.map((d, i) => `${d.slice(8)}${r.checkIns[i] ? ` (${r.checkIns[i]})` : ''}`).join(', '),
         ]),
         note: 'Pay date moves to the 8th at 5 or more late punches; more than 8 withholds the payslip until HR releases it.',

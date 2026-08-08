@@ -521,7 +521,10 @@ PATCH  /api/admin/claims/:id/reject | /clarify | /pay
 
 ### Reports
 All report endpoints take `?format=json|xlsx|pdf` (json is the default) and
-cover ACTIVE employees only. `branchId` filters optionally.
+cover ACTIVE employees only. `branchId`, `departmentId` and `designationId`
+filter optionally (same three on every report, applied server-side so the
+downloads match the screen). Every row carries branch, department and
+designation.
 ```
 GET    /api/admin/reports/daily?date=
 GET    /api/admin/reports/monthly?month=&year=

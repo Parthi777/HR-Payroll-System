@@ -204,12 +204,22 @@ export async function attendanceRoutes(app: FastifyInstance) {
       const rows = await app.prisma.attendance.findMany({
         where: { date: { gte: start, lt: end }, employee: { status: 'ACTIVE' } },
         orderBy: { checkIn: 'desc' },
-        include: { employee: { include: { branch: true } } },
+        include: {
+          employee: {
+            include: {
+              branch: true,
+              department: { select: { name: true } },
+              designation: { select: { name: true } },
+            },
+          },
+        },
       });
       return rows.map((r) => ({
         id: r.id,
         name: r.employee.name,
         branch: r.employee.branch.name,
+        department: r.employee.department?.name ?? '-',
+        designation: r.employee.designation?.name ?? '-',
         checkIn: fmtTime(r.checkIn),
         checkOut: fmtTime(r.checkOut),
         status: displayStatus[r.status] ?? r.status,

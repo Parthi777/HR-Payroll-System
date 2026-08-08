@@ -20,6 +20,8 @@ export interface LiveAttendanceRow {
   id: string;
   name: string;
   branch: string;
+  department: string;
+  designation: string;
   checkIn: string | null;
   checkOut: string | null;
   status: 'Present' | 'Late' | 'Absent' | 'On Leave';
