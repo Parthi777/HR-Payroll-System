@@ -32,6 +32,21 @@ class TokenStore @Inject constructor(@ApplicationContext context: Context) {
 
     fun getRole(): String? = prefs.getString(KEY_ROLE, null)
 
+    /**
+     * The workspace (dealer) this device is signed in to.
+     *
+     * One APK serves every dealer and the API is a single host, so the workspace
+     * travels as an X-Tenant-Slug header rather than in the URL. Null is normal
+     * and fine: the backend resolves the only workspace when just one exists.
+     */
+    fun getTenantSlug(): String? = prefs.getString(KEY_TENANT_SLUG, null)
+
+    /** The workspace's display name, shown in the app header. */
+    fun getTenantName(): String? = prefs.getString(KEY_TENANT_NAME, null)
+
+    fun saveTenant(slug: String, name: String?) =
+        prefs.edit().putString(KEY_TENANT_SLUG, slug).putString(KEY_TENANT_NAME, name).apply()
+
     /** True for any admin role (SUPER_ADMIN / HR_MANAGER / …); false for employees. */
     fun isAdmin(): Boolean = getRole().let { it != null && it != "EMPLOYEE" }
 
@@ -40,5 +55,7 @@ class TokenStore @Inject constructor(@ApplicationContext context: Context) {
     private companion object {
         const val KEY_TOKEN = "jwt_token"
         const val KEY_ROLE = "user_role"
+        const val KEY_TENANT_SLUG = "tenant_slug"
+        const val KEY_TENANT_NAME = "tenant_name"
     }
 }

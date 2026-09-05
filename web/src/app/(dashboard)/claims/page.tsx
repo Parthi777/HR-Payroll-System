@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Check, X, HelpCircle, Image as ImageIcon, FileText, Loader2, Printer, Banknote, Send, Download,
 } from 'lucide-react';
+import { APPROVE_ROLES, PAY_ROLES, can, currentRole, type AdminRole } from '@/lib/permissions';
 
 /** Client-side CSV download. */
 function downloadCsv(filename: string, header: string[], rows: (string | number | null | undefined)[][]) {
@@ -87,14 +88,12 @@ const statusChip: Record<string, string> = {
   REJECTED: 'chip-off',
 };
 
-const PAY_ROLES = ['SUPER_ADMIN', 'PAYROLL_ADMIN', 'CASHIER'];
-const APPROVE_ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN'];
 
 export default function ClaimsPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL');
-  const [role, setRole] = useState<string>('');
-  useEffect(() => setRole(localStorage.getItem('adminRole') ?? ''), []);
+  const [role, setRole] = useState<AdminRole | null>(null);
+  useEffect(() => setRole(currentRole()), []);
 
   const { data: stats, mutate: mutateStats } = useSWR<Stats>('/admin/claims/stats', fetcher, { shouldRetryOnError: false });
   // Canonical expense-head list — keeps the picker in step with the backend.
@@ -119,8 +118,10 @@ export default function ClaimsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  const canApprove = !role || APPROVE_ROLES.includes(role);
-  const canPay = !role || PAY_ROLES.includes(role);
+  // Fail closed. These read `!role || ROLES.includes(role)`, so an absent role
+  // — a cleared key, a stale tab — silently enabled approving and paying.
+  const canApprove = can(APPROVE_ROLES, role);
+  const canPay = can(PAY_ROLES, role);
 
   async function act(id: string, action: 'approve' | 'reject' | 'clarify' | 'pay', note?: string) {
     if (action === 'reject' && !note) note = prompt('Reason for rejection?') ?? undefined;

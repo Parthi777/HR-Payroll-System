@@ -5,12 +5,16 @@ import { useRouter } from 'next/navigation';
 import Script from 'next/script';
 import { UserCheck } from 'lucide-react';
 import { api } from '@/lib/api';
+import { rememberTenant, tenantSlug } from '@/lib/tenant';
+import { landingFor, type AdminRole } from '@/lib/permissions';
 
 interface LoginResponse {
   token: string;
   role: string;
   email: string;
   name: string;
+  /** Which workspace the sign-in resolved to. */
+  tenant?: { slug: string; name: string };
 }
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -37,12 +41,29 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const googleDiv = useRef<HTMLDivElement>(null);
   const [gsiReady, setGsiReady] = useState(false);
+  const [workspace, setWorkspace] = useState<string | null>(null);
+
+  // Show which dealer this login belongs to, so someone arriving on a branded
+  // link can see they are in the right place before typing a password. Silent
+  // on failure: an unknown slug should not stop a valid sign-in from the
+  // single-tenant fallback.
+  useEffect(() => {
+    const slug = tenantSlug();
+    if (!slug) return;
+    api<{ slug: string; name: string }>(`/auth/workspace/${slug}`)
+      .then((w) => setWorkspace(w.name))
+      .catch(() => setWorkspace(null));
+  }, []);
 
   function finishLogin(res: LoginResponse) {
     localStorage.setItem('token', res.token);
     localStorage.setItem('adminName', res.name);
     localStorage.setItem('adminRole', res.role);
-    router.push('/dashboard');
+    // Remember the workspace the server resolved us to, so every later request
+    // names it explicitly instead of relying on the single-tenant fallback.
+    if (res.tenant) rememberTenant(res.tenant.slug, res.tenant.name);
+    // Not everyone can open the dashboard — a cashier lands on Claims.
+    router.push(landingFor(res.role as AdminRole));
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -104,8 +125,10 @@ export default function LoginPage() {
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl brand-gradient text-white">
             <UserCheck className="h-7 w-7" />
           </div>
-          <h1 className="mt-4 text-xl font-bold">HR &amp; Payroll</h1>
-          <p className="text-sm text-muted-foreground">Master Control · Admin sign in</p>
+          <h1 className="mt-4 text-xl font-bold">{workspace ?? 'HR & Payroll'}</h1>
+          <p className="text-sm text-muted-foreground">
+            {workspace ? 'Admin sign in' : 'Master Control · Admin sign in'}
+          </p>
         </div>
 
         {GOOGLE_CLIENT_ID && (

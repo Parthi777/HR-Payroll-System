@@ -125,6 +125,22 @@ fun LoginScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    // Only shown once the server says it cannot tell which
+                    // workspace this is — with a single dealer it never appears.
+                    if (state.needsCompanyCode) {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = state.companyCode,
+                            onValueChange = viewModel::onCompanyCodeChange,
+                            label = { Text("Company code") },
+                            placeholder = { Text("e.g. abc-motors") },
+                            supportingText = { Text("Ask your HR team if you are not sure") },
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.small,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Spacer(Modifier.height(20.dp))
                     PrimaryButton(
                         text = if (state.adminMode) "Admin Login" else "Login",

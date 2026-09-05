@@ -20,6 +20,17 @@ data class LoginUiState(
     val error: String? = null,
     val loggedIn: Boolean = false,
     val isAdmin: Boolean = false, // where to route after login
+    /** Company code, e.g. "abc-motors". Only needed when the server asks. */
+    val companyCode: String = "",
+    /**
+     * Whether to show the company-code field.
+     *
+     * Hidden by default: with one workspace the server resolves it on its own,
+     * and asking every employee for a code they have never heard of would be
+     * gratuitous. It appears only once a sign-in comes back saying the
+     * workspace could not be determined.
+     */
+    val needsCompanyCode: Boolean = false,
 )
 
 @HiltViewModel
@@ -34,6 +45,21 @@ class LoginViewModel @Inject constructor(
     fun onEmailChange(value: String) { _uiState.value = _uiState.value.copy(email = value, error = null) }
     fun onPasswordChange(value: String) { _uiState.value = _uiState.value.copy(password = value, error = null) }
     fun setAdminMode(admin: Boolean) { _uiState.value = _uiState.value.copy(adminMode = admin, error = null) }
+    fun onCompanyCodeChange(value: String) { _uiState.value = _uiState.value.copy(companyCode = value, error = null) }
+
+    /**
+     * The backend answers 400 "which workspace" when more than one exists and
+     * the request named none. That is the only moment the code is worth asking
+     * for, so reveal the field then rather than up front.
+     */
+    private fun handleFailure(t: Throwable, fallback: String) {
+        val message = t.userMessage(fallback)
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            error = message,
+            needsCompanyCode = _uiState.value.needsCompanyCode || message.contains("workspace", ignoreCase = true),
+        )
+    }
 
     /** Admin login with email + password (routes to the admin section on success). */
     fun adminLogin() {
@@ -44,7 +70,7 @@ class LoginViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiState.value = s.copy(isLoading = true, error = null)
-            runCatching { authRepository.adminLogin(s.email, s.password) }
+            runCatching { authRepository.adminLogin(s.email, s.password, s.companyCode) }
                 .onSuccess { ok ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false, loggedIn = ok, isAdmin = ok,
@@ -52,7 +78,7 @@ class LoginViewModel @Inject constructor(
                     )
                     if (ok) registerPush()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Login failed")) }
+                .onFailure { handleFailure(it, "Login failed") }
         }
     }
 
@@ -70,7 +96,7 @@ class LoginViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiState.value = s.copy(isLoading = true, error = null)
-            runCatching { authRepository.employeeLogin(phone, s.password) }
+            runCatching { authRepository.employeeLogin(phone, s.password, s.companyCode) }
                 .onSuccess { ok ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false, loggedIn = ok, isAdmin = false,
@@ -78,7 +104,7 @@ class LoginViewModel @Inject constructor(
                     )
                     if (ok) registerPush()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.userMessage("Login failed")) }
+                .onFailure { handleFailure(it, "Login failed") }
         }
     }
 

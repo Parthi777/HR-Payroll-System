@@ -24,6 +24,8 @@ import {
 import useSWR from 'swr';
 import { fetcher, api } from '@/lib/api';
 import { LogoutButton } from '@/components/logout-button';
+import { canAccess, currentRole, type AdminRole } from '@/lib/permissions';
+import { tenantName } from '@/lib/tenant';
 
 interface Notif { id: string; type: string; title: string; body: string; isRead: boolean; createdAt: string }
 
@@ -97,7 +99,30 @@ const nav = [
 ];
 
 /** Responsive dashboard shell: sticky sidebar on desktop, slide-in drawer on mobile. */
+/** Human labels for the stored role codes. */
+const ROLE_LABEL: Record<string, string> = {
+  SUPER_ADMIN: 'Super Admin',
+  HR_MANAGER: 'HR Manager',
+  BRANCH_MANAGER: 'Branch Manager',
+  PAYROLL_ADMIN: 'Payroll Admin',
+  CASHIER: 'Cashier',
+};
+
 export function AppShell({ children }: { children: React.ReactNode }) {
+  // Read after mount: localStorage does not exist during server rendering, and
+  // reading it in the render body would produce a hydration mismatch.
+  const [role, setRole] = useState<AdminRole | null>(null);
+  const [who, setWho] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<string | null>(null);
+  useEffect(() => {
+    setRole(currentRole());
+    setWho(localStorage.getItem('adminName'));
+    setWorkspace(tenantName());
+  }, []);
+
+  // Only the screens this role can actually open. The server enforces the same
+  // lists; this stops a cashier being shown a Payroll tab that will 403.
+  const visibleNav = nav.filter((item) => canAccess(item.href, role));
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -126,7 +151,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <UserCheck className="h-5 w-5" />
           </div>
           <div className="leading-tight">
-            <div className="text-base font-bold tracking-tight">HR &amp; Payroll</div>
+            <div className="text-base font-bold tracking-tight">{workspace ?? 'HR & Payroll'}</div>
             <div className="text-[11px] text-white/70">Master Control</div>
           </div>
           <button
@@ -139,7 +164,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto">
-          {nav.map(({ href, label, icon: Icon }) => {
+          {visibleNav.map(({ href, label, icon: Icon }) => {
             const active = pathname?.startsWith(href);
             return (
               <Link
@@ -191,8 +216,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="hidden items-center gap-3 sm:flex">
               <div className="h-9 w-9 rounded-full brand-gradient" />
               <div className="hidden leading-tight lg:block">
-                <div className="text-sm font-semibold">Admin</div>
-                <div className="text-[11px] text-muted-foreground">Super Admin</div>
+                <div className="text-sm font-semibold">{who ?? 'Admin'}</div>
+                <div className="text-[11px] text-muted-foreground">{ROLE_LABEL[role ?? 'SUPER_ADMIN']}</div>
               </div>
             </div>
           </div>

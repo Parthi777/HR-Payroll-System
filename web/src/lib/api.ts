@@ -1,5 +1,25 @@
 /** Typed fetch wrapper for the backend API. */
+import { tenantSlug } from './tenant';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+/**
+ * Headers every request carries.
+ *
+ * One API host serves every dealer, so the workspace travels in a header rather
+ * than the URL. Omitted when unknown — the backend resolves the only tenant in
+ * a single-dealer deployment, which is what keeps this working before
+ * subdomains are configured.
+ */
+function sessionHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem('token');
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const slug = tenantSlug();
+  if (slug) headers['X-Tenant-Slug'] = slug;
+  return headers;
+}
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -8,15 +28,13 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
       // Only claim JSON when we actually send a body — Fastify rejects
       // an empty body with a JSON content-type (e.g. bodyless PATCH).
       ...(options.body != null ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...sessionHeaders(),
       ...options.headers,
     },
   });
@@ -31,10 +49,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
 /** Multipart upload (e.g. face enrollment). Lets the browser set the boundary. */
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: sessionHeaders(),
     body: formData,
   });
   if (!res.ok) {
@@ -46,10 +63,7 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
 
 /** Fetch a file (with auth) and trigger a browser download. */
 export async function apiDownload(path: string, filename: string): Promise<void> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
+  const res = await fetch(`${API_URL}${path}`, { headers: sessionHeaders() });
   if (!res.ok) throw new ApiError(res.status, res.statusText);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -64,10 +78,7 @@ export async function apiDownload(path: string, filename: string): Promise<void>
 
 /** Fetch a file (with auth) and return an object URL for inline viewing / opening in a tab. */
 export async function apiBlobUrl(path: string): Promise<string> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
+  const res = await fetch(`${API_URL}${path}`, { headers: sessionHeaders() });
   if (!res.ok) throw new ApiError(res.status, res.statusText);
   return URL.createObjectURL(await res.blob());
 }

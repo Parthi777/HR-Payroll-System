@@ -3,9 +3,17 @@ package com.hrpayroll.data.remote.dto
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
+data class TenantDto(
+    val slug: String? = null,
+    val name: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
 data class OtpResponse(
     val token: String? = null,
     val refreshToken: String? = null,
+    /** The workspace this sign-in resolved to. */
+    val tenant: TenantDto? = null,
     val sent: Boolean? = null,
     val devOtp: String? = null, // dev-only: backend returns the code when no SMS provider is wired
 )
@@ -129,6 +137,8 @@ data class AdminLoginResponse(
     val role: String? = null,
     val email: String? = null,
     val name: String? = null,
+    /** The workspace this sign-in resolved to. */
+    val tenant: TenantDto? = null,
 )
 
 @JsonClass(generateAdapter = true)

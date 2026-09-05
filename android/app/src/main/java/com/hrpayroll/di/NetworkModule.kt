@@ -33,8 +33,13 @@ object NetworkModule {
         return OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val token = tokenStore.getToken()
+                val tenant = tokenStore.getTenantSlug()
                 val request = chain.request().newBuilder().apply {
                     if (!token.isNullOrBlank()) addHeader("Authorization", "Bearer $token")
+                    // One API host serves every dealer, so the workspace travels
+                    // in a header. Omitted when unknown — the backend falls back
+                    // to the only workspace where just one exists.
+                    if (!tenant.isNullOrBlank()) addHeader("X-Tenant-Slug", tenant)
                 }.build()
                 chain.proceed(request)
             }
