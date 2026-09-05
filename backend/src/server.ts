@@ -14,6 +14,32 @@ import { registerRoutes } from './routes/index.js';
 import { beginRequestContext } from './context/tenant-context.js';
 import { ensureSeedData } from './bootstrap.js';
 
+/**
+ * Who may call this API from a browser.
+ *
+ * Allows the apex and any single-label subdomain of it — `yourapp.com`,
+ * `acme.yourapp.com`, `admin.yourapp.com` — plus localhost for development.
+ */
+function corsOrigin(): true | ((origin: string | undefined, cb: (err: Error | null, ok: boolean) => void) => void) {
+  const base = env.APP_BASE_DOMAIN?.toLowerCase();
+  if (!base) return true;
+
+  return (origin, cb) => {
+    // No Origin at all is a server-to-server or same-origin call, not a browser
+    // cross-origin request — the Android app sends none.
+    if (!origin) return cb(null, true);
+    let host: string;
+    try {
+      host = new URL(origin).hostname.toLowerCase();
+    } catch {
+      return cb(null, false);
+    }
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+    const underBase = host === base || (host.endsWith(`.${base}`) && !host.slice(0, -(base.length + 1)).includes('.'));
+    cb(null, isLocal || underBase);
+  };
+}
+
 async function buildServer() {
   // Cast to the default FastifyInstance: passing a custom pino instance otherwise
   // leaks a narrower logger generic that conflicts with our route registrars.
@@ -21,7 +47,12 @@ async function buildServer() {
   // without this, per-IP rate limits would lump every user into one shared bucket.
   const app = Fastify({ logger, trustProxy: true }) as unknown as FastifyInstance;
 
-  await app.register(cors, { origin: true, credentials: true });
+  // Once tenants live under a real apex, only that apex and its subdomains may
+  // call the API. `origin: true` reflects whatever Origin the caller sends,
+  // which is the right default while there is no domain to key on but far too
+  // open once there is one. Unset APP_BASE_DOMAIN keeps the old behaviour, so
+  // this tightens by itself the moment the domain is configured.
+  await app.register(cors, { origin: corsOrigin(), credentials: true });
   await app.register(jwt, { secret: env.JWT_SECRET });
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB selfies
   await app.register(rateLimit, { global: false, max: 100, timeWindow: '1 minute' });
