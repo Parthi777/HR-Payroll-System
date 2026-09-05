@@ -76,18 +76,41 @@ export async function resolveTenant(
   return tenant;
 }
 
-/** Resolve the tenant a request names, or fail with a helpful message. */
+/**
+ * Resolve the tenant a request names, or fail with a helpful message.
+ *
+ * Falls back to the only tenant when a request names none and exactly one
+ * exists. That is what lets this ship ahead of the clients: the web and Android
+ * apps do not send a slug yet, and without the fallback every sign-in on the
+ * existing single-dealer deployment would fail the moment tenancy went live.
+ *
+ * The fallback stops applying the instant a second tenant is created — from
+ * then on a request must say which dealer it is for, and an ambiguous sign-in
+ * is refused rather than guessed. It is safe precisely because it only ever
+ * resolves to a tenant that is already the only possible answer.
+ *
+ * Remove this once both clients send the slug (Phase 9).
+ */
 export async function requireTenantFromRequest(
   prisma: PrismaClient,
   req: FastifyRequest,
 ): Promise<ResolvedTenant> {
   const slug = tenantSlugFromRequest(req);
-  if (!slug) {
-    throw new AppError(
-      'Could not tell which workspace this request is for. Sign in at your company URL, ' +
+  if (slug) return resolveTenant(prisma, slug);
+
+  // take: 2 — we only need to know "exactly one" from "more than one".
+  const active = await prisma.tenant.findMany({
+    where: { status: 'ACTIVE' },
+    select: { id: true, slug: true, name: true, status: true },
+    take: 2,
+  });
+  if (active.length === 1) return active[0];
+
+  throw new AppError(
+    active.length === 0
+      ? 'No workspace has been set up yet. Ask your administrator to create one.'
+      : 'Could not tell which workspace this request is for. Sign in at your company URL, ' +
         'or send an X-Tenant-Slug header.',
-      400,
-    );
-  }
-  return resolveTenant(prisma, slug);
+    400,
+  );
 }

@@ -28,13 +28,24 @@ suite('dealer onboarding', () => {
    * per 10 minutes per IP, and every inject() here shares 127.0.0.1. Logging in
    * repeatedly would trip a real security control rather than test anything.
    */
+  /**
+   * A distinct client IP per sign-in.
+   *
+   * Login is rate-limited to 5 attempts per 10 minutes per IP, and every
+   * inject() would otherwise share 127.0.0.1 — so the suite would trip a real
+   * security control rather than test anything. Real users come from different
+   * addresses; this reproduces that instead of relaxing the limit.
+   */
+  let ipCounter = 0;
+  const freshIp = () => `10.0.${Math.floor(++ipCounter / 250)}.${ipCounter % 250}`;
+
   const tokens = new Map<string, string>();
   async function dealerLogin(slug: string, email: string): Promise<string> {
     const key = `${slug}:${email}`;
     const cached = tokens.get(key);
     if (cached) return cached;
     const res = await app.inject({
-      method: 'POST', url: '/api/auth/admin/login',
+      method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
       headers: { 'x-tenant-slug': slug },
       payload: { email, password: DEALER_ADMIN_PASSWORD },
     });
@@ -88,6 +99,7 @@ suite('dealer onboarding', () => {
 
     const login = await app.inject({
       method: 'POST', url: '/api/platform/auth/login',
+        remoteAddress: freshIp(),
       payload: { email: PLATFORM.email, password: PLATFORM.password },
     });
     expect(login.statusCode, login.body).toBe(200);
@@ -102,10 +114,12 @@ suite('dealer onboarding', () => {
     it('rejects a wrong password with the same message as an unknown account', async () => {
       const wrongPassword = await app.inject({
         method: 'POST', url: '/api/platform/auth/login',
+        remoteAddress: freshIp(),
         payload: { email: PLATFORM.email, password: 'not the password' },
       });
       const unknownAccount = await app.inject({
         method: 'POST', url: '/api/platform/auth/login',
+        remoteAddress: freshIp(),
         payload: { email: 'nobody@platform.test', password: 'whatever at all' },
       });
       expect(wrongPassword.statusCode).toBe(401);
@@ -138,7 +152,7 @@ suite('dealer onboarding', () => {
 
     it('the dealer’s administrator can sign in immediately', async () => {
       const res = await app.inject({
-        method: 'POST', url: '/api/auth/admin/login',
+        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
         headers: { 'x-tenant-slug': 'abc-motors' },
         payload: { email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD },
       });
@@ -209,7 +223,7 @@ suite('dealer onboarding', () => {
       expect(res.statusCode, res.body).toBe(201);
 
       const res2 = await app.inject({
-        method: 'POST', url: '/api/auth/admin/login',
+        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
         headers: { 'x-tenant-slug': 'xyz-autos' },
         payload: { email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD },
       });
@@ -321,7 +335,7 @@ suite('dealer onboarding', () => {
       // The token is still valid and unexpired; the tenant's status is what stops it.
       expect((await app.inject({ method: 'GET', url: '/api/admin/branches', headers })).statusCode).toBe(403);
       const blocked = await app.inject({
-        method: 'POST', url: '/api/auth/admin/login',
+        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
         headers: { 'x-tenant-slug': 'xyz-autos' },
         payload: { email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD },
       });
@@ -329,6 +343,43 @@ suite('dealer onboarding', () => {
 
       await asPlatform('PATCH', `/api/platform/tenants/${id}/status`, { status: 'ACTIVE' });
       expect((await app.inject({ method: 'GET', url: '/api/admin/branches', headers })).statusCode).toBe(200);
+    });
+  });
+
+
+  describe('signing in without naming a workspace', () => {
+    /**
+     * The transitional fallback that lets the backend ship before the clients
+     * do. It must resolve when there is exactly one dealer, and must refuse —
+     * not guess — once there is more than one.
+     */
+    it('refuses once more than one dealer exists', async () => {
+      const res = await app.inject({
+        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
+        payload: { email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toContain('which workspace');
+    });
+
+    it('resolves to the only dealer when just one is active', async () => {
+      const list = await asPlatform('GET', '/api/platform/tenants');
+      const others = list.json().tenants.filter((t: { slug: string }) => t.slug !== 'abc-motors');
+      for (const t of others) {
+        await asPlatform('PATCH', `/api/platform/tenants/${t.id}/status`, { status: 'SUSPENDED' });
+      }
+      try {
+        const res = await app.inject({
+          method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
+          payload: { email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD },
+        });
+        expect(res.statusCode, res.body).toBe(200);
+        expect(res.json().tenant.slug).toBe('abc-motors');
+      } finally {
+        for (const t of others) {
+          await asPlatform('PATCH', `/api/platform/tenants/${t.id}/status`, { status: 'ACTIVE' });
+        }
+      }
     });
   });
 
