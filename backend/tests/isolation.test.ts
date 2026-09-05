@@ -139,7 +139,7 @@ suite('cross-tenant isolation', () => {
         p.gPSLog, p.claimMessage, p.claim, p.attendance, p.leave, p.leaveBalance,
         p.payslip, p.notification, p.whatsAppLog, p.geofenceViolation, p.auditLog,
         p.employee, p.adminUser, p.branch, p.department, p.designation, p.shift,
-        p.holiday, p.companySettings,
+        p.holiday, p.tenantSettings,
       ]) {
         await (del as { deleteMany: (a?: unknown) => Promise<unknown> }).deleteMany({});
       }
@@ -403,8 +403,28 @@ suite('cross-tenant isolation', () => {
     'PUT /api/admin/users/:id',
   ];
 
+  /**
+   * The platform surface. Not tenant-scoped by design: platform staff belong to
+   * no tenant, so `requirePlatform` runs these under a PLATFORM context that the
+   * Prisma extension lets through. That is a deliberate hole, which is why it is
+   * confined to this one route group and covered separately by
+   * tests/platform.test.ts — including that a dealer's token cannot reach it and
+   * a platform token cannot reach a dealer's data.
+   */
+  const PLATFORM_SURFACE = [
+    'POST /api/platform/auth/login',
+    'GET /api/platform/me',
+    'GET /api/platform/tenants',
+    'POST /api/platform/tenants',
+    'GET /api/platform/tenants/:id',
+    'PATCH /api/platform/tenants/:id',
+    'PATCH /api/platform/tenants/:id/status',
+    'POST /api/platform/tenants/:id/admins',
+    'GET /api/platform/audit',
+  ];
+
   it('classifies every registered route', () => {
-    const classified = new Set([...COVERED, ...NO_TENANT_DATA, ...NOT_YET_ASSERTED]);
+    const classified = new Set([...COVERED, ...NO_TENANT_DATA, ...NOT_YET_ASSERTED, ...PLATFORM_SURFACE]);
     const registered = [...new Set(app.routeList)].sort();
 
     const unclassified = registered.filter((r) => !classified.has(r));

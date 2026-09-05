@@ -14,7 +14,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'Employee', 'Attendance', 'GPSLog', 'Branch', 'Department', 'Designation',
   'Shift', 'Leave', 'Claim', 'ClaimMessage', 'LeaveBalance', 'Payslip',
   'Notification', 'WhatsAppLog', 'GeofenceViolation', 'AdminUser', 'AuditLog',
-  'CompanySettings', 'Holiday',
+  'TenantSettings', 'Holiday',
 ]);
 
 /**
@@ -22,7 +22,7 @@ export const TENANT_SCOPED_MODELS = new Set([
  * decision to make its rows visible to every tenant, so keep it short — the
  * DMMF coverage test fails on any model that is in neither set.
  */
-export const GLOBAL_MODELS = new Set(['Tenant', 'PlatformUser']);
+export const GLOBAL_MODELS = new Set(['Tenant', 'PlatformUser', 'PlatformAuditLog']);
 
 /** Operations whose `where` is a plain filter, or an extended unique filter. */
 const WHERE_OPS = new Set([

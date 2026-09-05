@@ -164,3 +164,43 @@ describe('computeMonthlyPayroll', () => {
     expect(r.absentDays).toBe(26);
   });
 });
+
+describe('payroll policy is per dealer', () => {
+  const fullMonth = () => {
+    const punches: Punch[] = [];
+    for (let d = 1; d <= 31; d++) {
+      if (new Date(YEAR, MONTH - 1, d).getDay() === 0) continue; // Sunday
+      punches.push({ day: d, in: '09:00', out: '18:00' });
+    }
+    return punches;
+  };
+
+  it('divides the monthly salary by the dealer’s own divisor', async () => {
+    const base = await computeMonthlyPayroll(fakePrisma(fullMonth()), EMPLOYEE, MONTH, YEAR, new Set());
+    expect(base.perDaySalary).toBe(300); // 9000 / 30, the platform default
+
+    const byDaysInMonth = await computeMonthlyPayroll(
+      fakePrisma(fullMonth()), EMPLOYEE, MONTH, YEAR, new Set(),
+      { monthDivisor: 31, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, lateWithholdOver: 8, payDay: 5, payDayLate: 8 },
+    );
+    // 9000 / 31 — a dealer that pays by the real length of the month.
+    // The engine rounds to paise, so compare at 2 decimal places.
+    expect(byDaysInMonth.perDaySalary).toBeCloseTo(9000 / 31, 2);
+    expect(byDaysInMonth.perDaySalary).not.toBe(base.perDaySalary);
+  });
+
+  it('honours the dealer’s pay-day rules', async () => {
+    const lates = fullMonth().map((p, i) => (i < 6 ? { ...p, in: '11:00' } : p));
+    const strict = await computeMonthlyPayroll(
+      fakePrisma(lates), EMPLOYEE, MONTH, YEAR, new Set(),
+      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, lateWithholdOver: 8, payDay: 5, payDayLate: 8 },
+    );
+    const lenient = await computeMonthlyPayroll(
+      fakePrisma(lates), EMPLOYEE, MONTH, YEAR, new Set(),
+      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 99, lateWithholdOver: 99, payDay: 5, payDayLate: 8 },
+    );
+    // Same punches, different dealer rules → a different pay date.
+    expect(strict.payDate?.getDate()).toBe(8);
+    expect(lenient.payDate?.getDate()).toBe(5);
+  });
+});

@@ -3,13 +3,15 @@ import { calculatePF, calculateESI } from './payroll.service.js';
 import { classifyDay, overtimeMinutes } from '../attendance/day-classify.js';
 import { dayKey } from '../../utils/time.js';
 import { requireTenantId } from '../../context/tenant-context.js';
+import { defaultPolicy, getTenantPolicy, type PayrollPolicy } from '../settings/tenant-settings.service.js';
+import { DEFAULT_HALF_DAY_WINDOW, type HalfDayWindow } from '../attendance/attendance-policy.js';
 
 /**
  * Payroll rules (owner-specified):
  *  - Per-day salary = monthly salary / 30 (e.g. ₹9,000 → ₹300/day), regardless
  *    of the month's length.
  *  - Sundays and configured holidays are paid weekly-offs.
- *  - Casual Leave (CL) is paid up to CL_PER_YEAR (12) days per calendar year;
+ *  - Casual Leave (CL) is paid up to the tenant's CL quota (12 by default) per calendar year;
  *    CL beyond the quota becomes LOP. SL/EL stay paid; LOP is unpaid.
  *  - Working a Sunday earns one EXTRA full day's salary on top of the paid
  *    weekly-off — even for a half day, a Sunday pays a full day of OT.
@@ -17,7 +19,7 @@ import { requireTenantId } from '../../context/tenant-context.js';
  *    attendance-policy) pays 0.5 and adds 0.5 to the absent-day count, so two
  *    absences plus one half day report as 2.5.
  *  - Overtime: duty time worked past the shift's close time + its OT grace
- *    (Shift.otAfterMinutes) accumulates as OT hours; every OT_HOURS_PER_DAY (10)
+ *    (Shift.otAfterMinutes) accumulates as OT hours; every 10 OT hours (per tenant)
  *    OT hours pays one extra day, pro-rated (15 OT hours → 1.5 days).
  *  - Punches that need sign-off (out-of-geofence, late, manual/selfie) count
  *    only once approved; PENDING / REJECTED attendance is not paid (a pending
@@ -26,21 +28,20 @@ import { requireTenantId } from '../../context/tenant-context.js';
  *    window: never absent, never paid. A mid-month joiner is paid pro-rata.
  *  - Late marking uses the shift grace period (default 15 min) at check-in.
  *  - Late-punch discipline (configurable via PAYROLL_* env vars): salary is
- *    normally dated the 5th of the next month; LATE_SHIFT_AT (5) or more late
- *    punches moves it to the 8th; more than LATE_WITHHOLD_OVER (8) late punches
+ *    normally dated the 5th of the next month; the tenant's late threshold (5 by default) or more late
+ *    punches moves it to the 8th; more than the withhold threshold (8 by default) late punches
  *    WITHHOLDS the slip — the amounts are still computed and visible, but the
  *    employee PDF is blocked until HR releases it.
  */
-const MONTH_DIVISOR = 30;
-const CL_PER_YEAR = 12;
-// (OT threshold is now per-shift: Shift.otAfterMinutes, measured after shift close.)
-const OT_HOURS_PER_DAY = 10;
-
-// Late-punch policy — env-overridable so the rule can be tuned without a code change.
-const LATE_SHIFT_AT = Number(process.env.PAYROLL_LATE_SHIFT_AT ?? 5); // ≥ this many lates → pay on the late day
-const LATE_WITHHOLD_OVER = Number(process.env.PAYROLL_LATE_WITHHOLD_OVER ?? 8); // > this many lates → withhold slip
-const PAY_DAY_NORMAL = Number(process.env.PAYROLL_PAY_DAY ?? 5); // day of next month
-const PAY_DAY_LATE = Number(process.env.PAYROLL_PAY_DAY_LATE ?? 8);
+/**
+ * Payroll rules are per dealer now (TenantSettings), but every one of them has
+ * a platform default so a caller that does not care — and every existing test —
+ * behaves exactly as before. `computeMonthlyPayroll` takes the policy as a
+ * trailing optional argument for the same reason.
+ *
+ * (The OT threshold stays per-shift: Shift.otAfterMinutes, after shift close.)
+ */
+const DEFAULT_PAYROLL_POLICY: PayrollPolicy = defaultPolicy().payroll;
 
 const DAY_MS = 86_400_000;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -102,6 +103,8 @@ export async function computeMonthlyPayroll(
   month: number,
   year: number,
   holidaySet: Set<string>,
+  policy: PayrollPolicy = DEFAULT_PAYROLL_POLICY,
+  halfDayWindow: HalfDayWindow = DEFAULT_HALF_DAY_WINDOW,
 ): Promise<MonthlyPayroll> {
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
@@ -147,6 +150,7 @@ export async function computeMonthlyPayroll(
     // Classified by the same rules the muster grid and the reports use, so a
     // day can never be paid here and shown absent there.
     const day = classifyDay({
+      halfDayWindow,
       date: d,
       att,
       shift: emp.shift,
@@ -199,7 +203,7 @@ export async function computeMonthlyPayroll(
       if (lv.type === 'LOP') {
         lopDays += 1;
       } else if (lv.type === 'CL') {
-        if (clUsed < CL_PER_YEAR) {
+        if (clUsed < policy.clPerYear) {
           clUsed += 1;
           clDays += 1;
           paidDays += 1;
@@ -219,23 +223,23 @@ export async function computeMonthlyPayroll(
   }
 
   const otHours = round2(otMinutes / 60);
-  const otDays = round2(otHours / OT_HOURS_PER_DAY); // pro-rated: 15h → 1.5 days
+  const otDays = round2(otHours / policy.otHoursPerDay); // pro-rated: 15h → 1.5 days
 
-  const perDaySalary = round2(emp.salary / MONTH_DIVISOR);
-  const basePay = round2((emp.salary / MONTH_DIVISOR) * paidDays);
-  const otPay = round2((emp.salary / MONTH_DIVISOR) * otDays);
-  const sundayPay = round2((emp.salary / MONTH_DIVISOR) * sundayDays);
-  const leaveDeduction = round2((emp.salary / MONTH_DIVISOR) * (absentDays + lopDays));
+  const perDaySalary = round2(emp.salary / policy.monthDivisor);
+  const basePay = round2((emp.salary / policy.monthDivisor) * paidDays);
+  const otPay = round2((emp.salary / policy.monthDivisor) * otDays);
+  const sundayPay = round2((emp.salary / policy.monthDivisor) * sundayDays);
+  const leaveDeduction = round2((emp.salary / policy.monthDivisor) * (absentDays + lopDays));
 
   const grossSalary = round2(basePay + otPay + sundayPay);
   const pf = emp.pfEnabled ? calculatePF(basePay) : 0; // 12%, capped ₹1800
   const esi = emp.esiEnabled ? calculateESI(grossSalary) : 0; // 0.75% if gross <= ₹21,000
   const netSalary = round2(Math.max(0, grossSalary - pf - esi));
 
-  // Late-punch policy: pay date shifts at LATE_SHIFT_AT lates; slip withheld
-  // beyond LATE_WITHHOLD_OVER. `month` is 1-based, so Date(year, month, d)
+  // Late-punch policy: pay date shifts at policy.lateShiftAt lates; slip withheld
+  // beyond policy.lateWithholdOver. `month` is 1-based, so Date(year, month, d)
   // lands on day d of the FOLLOWING month (July salary → Aug 5/8).
-  const payDate = new Date(year, month, lateDays >= LATE_SHIFT_AT ? PAY_DAY_LATE : PAY_DAY_NORMAL);
+  const payDate = new Date(year, month, lateDays >= policy.lateShiftAt ? policy.payDayLate : policy.payDay);
 
   return {
     daysInMonth,
@@ -262,7 +266,7 @@ export async function computeMonthlyPayroll(
     esi,
     netSalary,
     payDate,
-    withheld: lateDays > LATE_WITHHOLD_OVER,
+    withheld: lateDays > policy.lateWithholdOver,
   };
 }
 
@@ -287,6 +291,9 @@ export async function runMonthlyPayroll(
   month: number,
   year: number,
 ): Promise<PayrollRunSummary> {
+  // One read per run, applied to every employee in it.
+  const { payroll: policy, attendance } = await getTenantPolicy(prisma);
+  const halfDayWindow = { start: attendance.halfDayWindowStart, end: attendance.halfDayWindowEnd };
   const employees = await prisma.employee.findMany({
     where: { status: 'ACTIVE' },
     include: { shift: true },
@@ -296,7 +303,7 @@ export async function runMonthlyPayroll(
   let totalNet = 0;
 
   for (const emp of employees) {
-    const r = await computeMonthlyPayroll(prisma, emp, month, year, holidaySet);
+    const r = await computeMonthlyPayroll(prisma, emp, month, year, holidaySet, policy, halfDayWindow);
 
     // Owner policy: NO salary-structure split (no HRA/DA lines) — the payslip
     // carries the earned salary + OT/Sunday extra as-is. PF/ESI apply only to

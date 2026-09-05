@@ -1,0 +1,22 @@
+-- AlterTable
+ALTER TABLE "CompanySettings" ADD COLUMN     "clPerYear" INTEGER NOT NULL DEFAULT 12,
+ADD COLUMN     "driveParentFolderId" TEXT,
+ADD COLUMN     "driveShareWith" TEXT,
+ADD COLUMN     "employeeCodePrefix" TEXT NOT NULL DEFAULT 'EMP',
+ADD COLUMN     "faceMatchThreshold" INTEGER NOT NULL DEFAULT 85,
+ADD COLUMN     "halfDayWindowEnd" TEXT NOT NULL DEFAULT '14:00',
+ADD COLUMN     "halfDayWindowStart" TEXT NOT NULL DEFAULT '12:30',
+ADD COLUMN     "lateRequiresApproval" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "monthDivisor" INTEGER NOT NULL DEFAULT 30,
+ADD COLUMN     "openPunchLookbackDays" INTEGER NOT NULL DEFAULT 7,
+ADD COLUMN     "otHoursPerDay" INTEGER NOT NULL DEFAULT 10,
+ADD COLUMN     "payrollLateShiftAt" INTEGER NOT NULL DEFAULT 5,
+ADD COLUMN     "payrollLateWithholdOver" INTEGER NOT NULL DEFAULT 8,
+ADD COLUMN     "payrollPayDay" INTEGER NOT NULL DEFAULT 5,
+ADD COLUMN     "payrollPayDayLate" INTEGER NOT NULL DEFAULT 8,
+ADD COLUMN     "rekognitionCollectionId" TEXT,
+ADD COLUMN     "s3Prefix" TEXT NOT NULL DEFAULT '',
+ADD COLUMN     "timezone" TEXT NOT NULL DEFAULT 'Asia/Kolkata',
+ADD COLUMN     "whatsappConfig" TEXT,
+ADD COLUMN     "whatsappMode" TEXT NOT NULL DEFAULT 'SHARED';
+

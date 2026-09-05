@@ -30,7 +30,7 @@ console.log(`\nIsolation suite → ${url}\n`);
 // Bring the schema up to date first; the suite assumes the tables exist.
 run('npx', ['prisma', 'migrate', 'deploy'], { DATABASE_URL: url });
 
-run('npx', ['vitest', 'run', 'tests/isolation.test.ts'], {
+run('npx', ['vitest', 'run', 'tests/isolation.test.ts', 'tests/platform.test.ts'], {
   DATABASE_URL: url,
   TEST_DATABASE_URL: url,
   // The app refuses to boot without these; values are irrelevant to isolation.

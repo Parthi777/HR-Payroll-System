@@ -14,6 +14,7 @@ import { adminUsersRoutes } from './admin-users.routes.js';
 import { reportsRoutes } from './reports.routes.js';
 import { appRoutes } from './app.routes.js';
 import { notificationRoutes } from './notification.routes.js';
+import { platformRoutes } from './platform.routes.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
@@ -33,4 +34,6 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(reportsRoutes, { prefix: '/api' });
   await app.register(appRoutes, { prefix: '/api' });
   await app.register(notificationRoutes, { prefix: '/api' });
+  // Platform surface — dealer onboarding. Guarded by requirePlatform, not requireRole.
+  await app.register(platformRoutes, { prefix: '/api' });
 }

@@ -90,3 +90,28 @@ describe('dayCredit', () => {
     expect(dayCredit('LATE')).toBe(1);
   });
 });
+
+describe('the midday window is per dealer', () => {
+  const shift = { startTime: '09:00', endTime: '18:00', gracePeriod: 15 };
+  // 15:30 UTC — inside an afternoon window, outside the default midday one.
+  const checkOut = at('15:30');
+
+  it('is a full day under the default window', () => {
+    expect(resolveAttendanceStatus({ checkIn: at('09:00'), checkOut, shift })).toBe('PRESENT');
+  });
+
+  it('is a half day under a dealer whose window covers the afternoon', () => {
+    expect(
+      resolveAttendanceStatus(
+        { checkIn: at('09:00'), checkOut, shift },
+        { start: '15:00', end: '16:00' },
+      ),
+    ).toBe('HALF_DAY');
+  });
+
+  it('re-derives stored rows against the dealer’s window, not the default', () => {
+    const att = { status: 'PRESENT', checkIn: at('09:00'), checkOut };
+    expect(effectiveStatus(att, shift)).toBe('PRESENT');
+    expect(effectiveStatus(att, shift, { start: '15:00', end: '16:00' })).toBe('HALF_DAY');
+  });
+});

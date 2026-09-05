@@ -9,11 +9,12 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { AppError } from '../../utils/AppError.js';
 import { isDriveEnabled, ensureEmployeeFolder, uploadToDrive } from '../storage/drive.service.js';
-import { isS3Enabled, uploadImage } from '../storage/storage.service.js';
+import { isS3Enabled, tenantKey, uploadImage } from '../storage/storage.service.js';
 import { dispatchWhatsApp } from '../whatsapp/whatsapp.service.js';
 import { withNextNumber, formatDocNo } from './claim-number.js';
 import { claimTypeLabel, isValidClaimType } from './claim-types.js';
 import { requireTenantId } from '../../context/tenant-context.js';
+import { getTenantPolicy } from '../settings/tenant-settings.service.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads', 'claims');
 
@@ -43,6 +44,7 @@ async function storeFile(
   folderId: string | undefined,
   file: FileInput,
   kind: 'photo' | 'doc',
+  s3Prefix: string,
 ): Promise<StoredFile> {
   const ext = file.mime === 'application/pdf' ? 'pdf' : 'jpg';
   const filename = `${kind}-${Date.now()}.${ext}`;
@@ -50,7 +52,7 @@ async function storeFile(
     return { fileId: await uploadToDrive(file.buffer, filename, file.mime, folderId) };
   }
   if (isS3Enabled()) {
-    return { url: await uploadImage(file.buffer, `claims/${employee.id}/${filename}`, file.mime) };
+    return { url: await uploadImage(file.buffer, tenantKey(s3Prefix, `claims/${employee.id}/${filename}`), file.mime) };
   }
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
   const local = `${employee.id}-${filename}`;
@@ -85,8 +87,9 @@ export async function createClaim(
   }
 
   const folderId = await resolveFolder(prisma, employee);
-  const photoRes = photo ? await storeFile(employee, folderId, photo, 'photo') : {};
-  const pdfRes = pdf ? await storeFile(employee, folderId, pdf, 'doc') : {};
+  const { resources } = await getTenantPolicy(prisma);
+  const photoRes = photo ? await storeFile(employee, folderId, photo, 'photo', resources.s3Prefix) : {};
+  const pdfRes = pdf ? await storeFile(employee, folderId, pdf, 'doc', resources.s3Prefix) : {};
 
   // Every claim gets its running Claim ID the moment it is received.
   return withNextNumber(prisma, 'claimNo', (claimNo) =>
@@ -125,15 +128,16 @@ export async function resubmitClaim(
   }
 
   const folderId = await resolveFolder(prisma, claim.employee);
+  const { resources } = await getTenantPolicy(prisma);
   const data: Prisma.ClaimUpdateInput = { status: 'PENDING', employeeNote: input.employeeNote ?? claim.employeeNote };
   if (input.description != null) data.description = input.description;
   if (photo) {
-    const r = await storeFile(claim.employee, folderId, photo, 'photo');
+    const r = await storeFile(claim.employee, folderId, photo, 'photo', resources.s3Prefix);
     data.photoFileId = r.fileId ?? null;
     data.photoUrl = r.url ?? null;
   }
   if (pdf) {
-    const r = await storeFile(claim.employee, folderId, pdf, 'doc');
+    const r = await storeFile(claim.employee, folderId, pdf, 'doc', resources.s3Prefix);
     data.documentFileId = r.fileId ?? null;
     data.documentUrl = r.url ?? null;
   }

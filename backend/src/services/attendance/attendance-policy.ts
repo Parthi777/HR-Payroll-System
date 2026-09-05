@@ -13,12 +13,24 @@
  * Anything outside the window follows the usual rule — late past the shift's
  * grace period is LATE, otherwise PRESENT.
  *
- * Window is env-tunable: HALF_DAY_WINDOW_START / HALF_DAY_WINDOW_END ("HH:MM").
+ * The window is per dealer (TenantSettings.halfDayWindowStart/End). It is passed
+ * in rather than read here, because these functions are pure and are called both
+ * when a punch is recorded and when payroll re-derives history — both have to
+ * use the same dealer's window or a day would read HALF_DAY on one screen and
+ * PRESENT on another. The env values remain the platform default.
  */
 import { parseHHMM, minutesSinceMidnight } from '../../utils/time.js';
 
-const HALF_DAY_START = parseHHMM(process.env.HALF_DAY_WINDOW_START ?? '12:30');
-const HALF_DAY_END = parseHHMM(process.env.HALF_DAY_WINDOW_END ?? '14:00');
+/** "HH:MM" bounds of the midday window that makes a day a half day. */
+export interface HalfDayWindow {
+  start: string;
+  end: string;
+}
+
+export const DEFAULT_HALF_DAY_WINDOW: HalfDayWindow = {
+  start: process.env.HALF_DAY_WINDOW_START ?? '12:30',
+  end: process.env.HALF_DAY_WINDOW_END ?? '14:00',
+};
 
 export type DayStatus = 'PRESENT' | 'LATE' | 'HALF_DAY' | 'ABSENT';
 
@@ -27,7 +39,8 @@ const PUNCH_STATUSES = new Set(['PRESENT', 'LATE', 'HALF_DAY']);
 
 export const isPunchStatus = (s: string) => PUNCH_STATUSES.has(s);
 
-export const inHalfDayWindow = (minutes: number) => minutes >= HALF_DAY_START && minutes <= HALF_DAY_END;
+export const inHalfDayWindow = (minutes: number, window: HalfDayWindow = DEFAULT_HALF_DAY_WINDOW) =>
+  minutes >= parseHHMM(window.start) && minutes <= parseHHMM(window.end);
 
 export interface ShiftClock {
   startTime: string; // "09:00"
@@ -46,7 +59,10 @@ export interface ResolveInput {
  * recorded and when payroll/reports re-derive a stored row, so a policy change
  * applies consistently to history instead of only to new punches.
  */
-export function resolveAttendanceStatus({ checkIn, checkOut, shift }: ResolveInput): DayStatus {
+export function resolveAttendanceStatus(
+  { checkIn, checkOut, shift }: ResolveInput,
+  window: HalfDayWindow = DEFAULT_HALF_DAY_WINDOW,
+): DayStatus {
   if (!checkIn) return 'ABSENT';
 
   const startMin = parseHHMM(shift.startTime);
@@ -54,12 +70,12 @@ export function resolveAttendanceStatus({ checkIn, checkOut, shift }: ResolveInp
   const inMin = minutesSinceMidnight(checkIn);
 
   // Arrived mid-shift, inside the midday window → half day.
-  if (inMin > startMin && inHalfDayWindow(inMin)) return 'HALF_DAY';
+  if (inMin > startMin && inHalfDayWindow(inMin, window)) return 'HALF_DAY';
 
   // Left inside the midday window before the shift closed → half day.
   if (checkOut) {
     const outMin = minutesSinceMidnight(checkOut);
-    if (outMin < endMin && inHalfDayWindow(outMin)) return 'HALF_DAY';
+    if (outMin < endMin && inHalfDayWindow(outMin, window)) return 'HALF_DAY';
   }
 
   return inMin > startMin + (shift.gracePeriod ?? 0) ? 'LATE' : 'PRESENT';
@@ -73,9 +89,10 @@ export function resolveAttendanceStatus({ checkIn, checkOut, shift }: ResolveInp
 export function effectiveStatus(
   att: { status: string; checkIn: Date | null; checkOut: Date | null },
   shift: ShiftClock | null | undefined,
+  window: HalfDayWindow = DEFAULT_HALF_DAY_WINDOW,
 ): string {
   if (!shift || !isPunchStatus(att.status) || !att.checkIn) return att.status;
-  return resolveAttendanceStatus({ checkIn: att.checkIn, checkOut: att.checkOut, shift });
+  return resolveAttendanceStatus({ checkIn: att.checkIn, checkOut: att.checkOut, shift }, window);
 }
 
 /**

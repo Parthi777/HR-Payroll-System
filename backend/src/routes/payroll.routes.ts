@@ -5,11 +5,11 @@ import { AppError } from '../utils/AppError.js';
 import { runMonthlyPayroll } from '../services/payroll/payroll-run.service.js';
 import { generatePayslipPdf } from '../services/payroll/payslip-pdf.service.js';
 import { generateSalaryRegisterPdf } from '../services/payroll/salary-register-pdf.service.js';
+import { getCompanyProfile } from '../services/settings/tenant-settings.service.js';
 
 /** Company profile for PDF headers (empty object when unset). */
 async function getCompany(app: FastifyInstance): Promise<{ name: string; address: string }> {
-  const c = await app.prisma.companySettings.findFirst();
-  return { name: c?.name ?? '', address: c?.address ?? '' };
+  return getCompanyProfile(app.prisma);
 }
 
 /** Fetch a payslip (with employee+branch) and stream it as a PDF. */

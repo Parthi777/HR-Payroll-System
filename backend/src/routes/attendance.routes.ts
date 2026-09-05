@@ -14,6 +14,7 @@ import {
 import { classifyDay, type DayCode } from '../services/attendance/day-classify.js';
 import { getObjectBytes } from '../services/storage/storage.service.js';
 import { dayKey } from '../utils/time.js';
+import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
 
 const HHMM = z.string().regex(/^\d{1,2}:\d{2}$/, 'Use a HH:MM time, e.g. 09:30');
 
@@ -447,6 +448,10 @@ export async function attendanceRoutes(app: FastifyInstance) {
     ]);
     const attByDay = new Map(atts.map((a) => [dayKey(a.date), a]));
     const holidaySet = new Set(holidays.map((h) => dayKey(h.date)));
+    // The dealer's own midday window, so this calendar agrees with the muster
+    // grid and the payslip rather than re-deriving on platform defaults.
+    const { attendance } = await getTenantPolicy(app.prisma);
+    const halfDayWindow = { start: attendance.halfDayWindowStart, end: attendance.halfDayWindowEnd };
 
     const days = [];
     const summary = { present: 0, late: 0, half: 0, absent: 0, leave: 0 };
@@ -456,6 +461,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
       // Same classifier the muster grid and payroll use, so what an employee
       // sees here matches what HR sees and what the payslip pays.
       const day = classifyDay({
+        halfDayWindow,
         date: d,
         att,
         shift: employee?.shift,

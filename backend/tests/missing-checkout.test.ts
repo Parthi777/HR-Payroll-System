@@ -101,6 +101,9 @@ function fakePrisma(rows: Row[]): PrismaClient {
     },
     // No approvers configured → notifyAdmins short-circuits.
     adminUser: { findMany: async () => [] },
+    // No settings row → the platform defaults apply, which is what a dealer
+    // that has not customised its policy actually gets.
+    tenantSettings: { findFirst: async () => null },
   } as unknown as PrismaClient;
 }
 

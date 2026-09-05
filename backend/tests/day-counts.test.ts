@@ -68,9 +68,10 @@ const fakePrisma = (opts: { atts?: AttStub[]; leaves?: unknown[]; holidays?: Dat
     attendance: { findMany: async () => opts.atts ?? [] },
     leave: { findMany: async () => opts.leaves ?? [] },
     holiday: { findMany: async () => (opts.holidays ?? []).map((d) => ({ date: d })) },
-    // findFirst, not findUnique: settings are one row per tenant now, found by
-    // the tenant filter rather than by the old literal id "company".
-    companySettings: { findFirst: async () => null },
+    // One settings row per tenant, found by the tenant filter. Null here means
+    // the services fall back to the platform defaults, which is what a dealer
+    // that has not opened the settings screen yet actually gets.
+    tenantSettings: { findFirst: async () => null },
   }) as unknown as PrismaClient;
 
 describe('classifyDay', () => {

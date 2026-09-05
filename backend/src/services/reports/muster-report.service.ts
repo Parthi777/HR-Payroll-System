@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { classifyDay, overtimeMinutes, type DayCode } from '../attendance/day-classify.js';
 import { monthHolidaySet } from '../payroll/payroll-run.service.js';
 import { COMPANY_TZ, dayKey, formatDuration } from '../../utils/time.js';
+import { getCompanyProfile, getTenantPolicy } from '../settings/tenant-settings.service.js';
 
 /**
  * Monthly performance (muster roll) — the day-by-day grid the owner's previous
@@ -113,14 +114,20 @@ export async function buildMusterReport(
   });
   const empIds = employees.map((e) => e.id);
 
-  const [atts, leaves, holidaySet, settings] = await Promise.all([
+  const [atts, leaves, holidaySet, settings, policy] = await Promise.all([
     prisma.attendance.findMany({ where: { employeeId: { in: empIds }, date: { gte: start, lt: end } } }),
     prisma.leave.findMany({
       where: { employeeId: { in: empIds }, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
     }),
     monthHolidaySet(prisma, month, year),
-    prisma.companySettings.findFirst(),
+    getCompanyProfile(prisma),
+    getTenantPolicy(prisma),
   ]);
+
+  const halfDayWindow = {
+    start: policy.attendance.halfDayWindowStart,
+    end: policy.attendance.halfDayWindowEnd,
+  };
 
   const attByEmpDay = new Map<string, (typeof atts)[number]>();
   for (const a of atts) attByEmpDay.set(`${a.employeeId}|${dayKey(a.date)}`, a);
@@ -149,6 +156,7 @@ export async function buildMusterReport(
       const d = new Date(year, month - 1, dn);
       const att = attByEmpDay.get(`${emp.id}|${dayKey(d)}`);
       const day = classifyDay({
+        halfDayWindow,
         date: d,
         att,
         shift: emp.shift,

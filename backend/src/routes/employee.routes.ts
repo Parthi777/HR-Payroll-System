@@ -8,25 +8,36 @@ import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { enrollFace, removeFace, verifyFace, isFaceMatchEnabled } from '../services/ai/face.service.js';
 import { env } from '../config/env.js';
-import { isS3Enabled, uploadImage } from '../services/storage/storage.service.js';
+import { isS3Enabled, tenantKey, uploadImage } from '../services/storage/storage.service.js';
 import { normalizePhone } from '../utils/phone.js';
 import { requireTenantId } from '../context/tenant-context.js';
+import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
 
-// Employee code series prefix (e.g. DHARANI001). Override with EMPLOYEE_CODE_PREFIX.
-const CODE_PREFIX = process.env.EMPLOYEE_CODE_PREFIX ?? 'DHARANI';
 const CODE_PAD = 3;
 
-/** Next free code in the series — max existing number + 1, zero-padded. */
-async function nextEmployeeCode(prisma: FastifyInstance['prisma']): Promise<string> {
+/**
+ * Next free code in the series — max existing number + 1, zero-padded.
+ *
+ * The prefix is the dealer's own (TenantSettings.employeeCodePrefix), so two
+ * dealers can both run an "EMP001". The scan is tenant-scoped by the Prisma
+ * extension, so "max existing" means max within this dealer.
+ */
+async function nextEmployeeCode(prisma: FastifyInstance['prisma'], prefix: string): Promise<string> {
   const rows = await prisma.employee.findMany({
-    where: { employeeCode: { startsWith: CODE_PREFIX } },
+    where: { employeeCode: { startsWith: prefix } },
     select: { employeeCode: true },
   });
   const max = rows.reduce((m, r) => {
-    const n = parseInt(r.employeeCode.slice(CODE_PREFIX.length), 10);
+    const n = parseInt(r.employeeCode.slice(prefix.length), 10);
     return Number.isFinite(n) && n > m ? n : m;
   }, 0);
-  return `${CODE_PREFIX}${String(max + 1).padStart(CODE_PAD, '0')}`;
+  return `${prefix}${String(max + 1).padStart(CODE_PAD, '0')}`;
+}
+
+/** This dealer's code prefix. */
+async function codePrefix(prisma: FastifyInstance['prisma']): Promise<string> {
+  const row = await prisma.tenantSettings.findFirst({ select: { employeeCodePrefix: true } });
+  return row?.employeeCodePrefix || process.env.EMPLOYEE_CODE_PREFIX || 'EMP';
 }
 
 const createEmployeeSchema = z.object({
@@ -90,7 +101,7 @@ export async function employeeRoutes(app: FastifyInstance) {
   });
 
   // Suggests the next code for the Add-Employee form (auto-series).
-  app.get('/next-code', async () => ({ nextCode: await nextEmployeeCode(app.prisma) }));
+  app.get('/next-code', async () => ({ nextCode: await nextEmployeeCode(app.prisma, await codePrefix(app.prisma)) }));
 
   // Managers dropdown (Add/Edit Employee) — active admins who can approve requests.
   // Static path registered alongside '/:id'; Fastify matches static segments first.
@@ -108,7 +119,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     rest.phone = normalizePhone(rest.phone);
 
     // Auto-generate the code when the form leaves it blank.
-    const employeeCode = rest.employeeCode?.trim() || (await nextEmployeeCode(app.prisma));
+    const employeeCode = rest.employeeCode?.trim() || (await nextEmployeeCode(app.prisma, await codePrefix(app.prisma)));
     rest.employeeCode = employeeCode;
 
     // Friendly duplicate checks — show the existing ID series and next free number.
@@ -181,6 +192,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     const byName = <T extends { name: string }>(list: T[], v: string | undefined) =>
       v ? list.find((x) => x.name.toLowerCase() === v.trim().toLowerCase()) : undefined;
 
+    const prefix = await codePrefix(app.prisma);
     const created: { employeeCode: string; name: string; phone: string; password: string }[] = [];
     const errors: string[] = [];
 
@@ -200,7 +212,7 @@ export async function employeeRoutes(app: FastifyInstance) {
         if (await app.prisma.employee.findFirst({ where: { phone } })) throw new Error(`phone ${phone} already exists`);
 
         const password = (iPwd >= 0 && cells[iPwd]?.trim()) || randomPassword();
-        const employeeCode = await nextEmployeeCode(app.prisma);
+        const employeeCode = await nextEmployeeCode(app.prisma, prefix);
         await app.prisma.employee.create({
           data: {
             tenantId: requireTenantId(),
@@ -252,8 +264,11 @@ export async function employeeRoutes(app: FastifyInstance) {
 
     // Wrong-photo guard: if this face already belongs to a DIFFERENT enrolled
     // employee, refuse — otherwise one person's photo silently becomes two identities.
-    const dup = await verifyFace(buffer, id);
-    if (dup.enabled && dup.matchedEmployeeId && dup.matchedEmployeeId !== id && dup.score >= env.FACE_MATCH_THRESHOLD) {
+    // This dealer's own collection: a face already enrolled at another dealer
+    // is irrelevant here, and must not block enrollment.
+    const { resources } = await getTenantPolicy(app.prisma);
+    const dup = await verifyFace(buffer, id, resources.rekognitionCollectionId, resources.faceMatchThreshold);
+    if (dup.enabled && dup.matchedEmployeeId && dup.matchedEmployeeId !== id && dup.score >= resources.faceMatchThreshold) {
       const other = await app.prisma.employee.findUnique({
         where: { id: dup.matchedEmployeeId },
         select: { name: true, employeeCode: true },
@@ -264,13 +279,13 @@ export async function employeeRoutes(app: FastifyInstance) {
       );
     }
 
-    const { faceId } = await enrollFace(buffer, id);
+    const { faceId } = await enrollFace(buffer, id, resources.rekognitionCollectionId);
 
     // Re-enrollment: drop the previous face so the collection doesn't accumulate
     // stale templates. Best-effort — the new face is already indexed.
     if (existing.faceTemplateId && existing.faceTemplateId !== faceId) {
       try {
-        await removeFace(existing.faceTemplateId);
+        await removeFace(existing.faceTemplateId, resources.rekognitionCollectionId);
       } catch (err) {
         req.log.warn({ err, faceId: existing.faceTemplateId }, 'Failed to remove old face template');
       }
@@ -279,7 +294,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     // Keep the enrolled photo — it doubles as the employee's profile picture (/me/photo).
     let faceTemplateUrl: string;
     if (isS3Enabled()) {
-      faceTemplateUrl = await uploadImage(buffer, `faces/${id}-${Date.now()}.jpg`);
+      faceTemplateUrl = await uploadImage(buffer, tenantKey(resources.s3Prefix, `faces/${id}-${Date.now()}.jpg`));
     } else {
       const dir = path.resolve(process.cwd(), 'uploads', 'faces');
       await fs.mkdir(dir, { recursive: true });
@@ -310,7 +325,8 @@ export async function employeeRoutes(app: FastifyInstance) {
     // stale collection entry can never keep granting attendance.
     if (employee.faceTemplateId) {
       try {
-        await removeFace(employee.faceTemplateId);
+        const { resources } = await getTenantPolicy(app.prisma);
+        await removeFace(employee.faceTemplateId, resources.rekognitionCollectionId);
       } catch (err) {
         req.log.warn({ err, faceId: employee.faceTemplateId }, 'Failed to remove face template from Rekognition');
       }

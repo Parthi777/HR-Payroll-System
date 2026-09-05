@@ -6,23 +6,22 @@ import { assertManages, type JwtPayload } from '../../middleware/auth.js';
 import { checkGeofence } from '../geofence/geofence.service.js';
 import { verifyFace, isFaceMatchEnabled } from '../ai/face.service.js';
 import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
-import { isS3Enabled, uploadImage } from '../storage/storage.service.js';
+import { isS3Enabled, tenantKey, uploadImage } from '../storage/storage.service.js';
 import { notifyAdmins, approverIds } from '../notification.service.js';
 import { pushToEmployee } from '../push.service.js';
 import { resolveAttendanceStatus, isLateArrival } from './attendance-policy.js';
 import { atCompanyTime, startOfDay } from '../../utils/time.js';
 import { requireTenantId } from '../../context/tenant-context.js';
+import { defaultPolicy, getTenantPolicy, type ResourcePolicy } from '../settings/tenant-settings.service.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 
-// Late punches require reporting-manager/HR approval to be paid (else marked as leave).
-// Toggle off with LATE_REQUIRES_APPROVAL=false.
-const LATE_REQUIRES_APPROVAL = process.env.LATE_REQUIRES_APPROVAL !== 'false';
-
-// How far back we look for a punch the employee left open (checked in, never
-// checked out). Bounded so rows predating this rule can't lock someone out for
-// good — only recent forgotten check-outs block the next check-in.
-const OPEN_PUNCH_LOOKBACK_DAYS = Number(process.env.OPEN_PUNCH_LOOKBACK_DAYS ?? 7);
+/**
+ * Attendance rules are per dealer now. The env values remain the platform
+ * default, so a caller that passes nothing behaves exactly as before — which is
+ * what keeps the existing unit tests meaningful.
+ */
+const DEFAULT_ATTENDANCE = defaultPolicy().attendance;
 
 const COMPANY_TZ = process.env.COMPANY_TZ ?? 'Asia/Kolkata';
 
@@ -36,9 +35,9 @@ function startOfToday(): Date {
  * Persist the selfie. Uses S3 (private object key) when configured; otherwise
  * falls back to local disk so dev works with zero setup.
  */
-async function saveSelfie(buf: Buffer, employeeId: string): Promise<string> {
+async function saveSelfie(buf: Buffer, employeeId: string, s3Prefix = ''): Promise<string> {
   if (isS3Enabled()) {
-    return uploadImage(buf, `selfies/${employeeId}-${Date.now()}.jpg`);
+    return uploadImage(buf, tenantKey(s3Prefix, `selfies/${employeeId}-${Date.now()}.jpg`));
   }
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
   const name = `${employeeId}-${Date.now()}.jpg`;
@@ -56,13 +55,14 @@ async function requireFaceMatch(
   faceTemplateId: string | null,
   selfie: Buffer | null,
   employeeId: string,
+  resources: ResourcePolicy,
 ): Promise<number | null> {
   if (!isFaceMatchEnabled()) return null;
   if (!faceTemplateId) {
     throw new AppError('Your face is not enrolled yet. Ask your admin to enroll it before you can mark attendance.', 403);
   }
   if (!selfie) throw new AppError('A selfie is required to mark attendance', 400);
-  const fm = await verifyFace(selfie, employeeId);
+  const fm = await verifyFace(selfie, employeeId, resources.rekognitionCollectionId, resources.faceMatchThreshold);
   if (!fm.matched) {
     throw new AppError(
       fm.matchedEmployeeId && fm.matchedEmployeeId !== employeeId
@@ -94,10 +94,10 @@ export interface OpenPunchDay {
  * within the lookback window. Days an admin already settled (absent / leave /
  * holiday) don't need a check-out and are ignored.
  */
-async function findOpenPunchRows(prisma: PrismaClient, employeeId: string) {
+async function findOpenPunchRows(prisma: PrismaClient, employeeId: string, lookbackDays: number) {
   const today = startOfToday();
   const from = new Date(today);
-  from.setDate(from.getDate() - OPEN_PUNCH_LOOKBACK_DAYS);
+  from.setDate(from.getDate() - lookbackDays);
   return prisma.attendance.findMany({
     where: {
       employeeId,
@@ -115,8 +115,9 @@ async function findOpenPunchRows(prisma: PrismaClient, employeeId: string) {
 export async function findOpenPunch(
   prisma: PrismaClient,
   employeeId: string,
+  lookbackDays: number = DEFAULT_ATTENDANCE.openPunchLookbackDays,
 ): Promise<OpenPunchDay | null> {
-  const rows = await findOpenPunchRows(prisma, employeeId);
+  const rows = await findOpenPunchRows(prisma, employeeId, lookbackDays);
   if (!rows.length) return null;
   const r = rows[0];
   return {
@@ -185,7 +186,8 @@ export async function markCheckIn(
   // otherwise it silently stays unpaid. The employee raises the missing
   // check-out as a manual punch; once it is in for approval this clears and
   // the check-in goes through (approval is not required to check in again).
-  const open = await findOpenPunch(prisma, employeeId);
+  const { attendance, resources } = await getTenantPolicy(prisma);
+  const open = await findOpenPunch(prisma, employeeId, attendance.openPunchLookbackDays);
   if (open) throw missingCheckOutError(open);
 
   // (0,0) means the phone had no GPS fix — reject with a human message instead
@@ -211,19 +213,20 @@ export async function markCheckIn(
 
   const now = new Date();
   // Half-day window (12:30–14:00) takes precedence over LATE — see attendance-policy.
-  const status = resolveAttendanceStatus({ checkIn: now, checkOut: null, shift: employee.shift });
+  const halfDayWindow = { start: attendance.halfDayWindowStart, end: attendance.halfDayWindowEnd };
+  const status = resolveAttendanceStatus({ checkIn: now, checkOut: null, shift: employee.shift }, halfDayWindow);
   const late = isLateArrival(now, employee.shift);
 
   // A late punch, or an out-of-zone (soft-mode) punch, is held for approval —
   // it isn't paid until the reporting manager / HR approves it.
-  const lateNeedsApproval = late && LATE_REQUIRES_APPROVAL;
+  const lateNeedsApproval = late && attendance.lateRequiresApproval;
   const approvalStatus = geo.status === 'OUTSIDE' || lateNeedsApproval ? 'PENDING' : null;
 
   // Identity gate before any side effects: enrolled face + selfie must match
   // the logged-in employee, or the check-in is rejected outright.
-  const faceMatchScore = await requireFaceMatch(employee.faceTemplateId, selfie, employeeId);
+  const faceMatchScore = await requireFaceMatch(employee.faceTemplateId, selfie, employeeId, resources);
 
-  const selfieUrl = selfie ? await saveSelfie(selfie, employeeId) : null;
+  const selfieUrl = selfie ? await saveSelfie(selfie, employeeId, resources.s3Prefix) : null;
 
   const geoFlagged = geo.status !== 'INSIDE';
   const flagged = geoFlagged || lateNeedsApproval;
@@ -315,7 +318,8 @@ export async function markCheckOut(
   if (!existing?.checkIn) throw new AppError('No check-in found for today', 409);
   if (existing.checkOut) throw new AppError('Already checked out today', 409);
 
-  await requireFaceMatch(employee?.faceTemplateId ?? null, selfie, employeeId);
+  const { resources } = await getTenantPolicy(prisma);
+  await requireFaceMatch(employee?.faceTemplateId ?? null, selfie, employeeId, resources);
 
   if (lat === 0 && lng === 0) {
     throw new AppError('Your phone did not send a location. Switch ON Location/GPS, wait a few seconds, and try again.', 400);
@@ -334,7 +338,7 @@ export async function markCheckOut(
 
   const now = new Date();
   const workingMinutes = Math.round((now.getTime() - existing.checkIn.getTime()) / 60_000);
-  const selfieUrl = selfie ? await saveSelfie(selfie, employeeId) : null;
+  const selfieUrl = selfie ? await saveSelfie(selfie, employeeId, resources.s3Prefix) : null;
 
   // Leaving inside the midday window turns the day into a half day — re-derive
   // the status now that both punch times are known.
@@ -424,7 +428,8 @@ export async function markManualPunch(
 
   const status = resolveAttendanceStatus({ checkIn, checkOut, shift: employee.shift });
   const workingMinutes = checkOut ? Math.round((checkOut.getTime() - checkIn.getTime()) / 60_000) : null;
-  const selfieUrl = input.selfie ? await saveSelfie(input.selfie, employeeId) : null;
+  const { resources } = await getTenantPolicy(prisma);
+  const selfieUrl = input.selfie ? await saveSelfie(input.selfie, employeeId, resources.s3Prefix) : null;
 
   const label = mode === 'SELFIE' ? 'Selfie punch' : 'Manual punch';
   const raisedNote = input.raisedByAdminId ? ' (raised by HR)' : '';

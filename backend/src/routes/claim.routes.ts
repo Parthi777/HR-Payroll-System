@@ -21,6 +21,7 @@ import { CLAIM_TYPES, claimTypeLabel } from '../services/claim/claim-types.js';
 import { formatDocNo } from '../services/claim/claim-number.js';
 import { getDriveFileStream } from '../services/storage/drive.service.js';
 import { getSignedSelfieUrl } from '../services/storage/storage.service.js';
+import { getCompanyProfile } from '../services/settings/tenant-settings.service.js';
 
 interface ParsedClaim {
   fields: Record<string, string>;
@@ -155,7 +156,7 @@ export async function claimRoutes(app: FastifyInstance) {
     const claim = await getClaim(app.prisma, id, req.user);
     // Same company source as the payroll reports, so every printed document
     // carries identical letterhead details.
-    const settings = await app.prisma.companySettings.findFirst();
+    const settings = await getCompanyProfile(app.prisma);
     const pdf = await generateClaimVoucherPdf({
       ...claim,
       company: settings ? { name: settings.name, address: settings.address } : null,

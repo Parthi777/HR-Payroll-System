@@ -10,13 +10,25 @@ export type JwtRole =
   | 'HR_MANAGER'
   | 'BRANCH_MANAGER'
   | 'PAYROLL_ADMIN'
-  | 'CASHIER';
+  | 'CASHIER'
+  /**
+   * Platform staff, above tenancy. Deliberately not accepted by any
+   * `requireRole(...)` call, so a platform token cannot reach a tenant's data
+   * through a tenant route — the platform API is its own surface.
+   */
+  | 'PLATFORM_ADMIN';
 
 export interface JwtPayload {
-  sub: string; // employeeId or adminId
+  sub: string; // employeeId, adminId, or platformUserId
   role: JwtRole;
-  /** The tenant this token was issued for. Required on every tenant token. */
-  tenantId: string;
+  /**
+   * The tenant this token was issued for. Present on every tenant token and
+   * absent on platform tokens — `authenticate()` rejects a tenant request
+   * without it, and `requirePlatform()` rejects a platform request with it.
+   */
+  tenantId?: string;
+  /** Which API surface the token is for. Absent is treated as TENANT. */
+  scope?: 'TENANT' | 'PLATFORM';
   branchId?: string;
   /**
    * Access and refresh tokens share one signing secret, so they are told apart
@@ -55,10 +67,15 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
   }
 
   const payload = request.user;
+  if (payload.scope === 'PLATFORM') {
+    // A platform token carries no tenant, so nothing here could be scoped by it.
+    throw AppError.forbidden('Platform sign-in cannot be used on tenant endpoints');
+  }
   if (!payload.tenantId) {
     // Pre-tenancy token. Nothing can be scoped from it, so it must not be honoured.
     throw AppError.unauthorized('Session is out of date — please sign in again');
   }
+  const tenantId = payload.tenantId;
 
   const prisma = request.server.prisma;
 
@@ -67,12 +84,12 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
   const slug = tenantSlugFromRequest(request);
   if (slug) {
     const named = await resolveTenant(prisma, slug);
-    if (named.id !== payload.tenantId) {
+    if (named.id !== tenantId) {
       throw AppError.unauthorized('This session belongs to a different workspace');
     }
   } else {
     const tenant = await prisma.tenant.findUnique({
-      where: { id: payload.tenantId },
+      where: { id: tenantId },
       select: { status: true, name: true },
     });
     if (!tenant) throw AppError.unauthorized('Workspace no longer exists');
@@ -83,7 +100,7 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
 
   enterContext({
     kind: 'TENANT',
-    tenantId: payload.tenantId,
+    tenantId,
     subjectId: payload.sub,
     role: payload.role,
     branchId: payload.branchId,
@@ -115,11 +132,44 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
   request.user = { ...payload, role, branchId };
   enterContext({
     kind: 'TENANT',
-    tenantId: payload.tenantId,
+    tenantId,
     subjectId: payload.sub,
     role,
     branchId,
   });
+}
+
+/**
+ * Guard for the platform API — the surface where dealers are onboarded.
+ *
+ * Deliberately a separate function from `authenticate()`, not a role inside it:
+ * platform staff are not members of any tenant, so there is no tenant context to
+ * establish and no tenant data they can reach by accident. The context is
+ * PLATFORM, which the Prisma extension lets through unscoped — which is exactly
+ * why nothing but this narrow route group may run under it.
+ */
+export async function requirePlatform(request: FastifyRequest, _reply: FastifyReply) {
+  try {
+    await request.jwtVerify();
+  } catch {
+    throw AppError.unauthorized('Missing or invalid token');
+  }
+
+  const payload = request.user;
+  if (payload.scope !== 'PLATFORM') {
+    throw AppError.forbidden('This endpoint requires a platform sign-in');
+  }
+
+  // The row is the authority here too: revoking a platform account takes effect
+  // on the next request rather than whenever the token expires.
+  const staff = await request.server.prisma.platformUser.findUnique({
+    where: { id: payload.sub },
+    select: { isActive: true },
+  });
+  if (!staff) throw AppError.unauthorized('Account no longer exists');
+  if (!staff.isActive) throw AppError.unauthorized('Account disabled');
+
+  enterContext({ kind: 'PLATFORM', subjectId: payload.sub });
 }
 
 /** Role-based access control. SUPER_ADMIN > HR_MANAGER > BRANCH_MANAGER > PAYROLL_ADMIN. */

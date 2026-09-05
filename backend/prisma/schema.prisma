@@ -465,19 +465,67 @@ model AuditLog {
   @@index([tenantId, adminId])
 }
 
-model CompanySettings {
-  id        String   @id @default(cuid())
+/// Everything that varies per dealer.
+///
+/// Was `CompanySettings`, a single row for the one company this system used to
+/// serve. It is now one row per tenant and carries what used to be
+/// process-wide environment variables — a dealer in another state needs its own
+/// timezone, its own pay day and its own half-day window, and none of that can
+/// be a deployment-level constant any more.
+///
+/// The external-resource names are stored explicitly rather than derived from
+/// the slug, so the first dealer keeps the collection and S3 keys it already
+/// has and nothing has to be moved or re-enrolled.
+///
+/// Mapped to the old table name: renaming the model is a rename in code only.
+model TenantSettings {
+  id       String @id @default(cuid())
   /// Owning tenant. Every query is filtered by this automatically — see
   /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
-  tenantId  String
-  name      String   @default("")
-  address   String   @default("")
-  phone     String   @default("")
-  email     String   @default("")
-  gstin     String   @default("")
+  tenantId String
+
+  // ── Company profile, printed on payslips and reports ──
+  name    String @default("")
+  address String @default("")
+  phone   String @default("")
+  email   String @default("")
+  gstin   String @default("")
+
+  // ── Attendance policy (was COMPANY_TZ, HALF_DAY_WINDOW_*, …) ──
+  timezone              String  @default("Asia/Kolkata")
+  employeeCodePrefix    String  @default("EMP")
+  halfDayWindowStart    String  @default("12:30")
+  halfDayWindowEnd      String  @default("14:00")
+  lateRequiresApproval  Boolean @default(true)
+  openPunchLookbackDays Int     @default(7)
+
+  // ── Payroll policy (was PAYROLL_*, and hardcoded constants) ──
+  monthDivisor            Int @default(30) // per-day salary = monthly / this
+  clPerYear               Int @default(12) // paid casual leave before it becomes LOP
+  otHoursPerDay           Int @default(10) // OT hours that add up to one day's pay
+  payrollLateShiftAt      Int @default(5) // late punches that push the pay date out
+  payrollLateWithholdOver Int @default(8) // late punches that withhold the slip
+  payrollPayDay           Int @default(5) // normal pay date, day of the next month
+  payrollPayDayLate       Int @default(8) // shifted pay date
+
+  // ── External resources, one set per dealer ──
+  faceMatchThreshold      Int     @default(85)
+  /// Rekognition collection. Per tenant so one dealer's enrolled faces can
+  /// never match another's — the collection is the isolation boundary here.
+  rekognitionCollectionId String?
+  /// Prefix for this tenant's S3 keys, e.g. "t/abc-motors/". Empty for the
+  /// original dealer, whose objects already live at the bucket root.
+  s3Prefix                String  @default("")
+  driveParentFolderId     String?
+  driveShareWith          String?
+  /// SHARED = the platform's WhatsApp number; OWN = this dealer's own account.
+  whatsappMode            String  @default("SHARED")
+  whatsappConfig          String? // JSON, only when whatsappMode is OWN
+
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId])
+  @@map("CompanySettings")
 }
 
 model Holiday {
@@ -516,4 +564,26 @@ model PlatformUser {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+/// Platform-level actions: a dealer onboarded, suspended, or issued credentials.
+///
+/// Separate from AuditLog, which is tenant-scoped and whose actor is an
+/// AdminUser. Here the actor is platform staff and the action often precedes
+/// the tenant existing, so it cannot be scoped to one. `targetTenantId` is the
+/// tenant acted upon — deliberately not named `tenantId`, because this model is
+/// global and must never be picked up as a tenant-owned row.
+model PlatformAuditLog {
+  id             String   @id @default(cuid())
+  platformUserId String
+  action         String // TENANT_CREATED | TENANT_SUSPENDED | TENANT_RESUMED | TENANT_ADMIN_CREATED
+  targetTenantId String?
+  targetId       String? // the row acted on, e.g. the AdminUser created
+  metadata       String? // JSON-encoded detail
+  ipAddress      String?
+  timestamp      DateTime @default(now())
+
+  @@index([platformUserId])
+  @@index([targetTenantId])
+  @@index([timestamp])
 }

@@ -16,7 +16,7 @@
  *   5. Approved leave is LV (paid) or LOP (unpaid).
  *   6. Anything else on a working day is Absent.
  */
-import { effectiveStatus, type ShiftClock } from './attendance-policy.js';
+import { effectiveStatus, type HalfDayWindow, type ShiftClock } from './attendance-policy.js';
 import { dayKey, endOfDay, minutesSinceMidnight, parseHHMM, startOfDay } from '../../utils/time.js';
 
 /**
@@ -52,6 +52,11 @@ export interface ClassifyInput {
   holidays: Set<string>;
   joiningDate?: Date | null;
   now?: Date;
+  /**
+   * The dealer's midday window. Must be the same one used when the punch was
+   * recorded, or a day would read HALF_DAY on one screen and PRESENT on another.
+   */
+  halfDayWindow?: HalfDayWindow;
 }
 
 export interface DayFacts {
@@ -82,9 +87,9 @@ const approved = (a: { approvalStatus: string | null }) =>
   a.approvalStatus == null || a.approvalStatus === 'APPROVED';
 
 export function classifyDay(input: ClassifyInput): DayFacts {
-  const { date, att, shift, holidays, leaves = [], joiningDate, now = new Date() } = input;
+  const { date, att, shift, holidays, leaves = [], joiningDate, now = new Date(), halfDayWindow } = input;
 
-  const status = att ? effectiveStatus(att, shift) : null;
+  const status = att ? effectiveStatus(att, shift, halfDayWindow) : null;
   const worked = !!att?.checkIn && approved(att) && DUTY.has(status ?? '');
   const pending = !!att?.checkIn && att.approvalStatus === 'PENDING';
 

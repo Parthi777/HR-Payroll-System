@@ -15,6 +15,7 @@ import {
   type TableExport,
 } from '../services/reports/report-export.service.js';
 import { COMPANY_TZ, dayKey } from '../utils/time.js';
+import { getCompanyProfile, getTenantPolicy } from '../services/settings/tenant-settings.service.js';
 
 const fmtTime = (d: Date | null) =>
   d ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: COMPANY_TZ }) : null;
@@ -132,10 +133,7 @@ async function respondTable(
 export async function reportsRoutes(app: FastifyInstance) {
   const guard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN');
 
-  const company = async () => {
-    const c = await app.prisma.companySettings.findFirst();
-    return { name: c?.name || process.env.COMPANY_NAME || 'AI HR Payroll', address: c?.address ?? '' };
-  };
+  const company = () => getCompanyProfile(app.prisma);
 
   // ── Daily attendance report ──
   app.get('/admin/reports/daily', { preHandler: guard }, async (req, reply) => {
@@ -170,12 +168,15 @@ export async function reportsRoutes(app: FastifyInstance) {
     ]);
     const byEmp = new Map(atts.map((a) => [a.employeeId, a]));
     const holidaySet = new Set(holidays.map((h) => dayKey(h.date)));
+    const { attendance } = await getTenantPolicy(app.prisma);
+    const halfDayWindow = { start: attendance.halfDayWindowStart, end: attendance.halfDayWindowEnd };
 
     // Sundays, holidays, approved leave and not-yet-joined staff are not
     // absences — the same classifier the muster grid and payroll use decides.
     const rows = employees.map((e) => {
       const a = byEmp.get(e.id);
       const day = classifyDay({
+        halfDayWindow,
         date: dayStart,
         att: a,
         shift: e.shift,

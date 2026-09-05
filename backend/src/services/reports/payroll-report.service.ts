@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { computeMonthlyPayroll, monthHolidaySet } from '../payroll/payroll-run.service.js';
+import { getCompanyProfile, getTenantPolicy } from '../settings/tenant-settings.service.js';
 
 /**
  * Monthly payroll report — one row per ACTIVE employee with the figures the
@@ -78,11 +79,13 @@ export async function buildPayrollReport(
   });
 
   const holidaySet = await monthHolidaySet(prisma, month, year);
-  const settings = await prisma.companySettings.findFirst();
+  const settings = await getCompanyProfile(prisma);
+  const { payroll: policy, attendance } = await getTenantPolicy(prisma);
+  const halfDayWindow = { start: attendance.halfDayWindowStart, end: attendance.halfDayWindowEnd };
 
   const rows: PayrollReportRow[] = [];
   for (const emp of employees) {
-    const r = await computeMonthlyPayroll(prisma, emp, month, year, holidaySet);
+    const r = await computeMonthlyPayroll(prisma, emp, month, year, holidaySet, policy, halfDayWindow);
     rows.push({
       employeeCode: emp.employeeCode,
       name: emp.name,

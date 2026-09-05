@@ -24,6 +24,18 @@ function s3(): S3Client {
   return _s3;
 }
 
+/**
+ * Namespace an object key to a tenant.
+ *
+ * Only new objects are prefixed. Reads always use the key recorded on the row,
+ * so the first dealer's existing objects keep resolving at the bucket root and
+ * nothing has to be copied — which is why the prefix is stored per tenant
+ * rather than derived from the slug.
+ */
+export function tenantKey(prefix: string, key: string): string {
+  return prefix ? `${prefix.replace(/\/?$/, '/')}${key}` : key;
+}
+
 /** Upload bytes to the bucket and return the stored object key. */
 export async function uploadImage(buffer: Buffer, key: string, contentType = 'image/jpeg'): Promise<string> {
   await s3().send(
