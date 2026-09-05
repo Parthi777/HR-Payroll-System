@@ -78,7 +78,7 @@ export async function buildPayrollReport(
   });
 
   const holidaySet = await monthHolidaySet(prisma, month, year);
-  const settings = await prisma.companySettings.findUnique({ where: { id: 'company' } });
+  const settings = await prisma.companySettings.findFirst();
 
   const rows: PayrollReportRow[] = [];
   for (const emp of employees) {

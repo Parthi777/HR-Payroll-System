@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { requireTenantId } from '../context/tenant-context.js';
 
 const shiftSchema = z.object({
   name: z.string(),
@@ -20,7 +21,7 @@ export async function shiftRoutes(app: FastifyInstance) {
 
   app.post('/admin/shifts', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
     const data = shiftSchema.parse(req.body);
-    const shift = await app.prisma.shift.create({ data });
+    const shift = await app.prisma.shift.create({ data: { ...data, tenantId: requireTenantId() } });
     return { shift };
   });
 

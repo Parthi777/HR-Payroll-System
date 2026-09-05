@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { promises as fs } from 'fs';
+import { randomBytes } from 'crypto';
 import path from 'path';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
@@ -9,6 +10,7 @@ import { enrollFace, removeFace, verifyFace, isFaceMatchEnabled } from '../servi
 import { env } from '../config/env.js';
 import { isS3Enabled, uploadImage } from '../services/storage/storage.service.js';
 import { normalizePhone } from '../utils/phone.js';
+import { requireTenantId } from '../context/tenant-context.js';
 
 // Employee code series prefix (e.g. DHARANI001). Override with EMPLOYEE_CODE_PREFIX.
 const CODE_PREFIX = process.env.EMPLOYEE_CODE_PREFIX ?? 'DHARANI';
@@ -74,7 +76,10 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-const randomPassword = () => Math.random().toString(36).slice(2, 8);
+// Real login credentials — must not come from Math.random(), whose state is
+// recoverable from a handful of observed outputs (one bulk-imported employee
+// could derive their colleagues'). 6 bytes → 8 base64url chars, ~48 bits.
+const randomPassword = () => randomBytes(6).toString('base64url');
 
 export async function employeeRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'));
@@ -107,7 +112,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     rest.employeeCode = employeeCode;
 
     // Friendly duplicate checks — show the existing ID series and next free number.
-    const codeDup = await app.prisma.employee.findUnique({ where: { employeeCode: rest.employeeCode } });
+    const codeDup = await app.prisma.employee.findFirst({ where: { employeeCode: rest.employeeCode } });
     if (codeDup) {
       const prefix = employeeCode.replace(/\d+$/, '') || employeeCode;
       const series = await app.prisma.employee.findMany({
@@ -124,12 +129,12 @@ export async function employeeRoutes(app: FastifyInstance) {
         409,
       );
     }
-    const phoneDup = await app.prisma.employee.findUnique({ where: { phone: rest.phone } });
+    const phoneDup = await app.prisma.employee.findFirst({ where: { phone: rest.phone } });
     if (phoneDup) {
       throw new AppError(`Phone ${rest.phone} is already registered to ${phoneDup.name} (${phoneDup.employeeCode})`, 409);
     }
 
-    const data = { ...rest, employeeCode, ...(password ? { passwordHash: await bcrypt.hash(password, 10), passwordPlain: password } : {}) };
+    const data = { ...rest, employeeCode, tenantId: requireTenantId(), ...(password ? { passwordHash: await bcrypt.hash(password, 10), passwordPlain: password } : {}) };
     const employee = await app.prisma.employee.create({ data });
     return { employee: safeEmployee(employee) };
   });
@@ -192,12 +197,13 @@ export async function employeeRoutes(app: FastifyInstance) {
         const desig = byName(desigs, iDesig >= 0 ? cells[iDesig] : undefined) ?? desigs[0];
         const shift = byName(shifts, iShift >= 0 ? cells[iShift] : undefined) ?? shifts[0];
         if (!branch || !dept || !desig || !shift) throw new Error('create a branch/department/designation/shift first');
-        if (await app.prisma.employee.findUnique({ where: { phone } })) throw new Error(`phone ${phone} already exists`);
+        if (await app.prisma.employee.findFirst({ where: { phone } })) throw new Error(`phone ${phone} already exists`);
 
         const password = (iPwd >= 0 && cells[iPwd]?.trim()) || randomPassword();
         const employeeCode = await nextEmployeeCode(app.prisma);
         await app.prisma.employee.create({
           data: {
+            tenantId: requireTenantId(),
             employeeCode, name, phone,
             email: iEmail >= 0 ? cells[iEmail]?.trim() || null : null,
             branchId: branch.id, departmentId: dept.id, designationId: desig.id, shiftId: shift.id,

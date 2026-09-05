@@ -119,7 +119,7 @@ export async function buildMusterReport(
       where: { employeeId: { in: empIds }, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
     }),
     monthHolidaySet(prisma, month, year),
-    prisma.companySettings.findUnique({ where: { id: 'company' } }),
+    prisma.companySettings.findFirst(),
   ]);
 
   const attByEmpDay = new Map<string, (typeof atts)[number]>();

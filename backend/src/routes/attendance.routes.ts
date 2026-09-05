@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { assertManages, authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import {
   markCheckIn,
@@ -149,6 +149,9 @@ export async function attendanceRoutes(app: FastifyInstance) {
     async (req) => {
       const { fields, selfie, employeeId } = await parseManualPunch(req);
       if (!employeeId) throw new AppError('Select an employee', 400);
+      // employeeId comes straight from the request body — check the caller is
+      // allowed to raise a punch for that person before creating one.
+      await assertManages(app.prisma, req.user, employeeId);
       return markManualPunch(app.prisma, {
         employeeId,
         mode: fields.mode,
@@ -514,12 +517,12 @@ export async function attendanceRoutes(app: FastifyInstance) {
 
   app.patch('/admin/attendance/:id/approve', { preHandler: approvalGuard }, async (req) => {
     const { id } = req.params as { id: string };
-    return { attendance: await decideAttendanceApproval(app.prisma, req.user.sub, id, true) };
+    return { attendance: await decideAttendanceApproval(app.prisma, req.user, id, true) };
   });
 
   app.patch('/admin/attendance/:id/reject', { preHandler: approvalGuard }, async (req) => {
     const { id } = req.params as { id: string };
-    return { attendance: await decideAttendanceApproval(app.prisma, req.user.sub, id, false) };
+    return { attendance: await decideAttendanceApproval(app.prisma, req.user, id, false) };
   });
 
   // Check-in selfie (S3 signed redirect or local file) so HR can verify before approving.

@@ -13,6 +13,7 @@ import { isS3Enabled, uploadImage } from '../storage/storage.service.js';
 import { dispatchWhatsApp } from '../whatsapp/whatsapp.service.js';
 import { withNextNumber, formatDocNo } from './claim-number.js';
 import { claimTypeLabel, isValidClaimType } from './claim-types.js';
+import { requireTenantId } from '../../context/tenant-context.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads', 'claims');
 
@@ -91,6 +92,7 @@ export async function createClaim(
   return withNextNumber(prisma, 'claimNo', (claimNo) =>
     prisma.claim.create({
       data: {
+        tenantId: requireTenantId(),
         claimNo,
         employeeId,
         type: input.type,
@@ -142,6 +144,7 @@ export async function resubmitClaim(
   if (replyText) {
     await prisma.claimMessage.create({
       data: {
+        tenantId: requireTenantId(),
         claimId,
         senderRole: 'EMPLOYEE',
         senderId: employeeId,
@@ -172,6 +175,7 @@ export async function replyToClaim(
 
   await prisma.claimMessage.create({
     data: {
+      tenantId: requireTenantId(),
       claimId,
       senderRole: 'EMPLOYEE',
       senderId: employeeId,
@@ -289,6 +293,7 @@ export async function actOnClaim(
   if (note?.trim()) {
     await prisma.claimMessage.create({
       data: {
+        tenantId: requireTenantId(),
         claimId,
         senderRole: 'ADMIN',
         senderId: adminId,

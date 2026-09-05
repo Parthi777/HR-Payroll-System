@@ -17,9 +17,14 @@ export async function employeeLogin(prisma: PrismaClient, phone: string, passwor
   return employee;
 }
 
-/** Authenticate an admin by email + password. Throws on invalid credentials. */
+/**
+ * Authenticate an admin by email + password. Throws on invalid credentials.
+ *
+ * findFirst rather than findUnique: email is unique *per tenant* now, and the
+ * caller runs this inside the tenant's context, so the lookup is already scoped.
+ */
 export async function adminLogin(prisma: PrismaClient, email: string, password: string) {
-  const admin = await prisma.adminUser.findUnique({ where: { email } });
+  const admin = await prisma.adminUser.findFirst({ where: { email } });
   // Same generic error whether the email or password is wrong (avoid user enumeration).
   if (!admin || !admin.isActive) throw AppError.unauthorized('Invalid email or password');
   const ok = await bcrypt.compare(password, admin.passwordHash);

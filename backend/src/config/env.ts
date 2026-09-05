@@ -14,6 +14,11 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
 
+  // Multi-tenant: tenants are addressed by subdomain (acme.yourapp.com → "acme").
+  // Set this to the apex the web app is served from; unset means subdomain
+  // resolution is off and clients must send X-Tenant-Slug (dev, and Android).
+  APP_BASE_DOMAIN: z.string().optional(),
+
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),

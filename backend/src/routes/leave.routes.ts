@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { assertManages, authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { pushToEmployee } from '../services/push.service.js';
 import { dispatchWhatsApp, waTemplates } from '../services/whatsapp/whatsapp.service.js';
+import { requireTenantId } from '../context/tenant-context.js';
 
 const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
@@ -19,7 +20,7 @@ const applyLeaveSchema = z.object({
 export async function leaveRoutes(app: FastifyInstance) {
   app.post('/leaves/apply', { preHandler: authenticate }, async (req) => {
     const data = applyLeaveSchema.parse(req.body);
-    const leave = await app.prisma.leave.create({ data: { ...data, employeeId: req.user.sub } });
+    const leave = await app.prisma.leave.create({ data: { ...data, employeeId: req.user.sub, tenantId: requireTenantId() } });
     return { leave };
   });
 
@@ -53,6 +54,7 @@ export async function leaveRoutes(app: FastifyInstance) {
     const { note } = z.object({ note: z.string().optional() }).parse(req.body ?? {});
     const pending = await app.prisma.leave.findUnique({ where: { id } });
     if (!pending) throw AppError.notFound('Leave request');
+    await assertManages(app.prisma, req.user, pending.employeeId);
     if (pending.status !== 'PENDING') throw new AppError('This leave request was already decided', 409);
     const leave = await app.prisma.leave.update({
       where: { id },
@@ -103,7 +105,7 @@ export async function leaveRoutes(app: FastifyInstance) {
     const balance = await app.prisma.leaveBalance.upsert({
       where: { employeeId_type_year: { employeeId, type: 'CL', year } },
       update: { total },
-      create: { employeeId, type: 'CL', year, total, used: 0 },
+      create: { employeeId, type: 'CL', year, total, used: 0, tenantId: requireTenantId() },
     });
     return { balance };
   });
@@ -113,6 +115,7 @@ export async function leaveRoutes(app: FastifyInstance) {
     const { note } = z.object({ note: z.string() }).parse(req.body);
     const pending = await app.prisma.leave.findUnique({ where: { id } });
     if (!pending) throw AppError.notFound('Leave request');
+    await assertManages(app.prisma, req.user, pending.employeeId);
     if (pending.status !== 'PENDING') throw new AppError('This leave request was already decided', 409);
     const leave = await app.prisma.leave.update({
       where: { id },

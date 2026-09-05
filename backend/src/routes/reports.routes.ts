@@ -133,7 +133,7 @@ export async function reportsRoutes(app: FastifyInstance) {
   const guard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN');
 
   const company = async () => {
-    const c = await app.prisma.companySettings.findUnique({ where: { id: 'company' } });
+    const c = await app.prisma.companySettings.findFirst();
     return { name: c?.name || process.env.COMPANY_NAME || 'AI HR Payroll', address: c?.address ?? '' };
   };
 

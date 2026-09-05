@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { pushToAdmins } from './push.service.js';
+import { requireTenantId } from '../context/tenant-context.js';
 
 /**
  * In-app notifications for the claims workflow, branch-aware:
@@ -17,7 +18,7 @@ export interface NotifyPayload {
 /** Create the same notification for every recipient (no-op for empty list). */
 export async function notifyAdmins(prisma: PrismaClient, adminIds: string[], n: NotifyPayload): Promise<void> {
   if (adminIds.length === 0) return;
-  await prisma.notification.createMany({ data: adminIds.map((adminId) => ({ adminId, ...n })) });
+  await prisma.notification.createMany({ data: adminIds.map((adminId) => ({ adminId, ...n, tenantId: requireTenantId() })) });
   // Real device push too (no-op until Firebase env vars are configured).
   await pushToAdmins(prisma, adminIds, n.title, n.body);
 }

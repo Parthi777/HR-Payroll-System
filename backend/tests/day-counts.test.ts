@@ -68,7 +68,9 @@ const fakePrisma = (opts: { atts?: AttStub[]; leaves?: unknown[]; holidays?: Dat
     attendance: { findMany: async () => opts.atts ?? [] },
     leave: { findMany: async () => opts.leaves ?? [] },
     holiday: { findMany: async () => (opts.holidays ?? []).map((d) => ({ date: d })) },
-    companySettings: { findUnique: async () => null },
+    // findFirst, not findUnique: settings are one row per tenant now, found by
+    // the tenant filter rather than by the old literal id "company".
+    companySettings: { findFirst: async () => null },
   }) as unknown as PrismaClient;
 
 describe('classifyDay', () => {

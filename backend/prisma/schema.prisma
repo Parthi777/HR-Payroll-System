@@ -16,6 +16,7 @@
 //   PayslipStatus   : DRAFT | FINALIZED | WITHHELD | SENT | PAID
 //   WAStatus        : QUEUED | SENT | DELIVERED | READ | FAILED
 //   AdminRole       : SUPER_ADMIN | HR_MANAGER | BRANCH_MANAGER | PAYROLL_ADMIN | CASHIER
+//   TenantStatus    : ACTIVE | SUSPENDED
 
 generator client {
   provider = "prisma-client-js"
@@ -31,28 +32,31 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 
 model Employee {
-  id              String  @id @default(cuid())
-  employeeCode    String  @unique
-  name            String
-  phone           String  @unique
-  email           String?
-  branchId        String
-  departmentId    String
-  designationId   String
-  shiftId         String
-  faceTemplateUrl String? // Stored face enrollment image
-  faceTemplateId  String? // Rekognition face ID
-  deviceId        String? // Device fingerprint binding
-  driveFolderId   String? // Google Drive folder id holding this employee's claim files
-  passwordHash    String? // bcrypt; set by admin at creation — employee logs in with phone + password
+  id                 String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId           String
+  employeeCode       String
+  name               String
+  phone              String
+  email              String?
+  branchId           String
+  departmentId       String
+  designationId      String
+  shiftId            String
+  faceTemplateUrl    String? // Stored face enrollment image
+  faceTemplateId     String? // Rekognition face ID
+  deviceId           String? // Device fingerprint binding
+  driveFolderId      String? // Google Drive folder id holding this employee's claim files
+  passwordHash       String? // bcrypt; set by admin at creation — employee logs in with phone + password
   reportingManagerId String? // AdminUser id — approvals (leave / outside check-in) route to this manager
-  pfEnabled       Boolean @default(false) // PF deduction applies to this employee
-  esiEnabled      Boolean @default(false) // ESI deduction applies to this employee
-  passwordPlain   String? // app login password kept in clear for the admin credentials export (owner requirement)
-  fcmToken        String? // FCM device token for push notifications
-  status          String  @default("ACTIVE") // EmployeeStatus
-  joiningDate     DateTime
-  salary          Float
+  pfEnabled          Boolean  @default(false) // PF deduction applies to this employee
+  esiEnabled         Boolean  @default(false) // ESI deduction applies to this employee
+  passwordPlain      String? // app login password kept in clear for the admin credentials export (owner requirement)
+  fcmToken           String? // FCM device token for push notifications
+  status             String   @default("ACTIVE") // EmployeeStatus
+  joiningDate        DateTime
+  salary             Float
 
   branch        Branch         @relation(fields: [branchId], references: [id])
   department    Department     @relation(fields: [departmentId], references: [id])
@@ -67,13 +71,19 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([branchId])
-  @@index([departmentId])
-  @@index([shiftId])
+  @@unique([tenantId, employeeCode])
+  @@unique([tenantId, phone])
+  @@index([tenantId, branchId])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, shiftId])
+  @@index([tenantId, status])
 }
 
 model Attendance {
   id             String    @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId       String
   employeeId     String
   date           DateTime
   checkIn        DateTime?
@@ -99,7 +109,7 @@ model Attendance {
   // How the punch was made: GEO (normal selfie + geofence), MANUAL (typed times,
   // no selfie) or SELFIE (selfie only — geofence/face/shift checks skipped).
   // MANUAL/SELFIE punches always start as PENDING and pay only once approved.
-  punchMode      String  @default("GEO")
+  punchMode      String    @default("GEO")
   punchReason    String? // employee's justification for a manual / selfie punch
   raisedBy       String? // admin id when HR raised the punch on the employee's behalf
 
@@ -110,11 +120,15 @@ model Attendance {
   updatedAt DateTime @updatedAt
 
   @@unique([employeeId, date])
-  @@index([date])
+  @@index([tenantId, date])
+  @@index([tenantId, approvalStatus])
 }
 
 model GPSLog {
   id           String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId     String
   attendanceId String
   lat          Float
   lng          Float
@@ -123,11 +137,14 @@ model GPSLog {
 
   attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
 
-  @@index([attendanceId])
+  @@index([tenantId, attendanceId])
 }
 
 model Branch {
   id              String  @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId        String
   name            String
   address         String
   geofenceLat     Float
@@ -141,39 +158,61 @@ model Branch {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model Department {
   id        String     @id @default(cuid())
-  name      String     @unique
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId  String
+  name      String
   employees Employee[]
   createdAt DateTime   @default(now())
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model Designation {
   id        String     @id @default(cuid())
-  name      String     @unique
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId  String
+  name      String
   employees Employee[]
   createdAt DateTime   @default(now())
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model Shift {
-  id           String  @id @default(cuid())
-  name         String // "Morning Shift"
-  startTime    String // "09:00"
-  endTime      String // "18:00"
-  gracePeriod  Int     @default(15) // minutes — late tolerance after start time
-  otAfterMinutes Int  @default(0) // OT counts for duty time past (shift end + this many minutes)
-  isNightShift Boolean @default(false)
+  id             String  @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId       String
+  name           String // "Morning Shift"
+  startTime      String // "09:00"
+  endTime        String // "18:00"
+  gracePeriod    Int     @default(15) // minutes — late tolerance after start time
+  otAfterMinutes Int     @default(0) // OT counts for duty time past (shift end + this many minutes)
+  isNightShift   Boolean @default(false)
 
   employees Employee[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model Leave {
   id           String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId     String
   employeeId   String
   type         String // LeaveType
   fromDate     DateTime
@@ -190,19 +229,22 @@ model Leave {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([employeeId])
-  @@index([status])
+  @@index([tenantId, status])
+  @@index([tenantId, employeeId])
 }
 
 model Claim {
-  id             String  @id @default(cuid())
+  id             String    @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId       String
   // Human-facing running numbers, both printed on the voucher and both starting
   // at 1 (rendered zero-padded: 001, 002 …). They are separate sequences:
   //   claimNo   — allocated the moment the claim is received (every claim gets one)
   //   voucherNo — allocated only when the claim is APPROVED, so voucher numbers
   //               form an unbroken series across approved claims alone.
-  claimNo        Int?    @unique
-  voucherNo      Int?    @unique
+  claimNo        Int?
+  voucherNo      Int?
   employeeId     String
   type           String // ClaimType — see services/claim/claim-types.ts
   title          String
@@ -212,7 +254,7 @@ model Claim {
   documentFileId String? // Google Drive file id (PDF)
   photoUrl       String? // fallback (S3/local) when Drive isn't configured
   documentUrl    String?
-  status         String  @default("PENDING") // ClaimStatus
+  status         String    @default("PENDING") // ClaimStatus
   reviewedBy     String? // admin id who acted
   reviewedAt     DateTime? // when the approve/reject decision was made
   reviewerNote   String? // admin note: rejection reason OR clarification question
@@ -227,13 +269,18 @@ model Claim {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([employeeId])
-  @@index([status])
+  @@unique([tenantId, claimNo])
+  @@unique([tenantId, voucherNo])
+  @@index([tenantId, status])
+  @@index([tenantId, employeeId])
 }
 
 // Clarification conversation on a claim: approver questions + employee replies.
 model ClaimMessage {
   id         String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId   String
   claimId    String
   senderRole String // "ADMIN" | "EMPLOYEE"
   senderId   String // adminId or employeeId
@@ -243,11 +290,14 @@ model ClaimMessage {
 
   claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
 
-  @@index([claimId])
+  @@index([tenantId, claimId])
 }
 
 model LeaveBalance {
   id         String @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId   String
   employeeId String
   type       String // LeaveType
   year       Int
@@ -257,10 +307,14 @@ model LeaveBalance {
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@unique([employeeId, type, year])
+  @@index([tenantId, year])
 }
 
 model Payslip {
-  id              String @id @default(cuid())
+  id              String    @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId        String
   employeeId      String
   month           Int
   year            Int
@@ -268,20 +322,20 @@ model Payslip {
   // (2 absents + 1 half day reads as 2.5 absent).
   presentDays     Float
   absentDays      Float
-  halfDays        Float  @default(0)
+  halfDays        Float     @default(0)
   lopDays         Float
   // Casual-leave days consumed this month and the money withheld for the
   // days that were not paid (absent + LOP), both shown on the payroll report.
-  clDays          Float  @default(0)
-  leaveDeduction  Float  @default(0)
-  perDaySalary    Float  @default(0)
-  daysInMonth     Int    @default(30)
+  clDays          Float     @default(0)
+  leaveDeduction  Float     @default(0)
+  perDaySalary    Float     @default(0)
+  daysInMonth     Int       @default(30)
   // OT & Sunday-duty metrics (owner policy: >10h/day accrues OT; 10 OT hours = 1 day's pay)
-  otHours         Float  @default(0)
-  otDays          Float  @default(0)
-  otPay           Float  @default(0)
-  sundayDays      Int    @default(0)
-  sundayPay       Float  @default(0)
+  otHours         Float     @default(0)
+  otDays          Float     @default(0)
+  otPay           Float     @default(0)
+  sundayDays      Int       @default(0)
+  sundayPay       Float     @default(0)
   // Late-punch discipline: count of LATE days; pay date shifts / slip withheld per policy
   lateDays        Int       @default(0)
   payDate         DateTime?
@@ -297,7 +351,7 @@ model Payslip {
   otherDeductions Float
   netSalary       Float
   pdfUrl          String?
-  status          String  @default("DRAFT") // PayslipStatus
+  status          String    @default("DRAFT") // PayslipStatus
 
   employee Employee @relation(fields: [employeeId], references: [id])
 
@@ -305,11 +359,15 @@ model Payslip {
   updatedAt DateTime @updatedAt
 
   @@unique([employeeId, month, year])
+  @@index([tenantId, year, month])
 }
 
 // In-app notifications for admins/cashiers (claims workflow, branch-scoped).
 model Notification {
   id        String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId  String
   adminId   String // recipient AdminUser
   type      String // CLAIM_SUBMITTED | CLAIM_APPROVED
   title     String
@@ -318,11 +376,14 @@ model Notification {
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  @@index([adminId, isRead])
+  @@index([tenantId, adminId, isRead])
 }
 
 model WhatsAppLog {
   id           String    @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId     String
   employeeId   String?
   phone        String
   templateName String
@@ -336,12 +397,15 @@ model WhatsAppLog {
 
   createdAt DateTime @default(now())
 
-  @@index([phone])
-  @@index([status])
+  @@index([tenantId, status])
+  @@index([tenantId, phone])
 }
 
 model GeofenceViolation {
   id         String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId   String
   employeeId String
   branchId   String
   lat        Float
@@ -351,8 +415,9 @@ model GeofenceViolation {
 
   branch Branch @relation(fields: [branchId], references: [id])
 
-  @@index([employeeId])
-  @@index([branchId])
+  @@index([tenantId, timestamp])
+  @@index([tenantId, employeeId])
+  @@index([tenantId, branchId])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -360,8 +425,11 @@ model GeofenceViolation {
 // ─────────────────────────────────────────────────────────────
 model AdminUser {
   id           String  @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId     String
   name         String
-  email        String  @unique
+  email        String
   passwordHash String
   role         String  @default("HR_MANAGER") // AdminRole
   branchId     String? // null = all branches (for super admin)
@@ -372,10 +440,16 @@ model AdminUser {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   fcmToken  String? // FCM device token for push notifications
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
 }
 
 model AuditLog {
   id        String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId  String
   adminId   String
   action    String
   entity    String
@@ -386,24 +460,60 @@ model AuditLog {
 
   admin AdminUser @relation(fields: [adminId], references: [id])
 
-  @@index([adminId])
-  @@index([entity])
+  @@index([tenantId, timestamp])
+  @@index([tenantId, entity])
+  @@index([tenantId, adminId])
 }
 
 model CompanySettings {
-  id        String   @id @default("company")
+  id        String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId  String
   name      String   @default("")
   address   String   @default("")
   phone     String   @default("")
   email     String   @default("")
   gstin     String   @default("")
   updatedAt DateTime @updatedAt
+
+  @@unique([tenantId])
 }
 
 model Holiday {
-  id   String   @id @default(cuid())
-  name String
-  date DateTime
+  id       String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this via the Prisma extension
+  /// in plugins/prisma.ts — see context/tenant-scope.ts for the rule.
+  tenantId String
+  name     String
+  date     DateTime
 
-  @@unique([date])
+  @@unique([tenantId, date])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Platform layer — above tenancy. Never carries a tenantId, and the
+// tenant-scoping Prisma extension treats both as global models.
+// ─────────────────────────────────────────────────────────────
+
+/// A customer company. `slug` is the subdomain label: "acme" → acme.yourapp.com.
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  status    String   @default("ACTIVE") // TenantStatus
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Platform super admin. Separate from AdminUser: platform staff are not
+/// members of any tenant, and AdminUser is itself tenant-scoped.
+model PlatformUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

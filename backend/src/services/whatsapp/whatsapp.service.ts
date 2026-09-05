@@ -7,6 +7,7 @@
  * Sent synchronously for now — TODO: move to a BullMQ queue once Redis is available.
  */
 import type { PrismaClient } from '@prisma/client';
+import { requireTenantId } from '../../context/tenant-context.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 
@@ -98,6 +99,7 @@ function provider(): Provider {
 export async function dispatchWhatsApp(prisma: PrismaClient, input: DispatchInput): Promise<void> {
   const log = await prisma.whatsAppLog.create({
     data: {
+      tenantId: requireTenantId(),
       phone: input.phone,
       employeeId: input.employeeId ?? null,
       templateName: input.templateName ?? input.trigger,

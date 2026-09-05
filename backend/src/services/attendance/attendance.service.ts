@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { AppError } from '../../utils/AppError.js';
+import { assertManages, type JwtPayload } from '../../middleware/auth.js';
 import { checkGeofence } from '../geofence/geofence.service.js';
 import { verifyFace, isFaceMatchEnabled } from '../ai/face.service.js';
 import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
@@ -10,6 +11,7 @@ import { notifyAdmins, approverIds } from '../notification.service.js';
 import { pushToEmployee } from '../push.service.js';
 import { resolveAttendanceStatus, isLateArrival } from './attendance-policy.js';
 import { atCompanyTime, startOfDay } from '../../utils/time.js';
+import { requireTenantId } from '../../context/tenant-context.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 
@@ -233,7 +235,7 @@ export async function markCheckIn(
   // Log a geofence violation row when the check-in is outside/borderline the zone.
   if (geoFlagged) {
     await prisma.geofenceViolation.create({
-      data: { employeeId, branchId: employee.branchId, lat, lng, distance: geo.distance },
+      data: { employeeId, branchId: employee.branchId, lat, lng, distance: geo.distance, tenantId: requireTenantId() },
     });
   }
 
@@ -245,6 +247,7 @@ export async function markCheckIn(
       isFlagged: flagged, flagReason, approvalStatus,
     },
     create: {
+      tenantId: requireTenantId(),
       employeeId, date: today, checkIn: now, checkInLat: lat, checkInLng: lng, checkInSelfie: selfieUrl,
       geofenceStatus: geo.status, status, faceMatchScore,
       isFlagged: flagged, flagReason, approvalStatus,
@@ -447,7 +450,7 @@ export async function markManualPunch(
   const record = await prisma.attendance.upsert({
     where: { employeeId_date: { employeeId, date: day } },
     update: data,
-    create: { employeeId, date: day, geofenceStatus: 'OUTSIDE', ...data },
+    create: { employeeId, date: day, geofenceStatus: 'OUTSIDE', tenantId: requireTenantId(), ...data },
   });
 
   await notifyAdmins(prisma, await approverIds(prisma, employee), {
@@ -459,15 +462,23 @@ export async function markManualPunch(
   return toResult(record, record.geofenceStatus, 0, true, flagReason, 'PENDING');
 }
 
-/** HR/admin decision on an out-of-geofence check-in. Reject marks the day absent. */
+/**
+ * HR/admin decision on an out-of-geofence check-in. Reject marks the day absent.
+ *
+ * Takes the whole caller payload, not just an id: approving a punch pays the day,
+ * so the decision is scoped the same way the approvals *listing* is — a branch
+ * manager can only decide for their own reports.
+ */
 export async function decideAttendanceApproval(
   prisma: PrismaClient,
-  adminId: string,
+  admin: JwtPayload,
   attendanceId: string,
   approve: boolean,
 ) {
+  const adminId = admin.sub;
   const att = await prisma.attendance.findUnique({ where: { id: attendanceId } });
   if (!att) throw AppError.notFound('Attendance record');
+  await assertManages(prisma, admin, att.employeeId);
   if (att.approvalStatus !== 'PENDING') {
     throw new AppError('This attendance is not awaiting approval', 409);
   }

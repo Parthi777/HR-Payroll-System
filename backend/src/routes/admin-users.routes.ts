@@ -3,6 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { requireTenantId } from '../context/tenant-context.js';
 
 const ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER'] as const;
 
@@ -38,7 +39,7 @@ export async function adminUsersRoutes(app: FastifyInstance) {
   app.post('/admin/users', async (req) => {
     const { password, ...rest } = createSchema.parse(req.body);
     const passwordHash = await bcrypt.hash(password, 12);
-    const admin = await app.prisma.adminUser.create({ data: { ...rest, passwordHash }, select: safeSelect });
+    const admin = await app.prisma.adminUser.create({ data: { ...rest, passwordHash, tenantId: requireTenantId() }, select: safeSelect });
     return { admin };
   });
 

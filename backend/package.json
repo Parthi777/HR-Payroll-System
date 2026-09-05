@@ -1,7 +1,7 @@
 {
   "name": "ai-hr-payroll-backend",
   "version": "0.1.0",
-  "description": "AI HR Payroll System — API Server (Fastify + Prisma + PostgreSQL)",
+  "description": "AI HR Payroll System \u2014 API Server (Fastify + Prisma + PostgreSQL)",
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
@@ -15,7 +15,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:isolation": "tsx scripts/run-isolation-tests.ts"
   },
   "dependencies": {
     "@aws-sdk/client-rekognition": "^3.1059.0",

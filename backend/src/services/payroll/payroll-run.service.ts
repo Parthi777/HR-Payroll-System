@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { calculatePF, calculateESI } from './payroll.service.js';
 import { classifyDay, overtimeMinutes } from '../attendance/day-classify.js';
 import { dayKey } from '../../utils/time.js';
+import { requireTenantId } from '../../context/tenant-context.js';
 
 /**
  * Payroll rules (owner-specified):
@@ -333,7 +334,7 @@ export async function runMonthlyPayroll(
     await prisma.payslip.upsert({
       where: { employeeId_month_year: { employeeId: emp.id, month, year } },
       update: fields,
-      create: { employeeId: emp.id, month, year, ...fields },
+      create: { employeeId: emp.id, month, year, ...fields, tenantId: requireTenantId() },
     });
 
     totalNet += r.netSalary;

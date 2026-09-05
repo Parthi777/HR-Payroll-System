@@ -1,13 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import { amountInWords } from '../src/services/claim/claim-voucher-pdf.service.js';
 import { formatDocNo, withNextNumber } from '../src/services/claim/claim-number.js';
+import { enterContext } from '../src/context/tenant-context.js';
 import {
   CLAIM_TYPES,
   claimTypeLabel,
   isValidClaimType,
   LEGACY_CLAIM_TYPE_MAP,
 } from '../src/services/claim/claim-types.js';
+
+// Services stamp the owning tenant on every row they create, so they need a
+// tenant context — in production `authenticate()` establishes one before any
+// handler runs. Entering one here mirrors that; the guard itself stays live and
+// tenancy-extension.test.ts still asserts that a *missing* context throws.
+beforeEach(() => {
+  enterContext({ kind: 'TENANT', tenantId: 'test-tenant', subjectId: 'test-subject', role: 'SUPER_ADMIN' });
+});
 
 describe('claim types', () => {
   it('carries the owner’s 20 expense heads', () => {

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { requireTenantId } from '../context/tenant-context.js';
 
 const branchSchema = z.object({
   name: z.string().min(1),
@@ -26,16 +27,16 @@ export async function masterRoutes(app: FastifyInstance) {
 
   // Company profile — shown on salary slips / register. Singleton row id="company".
   app.get('/admin/company', async () => {
-    const company = await app.prisma.companySettings.findUnique({ where: { id: 'company' } });
-    return { company: company ?? { id: 'company', name: '', address: '', phone: '', email: '', gstin: '' } };
+    const company = await app.prisma.companySettings.findFirst();
+    return { company: company ?? { name: '', address: '', phone: '', email: '', gstin: '' } };
   });
 
   app.put('/admin/company', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
     const data = companySchema.parse(req.body);
     const company = await app.prisma.companySettings.upsert({
-      where: { id: 'company' },
+      where: { tenantId: requireTenantId() },
       update: data,
-      create: { id: 'company', ...data },
+      create: { ...data, tenantId: requireTenantId() },
     });
     return { company };
   });
@@ -46,7 +47,7 @@ export async function masterRoutes(app: FastifyInstance) {
   }));
   app.post('/admin/branches', async (req) => {
     const data = branchSchema.parse(req.body);
-    return { branch: await app.prisma.branch.create({ data }) };
+    return { branch: await app.prisma.branch.create({ data: { ...data, tenantId: requireTenantId() } }) };
   });
   app.put('/admin/branches/:id', async (req) => {
     const { id } = req.params as { id: string };
@@ -70,7 +71,7 @@ export async function masterRoutes(app: FastifyInstance) {
   }));
   app.post('/admin/departments', async (req) => {
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
-    return { department: await app.prisma.department.create({ data: { name } }) };
+    return { department: await app.prisma.department.create({ data: { name, tenantId: requireTenantId() } }) };
   });
   app.put('/admin/departments/:id', async (req) => {
     const { id } = req.params as { id: string };
@@ -93,7 +94,7 @@ export async function masterRoutes(app: FastifyInstance) {
   }));
   app.post('/admin/designations', async (req) => {
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
-    return { designation: await app.prisma.designation.create({ data: { name } }) };
+    return { designation: await app.prisma.designation.create({ data: { name, tenantId: requireTenantId() } }) };
   });
   app.put('/admin/designations/:id', async (req) => {
     const { id } = req.params as { id: string };

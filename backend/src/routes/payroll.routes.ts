@@ -8,7 +8,7 @@ import { generateSalaryRegisterPdf } from '../services/payroll/salary-register-p
 
 /** Company profile for PDF headers (empty object when unset). */
 async function getCompany(app: FastifyInstance): Promise<{ name: string; address: string }> {
-  const c = await app.prisma.companySettings.findUnique({ where: { id: 'company' } });
+  const c = await app.prisma.companySettings.findFirst();
   return { name: c?.name ?? '', address: c?.address ?? '' };
 }
 

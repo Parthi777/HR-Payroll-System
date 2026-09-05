@@ -2,7 +2,9 @@ import pino from 'pino';
 import { env } from '../config/env.js';
 
 export const logger = pino({
-  level: env.NODE_ENV === 'production' ? 'info' : 'debug',
+  // Tests drive the real app in-process (see tests/isolation.test.ts); at debug
+  // level every injected request buries the assertion output.
+  level: env.NODE_ENV === 'test' ? 'silent' : env.NODE_ENV === 'production' ? 'info' : 'debug',
   transport:
     env.NODE_ENV === 'development'
       ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard' } }

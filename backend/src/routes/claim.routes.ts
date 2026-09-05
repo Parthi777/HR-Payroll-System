@@ -155,7 +155,7 @@ export async function claimRoutes(app: FastifyInstance) {
     const claim = await getClaim(app.prisma, id, req.user);
     // Same company source as the payroll reports, so every printed document
     // carries identical letterhead details.
-    const settings = await app.prisma.companySettings.findUnique({ where: { id: 'company' } });
+    const settings = await app.prisma.companySettings.findFirst();
     const pdf = await generateClaimVoucherPdf({
       ...claim,
       company: settings ? { name: settings.name, address: settings.address } : null,

@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import { findOpenPunch, markCheckIn, markManualPunch } from '../src/services/attendance/attendance.service.js';
 import type { AppError } from '../src/utils/AppError.js';
+import { enterContext } from '../src/context/tenant-context.js';
+
+// Services stamp the owning tenant on every row they create, so they need a
+// tenant context — in production `authenticate()` establishes one before any
+// handler runs. Entering one here mirrors that; the guard itself stays live and
+// tenancy-extension.test.ts still asserts that a *missing* context throws.
+beforeEach(() => {
+  enterContext({ kind: 'TENANT', tenantId: 'test-tenant', subjectId: 'test-subject', role: 'SUPER_ADMIN' });
+});
+
 
 /**
  * Forgetting to check out leaves a day open. That day has to be sent for
