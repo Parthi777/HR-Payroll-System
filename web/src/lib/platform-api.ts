@@ -97,3 +97,30 @@ export interface AuditEntry {
   ipAddress: string | null;
   timestamp: string;
 }
+
+/**
+ * A 16-character password generated in the browser.
+ *
+ * crypto.getRandomValues, not Math.random: these are real credentials for an
+ * account that can see every employee's salary.
+ */
+export function suggestPassword(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '').slice(0, 16);
+}
+
+/** The roles a dealer's own admin accounts can hold, mirroring the server. */
+export const DEALER_ROLES = [
+  { value: 'SUPER_ADMIN', label: 'Super Admin', hint: 'Everything, including user access' },
+  { value: 'HR_MANAGER', label: 'HR Manager', hint: 'Employees, attendance, leave, payroll' },
+  { value: 'BRANCH_MANAGER', label: 'Branch Manager', hint: 'Their own branch and reports' },
+  { value: 'PAYROLL_ADMIN', label: 'Payroll Admin', hint: 'Payroll runs and payslips' },
+  { value: 'CASHIER', label: 'Cashier', hint: 'Claims and disbursement only' },
+] as const;
+
+export interface NewDealerAdmin {
+  id: string;
+  email: string;
+  role: string;
+}

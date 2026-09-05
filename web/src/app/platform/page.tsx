@@ -2,14 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Building2, Check, Copy, Loader2, Pause, Play, Plus } from 'lucide-react';
-import { platformApi, type CreatedDealer, type Dealer } from '@/lib/platform-api';
-
-/** A 16-character password, generated in the browser so it is never guessable. */
-function suggestPassword(): string {
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '').slice(0, 16);
-}
+import { platformApi, suggestPassword, type CreatedDealer, type Dealer } from '@/lib/platform-api';
+import Link from 'next/link';
 
 /** "ABC Motors" → "abc-motors", the subdomain it will live at. */
 function slugify(name: string): string {
@@ -104,7 +98,11 @@ export default function PlatformDealersPage() {
             <tbody>
               {dealers.map((d) => (
                 <tr key={d.id} className="border-t border-border">
-                  <td className="px-4 py-3 font-medium">{d.name}</td>
+                  <td className="px-4 py-3">
+                    <Link href={`/platform/dealers/${d.id}`} className="font-medium underline-offset-4 hover:underline">
+                      {d.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3">
                     <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{d.slug}</code>
                   </td>
@@ -121,6 +119,12 @@ export default function PlatformDealersPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
+                    <Link
+                      href={`/platform/dealers/${d.id}`}
+                      className="mr-2 inline-flex items-center rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                    >
+                      Manage
+                    </Link>
                     <button
                       onClick={() => setStatus(d, d.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE')}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
