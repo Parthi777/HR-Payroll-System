@@ -28,16 +28,26 @@ function clean(value: string | null | undefined): string | null {
   return SLUG.test(slug) && !RESERVED.has(slug) ? slug : null;
 }
 
-/** The slug from the current hostname, if it looks like a tenant subdomain. */
+/**
+ * The slug from the current hostname — only under a configured apex.
+ *
+ * This mirrors `tenantSlugFromRequest` on the server, and the mirroring is the
+ * point. An earlier version treated the first label of any multi-label host as
+ * a tenant, which meant the Railway domain `web-production-2b851.up.railway.app`
+ * sent `X-Tenant-Slug: web-production-2b851` and every sign-in failed with
+ * "Workspace not found". A hostname only names a tenant when we know which apex
+ * the tenants live under; without that, guessing is wrong.
+ */
 function fromHostname(): string | null {
   if (typeof window === 'undefined') return null;
+  const base = process.env.NEXT_PUBLIC_APP_BASE_DOMAIN?.toLowerCase();
+  if (!base) return null;
+
   const host = window.location.hostname.toLowerCase();
-  // Bare hosts and IPs are development, not a tenant.
-  if (host === 'localhost' || /^[\d.]+$/.test(host)) return null;
-  const labels = host.split('.');
-  // Needs at least label.domain.tld — "yourapp.com" alone has no tenant part.
-  if (labels.length < 3) return null;
-  return clean(labels[0]);
+  if (host === base || !host.endsWith(`.${base}`)) return null;
+  const label = host.slice(0, -(base.length + 1));
+  if (label.includes('.')) return null; // deeper than one level is not a tenant
+  return clean(label);
 }
 
 function fromQuery(): string | null {
