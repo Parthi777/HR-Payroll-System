@@ -105,21 +105,23 @@ export async function computeMonthlyPayroll(
   holidaySet: Set<string>,
   policy: PayrollPolicy = DEFAULT_PAYROLL_POLICY,
   halfDayWindow: HalfDayWindow = DEFAULT_HALF_DAY_WINDOW,
+  /** Preloaded rows for this employee. Omit and the three reads happen here. */
+  preloaded?: EmployeeMonth,
 ): Promise<MonthlyPayroll> {
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
   const daysInMonth = new Date(year, month, 0).getDate();
   const now = new Date();
 
-  const atts = await prisma.attendance.findMany({
-    where: { employeeId: emp.id, date: { gte: start, lt: end } },
-  });
+  const atts =
+    preloaded?.attendance ??
+    (await prisma.attendance.findMany({ where: { employeeId: emp.id, date: { gte: start, lt: end } } }));
   const attByDay = new Map(atts.map((a) => [dayKey(a.date), a]));
 
   // CL quota already used this year BEFORE this month (approved CL only).
-  const clLeavesThisYear = await prisma.leave.findMany({
-    where: { employeeId: emp.id, type: 'CL', status: 'APPROVED' },
-  });
+  const clLeavesThisYear =
+    preloaded?.clLeavesThisYear ??
+    (await prisma.leave.findMany({ where: { employeeId: emp.id, type: 'CL', status: 'APPROVED' } }));
   const yearStart = new Date(year, 0, 1);
   let clUsed = 0;
   for (const lv of clLeavesThisYear) {
@@ -127,9 +129,11 @@ export async function computeMonthlyPayroll(
   }
 
   // Approved leaves overlapping this month, resolved per-day below.
-  const leaves = await prisma.leave.findMany({
-    where: { employeeId: emp.id, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
-  });
+  const leaves =
+    preloaded?.monthLeaves ??
+    (await prisma.leave.findMany({
+      where: { employeeId: emp.id, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
+    }));
 
   let paidDays = 0; // present + paid leave + paid weekly-offs/holidays
   let presentDays = 0;
@@ -285,6 +289,53 @@ export interface PayrollRunSummary {
   totalNet: number;
 }
 
+/**
+ * One employee's month, already fetched.
+ *
+ * `computeMonthlyPayroll` reads three tables per employee. Called in a loop that
+ * is 3N queries — ~300 for 74 staff, ~2,000 for 500 — which is the difference
+ * between a payroll run that returns and one that times out. Callers that
+ * process a whole company load once with `loadPayrollMonth` and hand each
+ * employee their slice.
+ */
+export interface EmployeeMonth {
+  attendance: { employeeId: string; date: Date; checkIn: Date | null; checkOut: Date | null; status: string; approvalStatus: string | null }[];
+  clLeavesThisYear: { fromDate: Date; toDate: Date }[];
+  monthLeaves: { employeeId: string; type: string; fromDate: Date; toDate: Date }[];
+}
+
+/**
+ * Fetch a whole company's month in three queries instead of 3N.
+ *
+ * Returns a map keyed by employee id; an employee with no rows still gets an
+ * entry, so the caller never has to distinguish "not loaded" from "nothing to
+ * load".
+ */
+export async function loadPayrollMonth(
+  prisma: PrismaClient,
+  employeeIds: string[],
+  month: number,
+  year: number,
+): Promise<Map<string, EmployeeMonth>> {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
+
+  const [atts, clLeaves, monthLeaves] = await Promise.all([
+    prisma.attendance.findMany({ where: { employeeId: { in: employeeIds }, date: { gte: start, lt: end } } }),
+    prisma.leave.findMany({ where: { employeeId: { in: employeeIds }, type: 'CL', status: 'APPROVED' } }),
+    prisma.leave.findMany({
+      where: { employeeId: { in: employeeIds }, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
+    }),
+  ]);
+
+  const out = new Map<string, EmployeeMonth>();
+  for (const id of employeeIds) out.set(id, { attendance: [], clLeavesThisYear: [], monthLeaves: [] });
+  for (const a of atts) out.get(a.employeeId)?.attendance.push(a);
+  for (const l of clLeaves) out.get(l.employeeId)?.clLeavesThisYear.push(l);
+  for (const l of monthLeaves) out.get(l.employeeId)?.monthLeaves.push(l);
+  return out;
+}
+
 /** Generate (upsert) a payslip for every active employee for the given month. */
 export async function runMonthlyPayroll(
   prisma: PrismaClient,
@@ -299,11 +350,13 @@ export async function runMonthlyPayroll(
     include: { shift: true },
   });
   const holidaySet = await monthHolidaySet(prisma, month, year);
+  // Three queries for the whole company, instead of three per employee.
+  const preloaded = await loadPayrollMonth(prisma, employees.map((e) => e.id), month, year);
 
   let totalNet = 0;
 
   for (const emp of employees) {
-    const r = await computeMonthlyPayroll(prisma, emp, month, year, holidaySet, policy, halfDayWindow);
+    const r = await computeMonthlyPayroll(prisma, emp, month, year, holidaySet, policy, halfDayWindow, preloaded.get(emp.id));
 
     // Owner policy: NO salary-structure split (no HRA/DA lines) — the payslip
     // carries the earned salary + OT/Sunday extra as-is. PF/ESI apply only to

@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { computeMonthlyPayroll, monthHolidaySet } from '../payroll/payroll-run.service.js';
+import { loadPayrollMonth, computeMonthlyPayroll, monthHolidaySet } from '../payroll/payroll-run.service.js';
 import { getCompanyProfile, getTenantPolicy } from '../settings/tenant-settings.service.js';
 
 /**
@@ -83,9 +83,12 @@ export async function buildPayrollReport(
   const { payroll: policy, attendance } = await getTenantPolicy(prisma);
   const halfDayWindow = { start: attendance.halfDayWindowStart, end: attendance.halfDayWindowEnd };
 
+  // Same batching as the payroll run: three queries, not three per employee.
+  const preloaded = await loadPayrollMonth(prisma, employees.map((e) => e.id), month, year);
+
   const rows: PayrollReportRow[] = [];
   for (const emp of employees) {
-    const r = await computeMonthlyPayroll(prisma, emp, month, year, holidaySet, policy, halfDayWindow);
+    const r = await computeMonthlyPayroll(prisma, emp, month, year, holidaySet, policy, halfDayWindow, preloaded.get(emp.id));
     rows.push({
       employeeCode: emp.employeeCode,
       name: emp.name,

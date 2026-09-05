@@ -32,6 +32,15 @@ export type TenantContext =
 
 interface Holder {
   ctx?: TenantContext;
+  /**
+   * The tenant's settings, memoised for the life of one request.
+   *
+   * A single check-in or report reads them two or three times — the route, the
+   * service and the PDF header each ask. They cannot change mid-request, so
+   * re-reading is pure waste. Typed as unknown to keep this module free of a
+   * dependency on the settings service, which would be circular.
+   */
+  policy?: unknown;
 }
 
 const storage = new AsyncLocalStorage<Holder>();
@@ -60,6 +69,26 @@ export function requireTenantId(): string {
   const id = currentTenantId();
   if (!id) throw new Error('No tenant context — refusing to create a tenant-owned row');
   return id;
+}
+
+/**
+ * The per-request memo for this tenant's settings. Returns undefined outside a
+ * request frame, in which case the caller simply reads from the database.
+ */
+export function cachedPolicy<T>(): T | undefined {
+  return storage.getStore()?.policy as T | undefined;
+}
+
+/** Record the settings for the rest of this request. */
+export function setCachedPolicy(policy: unknown): void {
+  const holder = storage.getStore();
+  if (holder) holder.policy = policy;
+}
+
+/** Drop the memo — called when settings are written, so a later read is fresh. */
+export function clearCachedPolicy(): void {
+  const holder = storage.getStore();
+  if (holder) holder.policy = undefined;
 }
 
 /**

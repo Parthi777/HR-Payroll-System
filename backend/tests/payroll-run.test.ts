@@ -204,3 +204,69 @@ describe('payroll policy is per dealer', () => {
     expect(lenient.payDate?.getDate()).toBe(5);
   });
 });
+
+describe('a company-wide run does not query per employee', () => {
+  /** Counts queries so the N+1 fix is measured, not assumed. */
+  function countingPrisma(punches: Punch[], counts: { attendance: number; leave: number }) {
+    const base = fakePrisma(punches) as unknown as {
+      attendance: { findMany: () => Promise<unknown[]> };
+      leave: { findMany: () => Promise<unknown[]> };
+    };
+    return {
+      attendance: {
+        findMany: async () => {
+          counts.attendance += 1;
+          return base.attendance.findMany();
+        },
+      },
+      leave: {
+        findMany: async () => {
+          counts.leave += 1;
+          return base.leave.findMany();
+        },
+      },
+    } as unknown as PrismaClient;
+  }
+
+  const punches: Punch[] = [{ day: 1, in: '09:00', out: '18:00' }];
+
+  it('reads three times per employee when nothing is preloaded', async () => {
+    const counts = { attendance: 0, leave: 0 };
+    await computeMonthlyPayroll(countingPrisma(punches, counts), EMPLOYEE, MONTH, YEAR, new Set());
+    expect(counts.attendance).toBe(1);
+    expect(counts.leave).toBe(2); // CL-for-the-year, and this month's leaves
+  });
+
+  it('reads nothing when the month is preloaded', async () => {
+    const counts = { attendance: 0, leave: 0 };
+    const preloaded = {
+      attendance: [],
+      clLeavesThisYear: [],
+      monthLeaves: [],
+    };
+    await computeMonthlyPayroll(
+      countingPrisma(punches, counts), EMPLOYEE, MONTH, YEAR, new Set(),
+      undefined, undefined, preloaded,
+    );
+    expect(counts.attendance, 'preloaded data must not be re-fetched').toBe(0);
+    expect(counts.leave).toBe(0);
+  });
+
+  it('produces the same figures preloaded as it does querying', async () => {
+    const month = [1, 2, 3, 6, 7].map((day) => ({ day, in: '09:00', out: '18:00' }));
+    const queried = await computeMonthlyPayroll(fakePrisma(month), EMPLOYEE, MONTH, YEAR, new Set());
+
+    // The same rows the loader would have handed over.
+    const rows = (await (fakePrisma(month) as unknown as {
+      attendance: { findMany: () => Promise<never[]> };
+    }).attendance.findMany());
+    const preloadedResult = await computeMonthlyPayroll(
+      fakePrisma([]), EMPLOYEE, MONTH, YEAR, new Set(),
+      undefined, undefined, { attendance: rows, clLeavesThisYear: [], monthLeaves: [] },
+    );
+
+    expect(preloadedResult.presentDays).toBe(queried.presentDays);
+    expect(preloadedResult.netSalary).toBe(queried.netSalary);
+    expect(preloadedResult.paidDays).toBe(queried.paidDays);
+  });
+});

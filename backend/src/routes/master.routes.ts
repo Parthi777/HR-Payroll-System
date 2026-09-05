@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
-import { requireTenantId } from '../context/tenant-context.js';
+import { clearCachedPolicy, requireTenantId } from '../context/tenant-context.js';
 import { defaultPolicy } from '../services/settings/tenant-settings.service.js';
 
 const branchSchema = z.object({
@@ -93,6 +93,9 @@ export async function masterRoutes(app: FastifyInstance) {
       update: data,
       create: { ...data, tenantId: requireTenantId() },
     });
+    // The per-request memo now holds the pre-write values; drop it so anything
+    // later in this request (a PDF header, a re-read) sees what was just saved.
+    clearCachedPolicy();
     return { company };
   });
 

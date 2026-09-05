@@ -12,6 +12,7 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { env } from '../../config/env.js';
+import { cachedPolicy, setCachedPolicy } from '../../context/tenant-context.js';
 
 /** Attendance rules — what counts as late, and what counts as a half day. */
 export interface AttendancePolicy {
@@ -155,18 +156,28 @@ function parseConfig(raw: string | null): Record<string, string> | null {
 /**
  * The current tenant's policy.
  *
+ * Memoised for the life of the request: a check-in or a report asks two or
+ * three times (route, service, PDF header) and settings cannot change
+ * mid-request. Outside a request frame there is no memo and this is a plain
+ * read, which is what scripts and tests get.
+ *
  * Scoped by the Prisma extension, so this reads the caller's own row and no
  * other. A tenant with no row yet gets the platform defaults rather than an
  * error — settings are optional, and a dealer should work before anyone opens
  * the settings screen.
  *
- * Not cached: it is one indexed read, and a stale policy would mean paying
- * someone by yesterday's rules. Phase 8 moves it behind Redis, which is shared
- * across replicas and can be invalidated on write.
+ * Deliberately not cached ACROSS requests: a stale policy would mean paying
+ * someone by yesterday's rules, and the per-request memo already removes the
+ * repeated reads without any staleness at all.
  */
 export async function getTenantPolicy(prisma: PrismaClient): Promise<TenantPolicy> {
+  const memo = cachedPolicy<TenantPolicy>();
+  if (memo) return memo;
+
   const row = await prisma.tenantSettings.findFirst();
-  return row ? toPolicy(row as SettingsRow) : defaultPolicy();
+  const policy = row ? toPolicy(row as SettingsRow) : defaultPolicy();
+  setCachedPolicy(policy);
+  return policy;
 }
 
 /** The company block alone, for PDF and report headers. */

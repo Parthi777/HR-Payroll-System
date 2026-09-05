@@ -14,7 +14,8 @@ import {
   TENANT_SCOPED_MODELS,
   GLOBAL_MODELS,
 } from '../src/context/tenant-scope.js';
-import { currentContext, runInTenant, runUnscoped } from '../src/context/tenant-context.js';
+import { clearCachedPolicy, currentContext, runInTenant, runUnscoped } from '../src/context/tenant-context.js';
+import { getCompanyProfile, getTenantPolicy } from '../src/services/settings/tenant-settings.service.js';
 
 const T = 'tenant-a';
 
@@ -201,5 +202,62 @@ describe('bypass audit', () => {
       callers.filter((c) => !ALLOWED.has(c)),
       'a new runUnscoped() bypass appeared — review it, then add it to ALLOWED',
     ).toEqual([]);
+  });
+});
+
+describe('per-request settings memo', () => {
+  /** Counts how many times the settings row is actually read. */
+  const countingPrisma = (counter: { n: number }) =>
+    ({
+      tenantSettings: {
+        findFirst: async () => {
+          counter.n += 1;
+          return null; // no row → platform defaults, which is a valid policy
+        },
+      },
+    }) as unknown as Parameters<typeof getTenantPolicy>[0];
+
+  it('reads the settings row once per request, not once per caller', async () => {
+    const counter = { n: 0 };
+    const prisma = countingPrisma(counter);
+
+    await runInTenant({ tenantId: T, subjectId: 's', role: 'SUPER_ADMIN' }, async () => {
+      // What a check-in or a report actually does: several layers each ask.
+      await getTenantPolicy(prisma);
+      await getTenantPolicy(prisma);
+      await getCompanyProfile(prisma);
+    });
+
+    expect(counter.n, 'three callers in one request should cost one read').toBe(1);
+  });
+
+  it('does not leak one request’s settings into the next', async () => {
+    const counter = { n: 0 };
+    const prisma = countingPrisma(counter);
+
+    await runInTenant({ tenantId: T, subjectId: 's', role: 'SUPER_ADMIN' }, () => getTenantPolicy(prisma));
+    await runInTenant({ tenantId: 'tenant-b', subjectId: 's', role: 'SUPER_ADMIN' }, () => getTenantPolicy(prisma));
+
+    expect(counter.n, 'each request must read its own tenant’s settings').toBe(2);
+  });
+
+  it('re-reads after settings are written in the same request', async () => {
+    const counter = { n: 0 };
+    const prisma = countingPrisma(counter);
+
+    await runInTenant({ tenantId: T, subjectId: 's', role: 'SUPER_ADMIN' }, async () => {
+      await getTenantPolicy(prisma);
+      clearCachedPolicy(); // what PUT /admin/company does after an update
+      await getTenantPolicy(prisma);
+    });
+
+    expect(counter.n).toBe(2);
+  });
+
+  it('works outside a request frame, where there is no memo', async () => {
+    const counter = { n: 0 };
+    const policy = await getTenantPolicy(countingPrisma(counter));
+    expect(policy.payroll.monthDivisor).toBe(30);
+    expect(counter.n).toBe(1);
   });
 });
