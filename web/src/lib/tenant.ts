@@ -88,3 +88,15 @@ export function clearSession(): void {
     localStorage.removeItem(key);
   }
 }
+
+/**
+ * Whether this hostname is the platform console rather than a dealer.
+ *
+ * Uses the same reserved list that stops a dealer claiming "admin" or
+ * "platform" as a slug, so the two can never disagree about who owns a host.
+ */
+export function isPlatformHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const label = window.location.hostname.toLowerCase().split('.')[0];
+  return label === 'admin' || label === 'platform';
+}
