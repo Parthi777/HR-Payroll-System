@@ -49,6 +49,24 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           </div>
         </Link>
 
+        <nav className="ml-8 hidden items-center gap-1 sm:flex">
+          {[
+            { href: '/platform', label: 'Dealers' },
+            { href: '/platform/users', label: 'Team' },
+          ].map((item) => {
+            const active = item.href === '/platform' ? pathname === '/platform' : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`rounded-lg px-3 py-1.5 text-sm ${active ? 'bg-white/15 font-medium text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+
         <div className="ml-auto flex items-center gap-4">
           <Link
             href="/platform/account"

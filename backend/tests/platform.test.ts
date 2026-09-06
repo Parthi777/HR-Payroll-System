@@ -383,6 +383,101 @@ suite('dealer onboarding', () => {
     });
   });
 
+  describe('the platform team', () => {
+    const COLLEAGUE = { name: 'Second Owner', email: 'second@platform.test', password: 'colleague-first-password' };
+    let colleagueId: string;
+
+    const platformLogin = (email: string, password: string) =>
+      app.inject({
+        method: 'POST', url: '/api/platform/auth/login',
+        remoteAddress: freshIp(),
+        payload: { email, password },
+      });
+
+    it('lists the team', async () => {
+      const res = await asPlatform('GET', '/api/platform/users');
+      expect(res.statusCode).toBe(200);
+      const staff = res.json().staff as { email: string; isActive: boolean }[];
+      expect(staff.map((s) => s.email)).toContain(PLATFORM.email);
+      expect(staff.every((s) => !('passwordHash' in s)), 'the hash was serialised').toBe(true);
+    });
+
+    it('adds a second administrator who can then sign in', async () => {
+      const res = await asPlatform('POST', '/api/platform/users', COLLEAGUE);
+      expect(res.statusCode, res.body).toBe(201);
+      colleagueId = res.json().staff.id;
+
+      const login = await platformLogin(COLLEAGUE.email, COLLEAGUE.password);
+      expect(login.statusCode, 'the new administrator cannot sign in').toBe(200);
+    });
+
+    it('refuses an email that already has an account', async () => {
+      const res = await asPlatform('POST', '/api/platform/users', { ...COLLEAGUE, name: 'Someone Else' });
+      expect(res.statusCode).toBe(409);
+    });
+
+    it('refuses a password under 12 characters', async () => {
+      const res = await asPlatform('POST', '/api/platform/users', {
+        name: 'Too Easy', email: 'weak@platform.test', password: 'short',
+      });
+      expect(res.statusCode).toBe(422);
+    });
+
+    it('refuses to let you deactivate yourself', async () => {
+      const me = await asPlatform('GET', '/api/platform/me');
+      const res = await asPlatform(`PATCH`, `/api/platform/users/${me.json().id}`, { isActive: false });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('resets a colleague’s password, and the old one stops working', async () => {
+      const next = 'a-brand-new-password';
+      const res = await asPlatform('PATCH', `/api/platform/users/${colleagueId}`, { password: next });
+      expect(res.statusCode, res.body).toBe(200);
+
+      expect((await platformLogin(COLLEAGUE.email, COLLEAGUE.password)).statusCode).toBe(401);
+      expect((await platformLogin(COLLEAGUE.email, next)).statusCode).toBe(200);
+      COLLEAGUE.password = next;
+    });
+
+    it('deactivating locks the account out on the next request, not at token expiry', async () => {
+      // A token minted while they were active must stop working immediately —
+      // otherwise revoking access means waiting up to 8 hours.
+      const stillValid = (await platformLogin(COLLEAGUE.email, COLLEAGUE.password)).json().token;
+
+      const off = await asPlatform('PATCH', `/api/platform/users/${colleagueId}`, { isActive: false });
+      expect(off.statusCode, off.body).toBe(200);
+      expect(off.json().staff.isActive).toBe(false);
+
+      const withOldToken = await app.inject({
+        method: 'GET', url: '/api/platform/tenants',
+        headers: { authorization: `Bearer ${stillValid}` },
+      });
+      expect(withOldToken.statusCode).toBe(401);
+      expect((await platformLogin(COLLEAGUE.email, COLLEAGUE.password)).statusCode).toBe(401);
+    });
+
+    it('reactivating restores access', async () => {
+      const on = await asPlatform('PATCH', `/api/platform/users/${colleagueId}`, { isActive: true });
+      expect(on.statusCode).toBe(200);
+      expect((await platformLogin(COLLEAGUE.email, COLLEAGUE.password)).statusCode).toBe(200);
+    });
+
+    it('is unreachable with a dealer’s own sign-in', async () => {
+      const res = await asDealer('abc-motors', 'owner@abc.test', '/api/platform/users');
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('records the changes without recording the passwords', async () => {
+      const res = await asPlatform('GET', '/api/platform/audit');
+      const actions = (res.json().entries as { action: string }[]).map((e) => e.action);
+      expect(actions).toContain('PLATFORM_USER_CREATED');
+      expect(actions).toContain('PLATFORM_USER_DEACTIVATED');
+      expect(actions).toContain('PLATFORM_USER_REACTIVATED');
+      expect(actions).toContain('PLATFORM_USER_PASSWORD_RESET');
+      expect(JSON.stringify(res.json())).not.toContain(COLLEAGUE.password);
+    });
+  });
+
   describe('audit trail', () => {
     it('records every platform action, and never the passwords', async () => {
       const res = await asPlatform('GET', '/api/platform/audit');

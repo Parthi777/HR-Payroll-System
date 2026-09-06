@@ -29,6 +29,18 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(12, 'Use at least 12 characters'),
 });
 
+const newStaffSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(12, 'Use at least 12 characters'),
+});
+
+const updateStaffSchema = z.object({
+  name: z.string().min(1).optional(),
+  isActive: z.boolean().optional(),
+  password: z.string().min(12, 'Use at least 12 characters').optional(),
+});
+
 const addAdminSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
@@ -138,6 +150,76 @@ export async function platformRoutes(app: FastifyInstance) {
       return { ok: true };
     },
   );
+
+  // ── Platform team ──
+  //
+  // The people who can onboard dealers. Accounts are deactivated, never
+  // deleted, because the audit log references them and a log that points at a
+  // vanished actor is worse than no log.
+
+  app.get('/platform/users', { preHandler: requirePlatform }, async () => {
+    const staff = await app.prisma.platformUser.findMany({
+      select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return { staff };
+  });
+
+  app.post('/platform/users', { preHandler: requirePlatform }, async (req, reply) => {
+    const input = newStaffSchema.parse(req.body);
+    const email = input.email.trim().toLowerCase();
+
+    const clash = await app.prisma.platformUser.findUnique({ where: { email } });
+    if (clash) throw new AppError(`${email} already has a platform account`, 409);
+
+    const created = await app.prisma.platformUser.create({
+      data: { name: input.name.trim(), email, passwordHash: await bcrypt.hash(input.password, 12) },
+      select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+    });
+    await audit(req, 'PLATFORM_USER_CREATED', { targetId: created.id, metadata: { email: created.email } });
+
+    return reply.code(201).send({ staff: created });
+  });
+
+  app.patch('/platform/users/:id', { preHandler: requirePlatform }, async (req) => {
+    const { id } = req.params as { id: string };
+    const input = updateStaffSchema.parse(req.body);
+
+    const target = await app.prisma.platformUser.findUnique({ where: { id } });
+    if (!target) throw AppError.notFound('Account');
+
+    // Nobody may lock the whole platform out of dealer onboarding. The self
+    // check is the one that fires in practice; the count below cannot be
+    // reached while requirePlatform rejects an inactive caller (an active
+    // caller means the count is at least two), and is kept so the invariant
+    // survives a change to either guard.
+    if (input.isActive === false) {
+      if (id === req.user.sub) throw new AppError('You cannot deactivate your own account', 400);
+      const active = await app.prisma.platformUser.count({ where: { isActive: true } });
+      if (active <= 1) throw new AppError('Cannot deactivate the last active administrator', 409);
+    }
+
+    const updated = await app.prisma.platformUser.update({
+      where: { id },
+      data: {
+        ...(input.name ? { name: input.name.trim() } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.password ? { passwordHash: await bcrypt.hash(input.password, 12) } : {}),
+      },
+      select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+    });
+
+    if (input.isActive !== undefined) {
+      await audit(req, input.isActive ? 'PLATFORM_USER_REACTIVATED' : 'PLATFORM_USER_DEACTIVATED', {
+        targetId: id, metadata: { email: target.email },
+      });
+    }
+    if (input.password) {
+      await audit(req, 'PLATFORM_USER_PASSWORD_RESET', { targetId: id, metadata: { email: target.email } });
+    }
+
+    return { staff: updated };
+  });
 
   // ── Dealers ──
   app.get('/platform/tenants', { preHandler: requirePlatform }, async () => {

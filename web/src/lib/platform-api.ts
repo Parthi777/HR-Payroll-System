@@ -79,6 +79,14 @@ export interface DealerAdmin {
   createdAt: string;
 }
 
+export interface PlatformStaff {
+  id: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export interface CreatedDealer {
   id: string;
   slug: string;
