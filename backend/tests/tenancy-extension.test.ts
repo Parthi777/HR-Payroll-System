@@ -261,3 +261,23 @@ describe('per-request settings memo', () => {
     expect(counter.n).toBe(1);
   });
 });
+
+describe('no reversible credential storage', () => {
+  /**
+   * Employee passwords were stored twice — bcrypt-hashed AND in readable form,
+   * so an admin could download a sheet of everyone's password. The hashing was
+   * decorative while that column existed. It is gone; a forgotten password is
+   * answered by issuing a new one instead of revealing the old.
+   *
+   * This asserts the shape rather than the symptom, so re-adding any readable
+   * password field fails here rather than in a later audit.
+   */
+  it('no model stores a password in readable form', () => {
+    const offenders = Prisma.dmmf.datamodel.models.flatMap((m) =>
+      m.fields
+        .filter((f) => /password/i.test(f.name) && !/hash/i.test(f.name))
+        .map((f) => `${m.name}.${f.name}`),
+    );
+    expect(offenders, 'passwords may only be stored hashed').toEqual([]);
+  });
+});

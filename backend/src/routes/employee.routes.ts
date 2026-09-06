@@ -59,8 +59,8 @@ const createEmployeeSchema = z.object({
 });
 
 /** Never return the password hash or plaintext to normal list clients. */
-function safeEmployee<T extends { passwordHash?: string | null; passwordPlain?: string | null }>(e: T) {
-  const { passwordHash: _h, passwordPlain: _p, ...rest } = e;
+function safeEmployee<T extends { passwordHash?: string | null }>(e: T) {
+  const { passwordHash: _h, ...rest } = e;
   return rest;
 }
 
@@ -145,27 +145,9 @@ export async function employeeRoutes(app: FastifyInstance) {
       throw new AppError(`Phone ${rest.phone} is already registered to ${phoneDup.name} (${phoneDup.employeeCode})`, 409);
     }
 
-    const data = { ...rest, employeeCode, tenantId: requireTenantId(), ...(password ? { passwordHash: await bcrypt.hash(password, 10), passwordPlain: password } : {}) };
+    const data = { ...rest, employeeCode, tenantId: requireTenantId(), ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
     const employee = await app.prisma.employee.create({ data });
     return { employee: safeEmployee(employee) };
-  });
-
-  // Credentials sheet — code / name / phone / app password. SUPER_ADMIN only.
-  app.get('/credentials', { preHandler: requireRole('SUPER_ADMIN') }, async () => {
-    const employees = await app.prisma.employee.findMany({
-      where: { status: 'ACTIVE' },
-      select: { employeeCode: true, name: true, phone: true, passwordPlain: true, branch: { select: { name: true } } },
-      orderBy: { employeeCode: 'asc' },
-    });
-    return {
-      employees: employees.map((e) => ({
-        employeeCode: e.employeeCode,
-        name: e.name,
-        phone: e.phone,
-        branch: e.branch?.name ?? '',
-        password: e.passwordPlain ?? '(set before this feature — reset to reveal)',
-      })),
-    };
   });
 
   // Bulk import from CSV: columns name,phone,salary,branch,department,designation,shift[,email][,password].
@@ -220,7 +202,7 @@ export async function employeeRoutes(app: FastifyInstance) {
             email: iEmail >= 0 ? cells[iEmail]?.trim() || null : null,
             branchId: branch.id, departmentId: dept.id, designationId: desig.id, shiftId: shift.id,
             joiningDate: new Date(), salary,
-            passwordHash: await bcrypt.hash(password, 10), passwordPlain: password,
+            passwordHash: await bcrypt.hash(password, 10),
           },
         });
         created.push({ employeeCode, name, phone, password });
@@ -242,9 +224,36 @@ export async function employeeRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { password, ...rest } = createEmployeeSchema.partial().parse(req.body);
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
-    const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10), passwordPlain: password } : {}) };
+    const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
     const employee = await app.prisma.employee.update({ where: { id }, data });
     return { employee: safeEmployee(employee) };
+  });
+
+  /**
+   * Reset an employee's app password and return the new one, once.
+   *
+   * This replaces the old credentials export, which could only work because
+   * every password was also stored in readable form. Nothing readable is kept
+   * now, so a forgotten password is answered by issuing a new one rather than
+   * by looking the old one up — the same job, without a database full of
+   * usable credentials.
+   */
+  app.post('/:id/reset-password', async (req) => {
+    const { id } = req.params as { id: string };
+    const employee = await app.prisma.employee.findUnique({
+      where: { id },
+      select: { id: true, name: true, employeeCode: true, phone: true },
+    });
+    if (!employee) throw AppError.notFound('Employee');
+
+    const password = randomPassword();
+    await app.prisma.employee.update({
+      where: { id },
+      data: { passwordHash: await bcrypt.hash(password, 10) },
+    });
+
+    // The only time this value exists outside the caller's screen.
+    return { employee: { name: employee.name, employeeCode: employee.employeeCode, phone: employee.phone }, password };
   });
 
   app.delete('/:id', async (req) => {

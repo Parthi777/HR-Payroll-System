@@ -50,7 +50,8 @@ export default function EmployeesPage() {
   const employees = data?.employees ?? [];
   const [modal, setModal] = useState<{ mode: 'add' } | { mode: 'edit'; employee: EmployeeRow } | null>(null);
   const [showBulk, setShowBulk] = useState(false);
-  const [dlBusy, setDlBusy] = useState(false);
+  const [resetting, setResetting] = useState<string | null>(null);
+  const [issued, setIssued] = useState<{ name: string; phone: string; password: string } | null>(null);
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('ALL');
 
@@ -62,16 +63,26 @@ export default function EmployeesPage() {
     return matchesBranch && matchesSearch;
   });
 
-  async function downloadCredentials() {
-    setDlBusy(true);
+  /**
+   * Issue a new app password and show it once.
+   *
+   * Replaces the old credentials download, which only worked because every
+   * password was also kept in readable form. Nothing readable is stored now, so
+   * a forgotten password is answered by issuing a new one.
+   */
+  async function resetPassword(e: EmployeeRow) {
+    if (!confirm(`Issue a new app password for ${e.name}?\n\nTheir current password stops working immediately, and the new one is shown once.`)) return;
+    setResetting(e.id);
     try {
-      const res = await api<{ employees: { employeeCode: string; name: string; phone: string; branch: string; password: string }[] }>('/admin/employees/credentials');
-      downloadCsv('employee-credentials.csv', ['Employee Code', 'Name', 'Phone', 'Branch', 'App Password'],
-        res.employees.map((e) => [e.employeeCode, e.name, e.phone, e.branch, e.password]));
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Only a Super Admin can download credentials');
+      const res = await api<{ password: string; employee: { name: string; employeeCode: string; phone: string } }>(
+        `/admin/employees/${e.id}/reset-password`,
+        { method: 'POST' },
+      );
+      setIssued({ name: res.employee.name, phone: res.employee.phone, password: res.password });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not reset the password');
     } finally {
-      setDlBusy(false);
+      setResetting(null);
     }
   }
 
@@ -87,10 +98,34 @@ export default function EmployeesPage() {
 
   return (
     <div className="space-y-6">
+      {issued && (
+        <div className="rounded-2xl border-2 border-emerald-500/40 bg-emerald-50 p-5">
+          <h2 className="font-semibold text-emerald-900">New password for {issued.name}</h2>
+          <p className="mt-0.5 text-sm text-emerald-800">
+            Give this to them now — <strong>it is not stored anywhere</strong> and cannot be shown again.
+            Their old password no longer works.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-white p-4 text-sm">
+            <span className="text-muted-foreground">Phone</span>
+            <span className="font-mono">{issued.phone}</span>
+            <span className="ml-2 text-muted-foreground">Password</span>
+            <span className="font-mono text-base font-semibold">{issued.password}</span>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => navigator.clipboard.writeText(`${issued.phone} / ${issued.password}`)}
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Copy
+            </button>
+            <button onClick={() => setIssued(null)} className="rounded-xl border border-emerald-600/30 px-4 py-2 text-sm">
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
       <PageHero title="Employees" subtitle={`${employees.length} staff · live from database`}>
-        <button onClick={downloadCredentials} disabled={dlBusy} title="Download all employees' login credentials (Super Admin)" className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium text-white ring-1 ring-white/25 hover:bg-white/25 disabled:opacity-50">
-          {dlBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />} Credentials
-        </button>
         <button onClick={() => setShowBulk(true)} className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium text-white ring-1 ring-white/25 hover:bg-white/25">
           <Upload className="h-4 w-4" /> Bulk Upload
         </button>
@@ -146,6 +181,9 @@ export default function EmployeesPage() {
                   <span className={`chip ${chipClass[e.status] ?? 'chip-leave'}`}>{e.status}</span>
                 </div>
                 <div className="flex gap-2">
+                  <button onClick={() => resetPassword(e)} disabled={resetting === e.id} title="Issue a new app password" className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:opacity-50">
+                    {resetting === e.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />} Password
+                  </button>
                   <button onClick={() => setModal({ mode: 'edit', employee: e })} className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground">
                     <Pencil className="h-3.5 w-3.5" /> Edit
                   </button>
