@@ -50,7 +50,13 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         </Link>
 
         <div className="ml-auto flex items-center gap-4">
-          {who && <span className="hidden text-sm text-white/80 sm:block">{who}</span>}
+          <Link
+            href="/platform/account"
+            className="text-sm text-white/80 underline-offset-4 hover:text-white hover:underline"
+            title="My account"
+          >
+            {who ?? 'My account'}
+          </Link>
           <button
             onClick={() => {
               clearPlatformSession();

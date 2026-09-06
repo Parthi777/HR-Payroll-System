@@ -414,6 +414,7 @@ suite('cross-tenant isolation', () => {
   const PLATFORM_SURFACE = [
     'POST /api/platform/auth/login',
     'GET /api/platform/me',
+    'PATCH /api/platform/me/password',
     'GET /api/platform/tenants',
     'POST /api/platform/tenants',
     'GET /api/platform/tenants/:id',

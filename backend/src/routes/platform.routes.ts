@@ -24,6 +24,11 @@ const createTenantSchema = z.object({
   }),
 });
 
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(12, 'Use at least 12 characters'),
+});
+
 const addAdminSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
@@ -96,6 +101,43 @@ export async function platformRoutes(app: FastifyInstance) {
     if (!staff) throw AppError.notFound('Account');
     return staff;
   });
+
+  /**
+   * Change your own password.
+   *
+   * Requires the current one. A platform token is enough to reach this route,
+   * so without that check anyone holding a stolen token could lock the real
+   * owner out of the account that manages every dealer.
+   *
+   * Rate-limited like a sign-in, because it verifies a password and is
+   * therefore something worth guessing at.
+   */
+  app.patch(
+    '/platform/me/password',
+    { preHandler: requirePlatform, config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+
+      const staff = await app.prisma.platformUser.findUnique({ where: { id: req.user.sub } });
+      if (!staff) throw AppError.notFound('Account');
+      if (!(await bcrypt.compare(currentPassword, staff.passwordHash))) {
+        throw AppError.unauthorized('That is not your current password');
+      }
+      if (await bcrypt.compare(newPassword, staff.passwordHash)) {
+        throw new AppError('The new password must be different from the current one', 400);
+      }
+
+      await app.prisma.platformUser.update({
+        where: { id: staff.id },
+        data: { passwordHash: await bcrypt.hash(newPassword, 12) },
+      });
+
+      // Recorded as an event; the passwords themselves never reach the log.
+      await audit(req, 'PLATFORM_PASSWORD_CHANGED', {});
+
+      return { ok: true };
+    },
+  );
 
   // ── Dealers ──
   app.get('/platform/tenants', { preHandler: requirePlatform }, async () => {
