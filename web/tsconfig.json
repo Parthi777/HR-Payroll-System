@@ -20,5 +20,6 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "//": "e2e and its config are excluded so the production build never depends on test tooling; they are typechecked by e2e/tsconfig.json",
+  "exclude": ["node_modules", "e2e", "playwright.config.ts"]
 }
