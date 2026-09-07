@@ -538,3 +538,115 @@ function toResult(
     approvalStatus,
   };
 }
+
+/** What an administrator may correct on an existing attendance row. */
+export interface OverrideInput {
+  /** "HH:MM" in company time, or null to clear. Absent leaves the value alone. */
+  checkIn?: string | null;
+  checkOut?: string | null;
+  /**
+   * Only ABSENT / ON_LEAVE. PRESENT, LATE and HALF_DAY are *derived* from the
+   * times by `effectiveStatus()` on every read, so storing one would be undone
+   * the moment anything looked at the row — see the guard below.
+   */
+  status?: 'ABSENT' | 'ON_LEAVE';
+  /** Settle a punch that is awaiting sign-off, in the same action. */
+  approvalStatus?: 'APPROVED' | 'REJECTED';
+  /** Why. Required — a correction nobody can explain later is not a correction. */
+  reason: string;
+}
+
+/**
+ * Correct an attendance record by hand.
+ *
+ * The endpoint behind this returned `{ overridden: true }` without touching the
+ * database, so HR could "fix" a day, be told it worked, and find it unchanged.
+ *
+ * Two rules keep a correction from being quietly undone elsewhere:
+ *
+ * 1. **Times are the facts; the punch status is derived from them.** Storing
+ *    PRESENT on a row whose times say HALF_DAY would last exactly until the
+ *    next read, because `effectiveStatus()` re-derives punch statuses against
+ *    the current policy. So a punch status is refused with an explanation, and
+ *    correcting the times is what moves the day.
+ * 2. **A settled day cannot stay pending.** `classifyDay()` checks `pending`
+ *    before it checks the stored status, so a row marked ABSENT while its
+ *    approval sits at PENDING still shows as PN in the grid and still counts
+ *    unpaid. Marking a day absent therefore settles the approval too.
+ */
+export async function overrideAttendance(
+  prisma: PrismaClient,
+  admin: JwtPayload,
+  attendanceId: string,
+  input: OverrideInput,
+) {
+  if (!input.reason?.trim()) {
+    throw new AppError('A reason is required to correct attendance', 400);
+  }
+  const wantsChange =
+    input.checkIn !== undefined ||
+    input.checkOut !== undefined ||
+    input.status !== undefined ||
+    input.approvalStatus !== undefined;
+  if (!wantsChange) {
+    throw new AppError('Nothing to correct — send a time, a status or an approval decision', 400);
+  }
+
+  const existing = await prisma.attendance.findUnique({ where: { id: attendanceId } });
+  if (!existing) {
+    throw new AppError(
+      'No attendance record for that day. To create one, raise a manual punch instead.',
+      404,
+    );
+  }
+  await assertManages(prisma, admin, existing.employeeId);
+
+  const employee = await prisma.employee.findUnique({
+    where: { id: existing.employeeId },
+    include: { shift: true },
+  });
+  if (!employee) throw AppError.notFound('Employee');
+
+  const day = startOfDay(existing.date);
+  const checkIn =
+    input.checkIn === undefined ? existing.checkIn : input.checkIn === null ? null : atCompanyTime(day, input.checkIn);
+  const checkOut =
+    input.checkOut === undefined ? existing.checkOut : input.checkOut === null ? null : atCompanyTime(day, input.checkOut);
+
+  if (checkOut && !checkIn) {
+    throw new AppError('A check-out needs a check-in — enter a check-in time too', 400);
+  }
+  if (checkIn && checkOut && checkOut.getTime() <= checkIn.getTime()) {
+    // Night shifts legitimately close the next morning; roll the clock forward.
+    if (employee.shift?.isNightShift) checkOut.setDate(checkOut.getDate() + 1);
+    else throw new AppError('Check-out time must be after the check-in time', 400);
+  }
+
+  // Rule 1: the derived statuses are not settable.
+  const status = input.status ?? (checkIn ? resolveAttendanceStatus({ checkIn, checkOut, shift: employee.shift }) : 'ABSENT');
+
+  // Rule 2: a day the administrator has settled must not still read as pending.
+  const settling = input.status === 'ABSENT' || input.status === 'ON_LEAVE';
+  const approvalStatus =
+    input.approvalStatus ??
+    (settling && existing.approvalStatus === 'PENDING' ? 'REJECTED' : existing.approvalStatus);
+  const decided = approvalStatus !== existing.approvalStatus;
+
+  const updated = await prisma.attendance.update({
+    where: { id: attendanceId },
+    data: {
+      checkIn,
+      checkOut,
+      status,
+      workingMinutes:
+        checkIn && checkOut ? Math.round((checkOut.getTime() - checkIn.getTime()) / 60_000) : null,
+      approvalStatus,
+      ...(decided ? { approvedBy: admin.sub, approvedAt: new Date() } : {}),
+      // The correction replaces whatever the punch used to say about itself.
+      flagReason: `Corrected by HR — ${input.reason.trim()}`,
+      isFlagged: false,
+    },
+  });
+
+  return { updated, before: existing };
+}

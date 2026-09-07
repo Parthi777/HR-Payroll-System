@@ -10,12 +10,13 @@ import {
   decideAttendanceApproval,
   markManualPunch,
   findOpenPunch,
+  overrideAttendance,
 } from '../services/attendance/attendance.service.js';
 import { classifyDay, type DayCode } from '../services/attendance/day-classify.js';
 import { getObjectBytes } from '../services/storage/storage.service.js';
 import { dayKey } from '../utils/time.js';
 import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
-import { recordAudit } from '../services/audit/audit.service.js';
+import { changed, recordAudit } from '../services/audit/audit.service.js';
 
 const HHMM = z.string().regex(/^\d{1,2}:\d{2}$/, 'Use a HH:MM time, e.g. 09:30');
 
@@ -42,6 +43,23 @@ const manualPunchSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   reason: z.string().min(3, 'Tell your manager why this punch is being raised'),
 });
+
+/**
+ * A hand correction to one attendance day.
+ *
+ * PRESENT / LATE / HALF_DAY are absent from `status` on purpose: they are
+ * derived from the times on every read, so accepting one here would promise a
+ * change that the next read undoes. Correct the times instead.
+ */
+const overrideSchema = z
+  .object({
+    checkIn: HHMM.nullable().optional(),
+    checkOut: HHMM.nullable().optional(),
+    status: z.enum(['ABSENT', 'ON_LEAVE']).optional(),
+    approvalStatus: z.enum(['APPROVED', 'REJECTED']).optional(),
+    reason: z.string().min(1, 'A reason is required to correct attendance'),
+  })
+  .strict();
 
 /**
  * A manual punch arrives as JSON; a selfie punch arrives as multipart with the
@@ -434,12 +452,37 @@ export async function attendanceRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * Correct an attendance record by hand.
+   *
+   * Punch statuses are deliberately not settable — they are derived from the
+   * times on every read, so correcting the times is what moves the day. See
+   * `overrideAttendance` for why, and for why marking a day absent also settles
+   * a pending approval.
+   */
   app.patch(
     '/admin/attendance/:id/override',
     { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') },
     async (req) => {
       const { id } = req.params as { id: string };
-      return { id, overridden: true };
+      const body = overrideSchema.parse(req.body);
+
+      const { updated, before } = await overrideAttendance(app.prisma, req.user, id, body);
+
+      await recordAudit(req, 'ATTENDANCE_OVERRIDDEN', 'Attendance', {
+        entityId: updated.id,
+        metadata: {
+          ...(await employeeLabel(updated.employeeId)),
+          date: fmtDate(updated.date),
+          ...changed('checkIn', fmtTime(before.checkIn), fmtTime(updated.checkIn)),
+          ...changed('checkOut', fmtTime(before.checkOut), fmtTime(updated.checkOut)),
+          ...changed('status', before.status, updated.status),
+          ...changed('approval', before.approvalStatus, updated.approvalStatus),
+          reason: body.reason,
+        },
+      });
+
+      return { attendance: updated };
     },
   );
 

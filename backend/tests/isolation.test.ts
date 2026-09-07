@@ -204,6 +204,21 @@ suite('cross-tenant isolation', () => {
      * hand one dealer the other's salary changes and payroll totals in a
      * single, conveniently formatted list.
      */
+    it('PATCH /api/admin/attendance/:id/override cannot correct another tenant’s day', async () => {
+      const res = await as(A.adminToken, A.slug, 'PATCH', `/api/admin/attendance/${B.attendanceId}/override`, {
+        status: 'ABSENT',
+        reason: 'reaching across tenants',
+      });
+      expect(res.statusCode).not.toBe(200);
+
+      // And B's day is untouched — a refusal that still wrote would be worse
+      // than one that returned 200.
+      const theirs = await as(B.adminToken, B.slug, 'GET', '/api/admin/attendance/approvals');
+      const row = theirs.json().approvals.find((a: { id: string }) => a.id === B.attendanceId);
+      // The field is null on an untouched punch, so compare as text either way.
+      expect(String(row?.reason ?? '')).not.toContain('reaching across tenants');
+    });
+
     it('GET /api/admin/audit shows a tenant only its own trail', async () => {
       const created = await as(A.adminToken, A.slug, 'POST', '/api/admin/departments', {
         name: 'Alpha Only Department',
@@ -321,6 +336,7 @@ suite('cross-tenant isolation', () => {
     'GET /api/claims/:id',
     'PATCH /api/admin/claims/:id/approve',
     'PATCH /api/admin/attendance/:id/approve',
+    'PATCH /api/admin/attendance/:id/override',
     'PATCH /api/admin/leaves/:id/approve',
     'PUT /api/admin/geofence/:branchId',
     'GET /api/admin/dashboard/stats',
@@ -387,7 +403,6 @@ suite('cross-tenant isolation', () => {
     'GET /api/payroll/my-payslips',
     'GET /api/payroll/my-payslips/:id/pdf',
     'GET /api/shifts/my-schedule',
-    'PATCH /api/admin/attendance/:id/override',
     'PATCH /api/admin/attendance/:id/reject',
     'PATCH /api/admin/claims/:id/clarify',
     'PATCH /api/admin/claims/:id/pay',

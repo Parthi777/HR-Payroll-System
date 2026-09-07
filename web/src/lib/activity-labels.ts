@@ -135,6 +135,20 @@ const SHAPES: Record<string, Shape> = {
   },
 
   // Attendance
+  ATTENDANCE_OVERRIDDEN: {
+    title: 'Attendance corrected by hand',
+    kind: 'attendance',
+    tone: 'neutral',
+    detail: (m) =>
+      join(
+        who(m),
+        text(m.date),
+        move(m.checkIn) && `in ${move(m.checkIn)}`,
+        move(m.checkOut) && `out ${move(m.checkOut)}`,
+        move(m.status) && `${move(m.status)}`,
+        text(m.reason),
+      ),
+  },
   ATTENDANCE_APPROVED: {
     title: 'Attendance approved',
     kind: 'attendance',

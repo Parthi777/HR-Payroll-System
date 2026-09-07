@@ -454,7 +454,7 @@ GET    /api/attendance/history          # Employee's history
 GET    /api/attendance/missing-checkout # The day left open, if any — blocks check-in
 GET    /api/admin/attendance/live       # Real-time all employees (SSE/WebSocket)
 GET    /api/admin/attendance/report     # Filtered report
-PATCH  /api/admin/attendance/:id/override  # Manual correction
+PATCH  /api/admin/attendance/:id/override  # Manual correction (times/status/approval + reason)
 POST   /api/attendance/manual-punch     # Manual/selfie punch (employee) — needs manager approval
 POST   /api/admin/attendance/manual-punch  # Same, raised by HR on an employee's behalf
 GET    /api/admin/attendance/approvals  # Punches awaiting sign-off
@@ -672,6 +672,19 @@ ESI             = 0.75% of gross if gross <= ₹21,000 (only when Employee.esiEn
 Net (payable)   = earned + OT pay + Sunday pay − PF − ESI
 Invariant       : paidDays + absentDays + lopDays === servedDays
 ```
+
+### 3c. Correcting a day by hand (`overrideAttendance`)
+
+HR corrects an attendance day by correcting its **times**; the punch status
+follows from them. `PRESENT` / `LATE` / `HALF_DAY` are refused as inputs on
+purpose — `effectiveStatus()` re-derives them on every read, so storing one
+would be undone by the next query. Only `ABSENT` / `ON_LEAVE` can be set
+directly, because those are the statuses the classifier leaves alone.
+
+Marking a day ABSENT / ON_LEAVE also settles a pending approval: `classifyDay()`
+checks `pending` before the stored status, so a corrected row still awaiting
+sign-off would keep showing PN and stay unpaid. A reason is required, and every
+correction is written to the audit trail with both the old and new values.
 
 ### 3a. Day classification (`attendance/day-classify.ts`)
 
