@@ -8,8 +8,9 @@ import {
 } from 'lucide-react';
 import {
   DEALER_ROLES, platformApi, suggestPassword,
-  type AuditEntry, type Dealer, type DealerAdmin, type NewDealerAdmin,
+  type AuditEntry, type AuditPage, type Dealer, type DealerAdmin, type NewDealerAdmin,
 } from '@/lib/platform-api';
+import { describeActivity, exactTime } from '@/lib/platform-activity';
 
 interface DealerDetail {
   tenant: Dealer & { updatedAt: string };
@@ -18,12 +19,6 @@ interface DealerDetail {
 }
 
 const ROLE_LABEL = Object.fromEntries(DEALER_ROLES.map((r) => [r.value, r.label]));
-
-/** "TENANT_ADMIN_CREATED" → "Admin created" — the log reads as English, not constants. */
-function actionLabel(action: string): string {
-  const words = action.replace(/^TENANT_/, '').replace(/_/g, ' ').toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 export default function DealerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -37,7 +32,7 @@ export default function DealerDetailPage() {
     try {
       const [detail, log] = await Promise.all([
         platformApi.get<DealerDetail>(`/tenants/${id}`),
-        platformApi.get<{ entries: AuditEntry[] }>(`/audit?tenantId=${id}`),
+        platformApi.get<AuditPage>(`/audit?tenantId=${id}`),
       ]);
       setData(detail);
       setAudit(log.entries);
@@ -188,12 +183,20 @@ export default function DealerDetailPage() {
 
       {/* ── activity ── */}
       <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold">Activity</h2>
-          <p className="text-sm text-muted-foreground">
-            Platform actions taken on this dealer. Their own staff's activity lives in their
-            workspace, not here.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Activity</h2>
+            <p className="text-sm text-muted-foreground">
+              Platform actions taken on this dealer. Their own staff&rsquo;s activity lives in their
+              workspace, not here.
+            </p>
+          </div>
+          <Link
+            href={`/platform/activity?tenantId=${id}`}
+            className="whitespace-nowrap text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Open in the activity log
+          </Link>
         </div>
 
         {audit === null ? (
@@ -205,30 +208,23 @@ export default function DealerDetailPage() {
           </div>
         ) : (
           <ol className="overflow-hidden rounded-2xl border border-border bg-card">
-            {audit.map((e) => (
-              <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border px-4 py-3 text-sm last:border-b-0">
-                <span className="font-medium">{actionLabel(e.action)}</span>
-                {e.metadata && <span className="text-muted-foreground">{summarise(e.metadata)}</span>}
-                <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
-                  {new Date(e.timestamp).toLocaleString()}
-                </span>
-              </li>
-            ))}
+            {audit.map((e) => {
+              const { title, detail } = describeActivity(e);
+              return (
+                <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border px-4 py-3 text-sm last:border-b-0">
+                  <span className="font-medium">{title}</span>
+                  {detail && <span className="text-muted-foreground">{detail}</span>}
+                  <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
+                    {e.actorName} · {exactTime(e.timestamp)}
+                  </span>
+                </li>
+              );
+            })}
           </ol>
         )}
       </section>
     </div>
   );
-}
-
-/** Metadata is stored as JSON; show its values, never its field names. */
-function summarise(metadata: string): string {
-  try {
-    const parsed = JSON.parse(metadata) as Record<string, unknown>;
-    return Object.values(parsed).filter((v) => typeof v === 'string' || typeof v === 'number').join(' · ');
-  } catch {
-    return '';
-  }
 }
 
 function BackLink() {

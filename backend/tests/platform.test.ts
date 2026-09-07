@@ -479,10 +479,34 @@ suite('dealer onboarding', () => {
   });
 
   describe('audit trail', () => {
+    interface Entry {
+      id: string;
+      action: string;
+      actorId: string;
+      actorName: string;
+      targetTenantId: string | null;
+      tenantName: string | null;
+      metadata: string | null;
+      timestamp: string;
+    }
+    interface Page {
+      entries: Entry[];
+      nextCursor: string | null;
+      filters?: {
+        actors: { id: string; name: string; count: number }[];
+        actions: { action: string; count: number }[];
+        dealers: { id: string; name: string; count: number }[];
+      };
+    }
+
+    const readLog = async (query = ''): Promise<Page> => {
+      const res = await asPlatform('GET', `/api/platform/audit${query}`);
+      expect(res.statusCode, res.body).toBe(200);
+      return res.json() as Page;
+    };
+
     it('records every platform action, and never the passwords', async () => {
-      const res = await asPlatform('GET', '/api/platform/audit');
-      expect(res.statusCode).toBe(200);
-      const entries = res.json().entries as { action: string; metadata: string | null }[];
+      const { entries } = await readLog();
 
       const actions = entries.map((e) => e.action);
       expect(actions).toContain('TENANT_CREATED');
@@ -493,6 +517,84 @@ suite('dealer onboarding', () => {
       const recorded = JSON.stringify(entries);
       expect(recorded, 'a password reached the audit log').not.toContain(DEALER_ADMIN_PASSWORD);
       expect(recorded).not.toContain(PLATFORM.password);
+    });
+
+    it('names the actor and the dealer, not their ids', async () => {
+      const { entries } = await readLog();
+      const created = entries.find((e) => e.action === 'TENANT_CREATED');
+
+      expect(created?.actorName).toBe(PLATFORM.name);
+      // The dealer's own name, resolved from targetTenantId — the row stores
+      // only the id, so this is what makes the log readable.
+      expect(created?.tenantName).toBeTruthy();
+      expect(created?.tenantName).not.toBe(created?.targetTenantId);
+    });
+
+    it('filters by dealer, by person and by action', async () => {
+      const all = await readLog();
+      const sample = all.entries.find((e) => e.action === 'TENANT_SUSPENDED');
+      expect(sample, 'expected a suspension in the log').toBeDefined();
+
+      const byTenant = await readLog(`?tenantId=${sample!.targetTenantId}`);
+      expect(byTenant.entries.length).toBeGreaterThan(0);
+      expect(byTenant.entries.every((e) => e.targetTenantId === sample!.targetTenantId)).toBe(true);
+
+      const byActor = await readLog(`?actorId=${sample!.actorId}`);
+      expect(byActor.entries.every((e) => e.actorId === sample!.actorId)).toBe(true);
+
+      const byAction = await readLog('?action=TENANT_SUSPENDED');
+      expect(byAction.entries.length).toBeGreaterThan(0);
+      expect(byAction.entries.every((e) => e.action === 'TENANT_SUSPENDED')).toBe(true);
+
+      // Filters combine, rather than the last one winning.
+      const both = await readLog(`?action=TENANT_SUSPENDED&tenantId=${sample!.targetTenantId}`);
+      expect(both.entries.every(
+        (e) => e.action === 'TENANT_SUSPENDED' && e.targetTenantId === sample!.targetTenantId,
+      )).toBe(true);
+    });
+
+    it('pages with a cursor without repeating or skipping an entry', async () => {
+      const all = await readLog('?limit=200');
+      expect(all.entries.length, 'need several entries to page through').toBeGreaterThan(3);
+      expect(all.nextCursor).toBeNull();
+
+      const first = await readLog('?limit=2');
+      expect(first.entries).toHaveLength(2);
+      expect(first.nextCursor).toBe(first.entries[1].id);
+
+      const second = await readLog(`?limit=2&cursor=${first.nextCursor}`);
+      const paged = [...first.entries, ...second.entries].map((e) => e.id);
+
+      expect(new Set(paged).size, 'an entry appeared on two pages').toBe(paged.length);
+      expect(paged).toEqual(all.entries.slice(0, paged.length).map((e) => e.id));
+    });
+
+    it('offers filter options for the whole log, on the first page only', async () => {
+      const first = await readLog('?limit=2');
+      expect(first.filters).toBeDefined();
+
+      const { actors, actions, dealers } = first.filters!;
+      expect(actors.some((a) => a.name === PLATFORM.name)).toBe(true);
+      expect(actions.some((a) => a.action === 'TENANT_CREATED')).toBe(true);
+      expect(dealers.length).toBeGreaterThan(0);
+      expect(dealers.every((d) => d.name.length > 0)).toBe(true);
+
+      // Counts cover every entry, not just the two on this page.
+      expect(actors.reduce((n, a) => n + a.count, 0)).toBeGreaterThan(first.entries.length);
+
+      // Paging back for more does not re-send them.
+      const next = await readLog(`?limit=2&cursor=${first.nextCursor}`);
+      expect(next.filters).toBeUndefined();
+    });
+
+    it('rejects a nonsense page size rather than trusting it', async () => {
+      const res = await asPlatform('GET', '/api/platform/audit?limit=5000');
+      expect(res.statusCode).toBe(422);
+    });
+
+    it('is unreachable with a dealer’s own sign-in', async () => {
+      const res = await asDealer('abc-motors', 'owner@abc.test', '/api/platform/audit');
+      expect(res.statusCode).toBe(403);
     });
   });
 });

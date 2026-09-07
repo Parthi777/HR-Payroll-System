@@ -97,13 +97,38 @@ export interface CreatedDealer {
   loginUrl: string;
 }
 
+/**
+ * One thing that happened, as the console reads it.
+ *
+ * The stored row names its actor and its dealer by id; the server resolves both
+ * to names on the way out, so a rename never rewrites history and the page
+ * never has to hold a directory in memory to render a line.
+ */
 export interface AuditEntry {
   id: string;
   action: string;
+  actorId: string;
+  actorName: string;
   targetTenantId: string | null;
+  /** Null when the entry is not about a dealer, or that dealer is gone. */
+  tenantName: string | null;
+  tenantSlug: string | null;
+  targetId: string | null;
   metadata: string | null;
   ipAddress: string | null;
   timestamp: string;
+}
+
+/** A page of the activity log. `filters` comes with the first page only. */
+export interface AuditPage {
+  entries: AuditEntry[];
+  nextCursor: string | null;
+  filters?: {
+    actors: { id: string; name: string; count: number }[];
+    actions: { action: string; count: number }[];
+    /** Only dealers that actually appear in the log. */
+    dealers: { id: string; name: string; count: number }[];
+  };
 }
 
 /**

@@ -41,6 +41,14 @@ const updateStaffSchema = z.object({
   password: z.string().min(12, 'Use at least 12 characters').optional(),
 });
 
+const auditQuerySchema = z.object({
+  tenantId: z.string().optional(),
+  actorId: z.string().optional(),
+  action: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().optional(),
+});
+
 const addAdminSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
@@ -341,13 +349,134 @@ export async function platformRoutes(app: FastifyInstance) {
     return { tenant: updated };
   });
 
+  /**
+   * The activity log.
+   *
+   * Stored rows name their actor and their dealer by id, because ids are what
+   * stay true — a renamed dealer or a renamed administrator must not rewrite
+   * history. Nobody can read ids, so they are resolved to names here, on the
+   * way out, and a row whose dealer has since been deleted still renders.
+   *
+   * Paged by cursor rather than offset: entries arrive while someone is
+   * reading, and an offset would show them a row twice or skip one.
+   */
   app.get('/platform/audit', { preHandler: requirePlatform }, async (req) => {
-    const { tenantId } = req.query as { tenantId?: string };
-    const entries = await app.prisma.platformAuditLog.findMany({
-      where: tenantId ? { targetTenantId: tenantId } : undefined,
-      orderBy: { timestamp: 'desc' },
-      take: 200,
+    const q = auditQuerySchema.parse(req.query);
+
+    const where = {
+      ...(q.tenantId ? { targetTenantId: q.tenantId } : {}),
+      ...(q.actorId ? { platformUserId: q.actorId } : {}),
+      ...(q.action ? { action: q.action } : {}),
+    };
+
+    // One row over the asked-for page: its existence is what says there is
+    // more, without a second count query over the whole log.
+    const page = await app.prisma.platformAuditLog.findMany({
+      where,
+      // Id breaks ties on timestamp. Two entries can share one — deactivating
+      // an account and resetting its password are written by a single request —
+      // and without a total order the cursor could skip a row or serve it twice.
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      take: q.limit + 1,
+      ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
     });
-    return { entries };
+    const rows = page.slice(0, q.limit);
+    const nextCursor = page.length > q.limit ? (rows[rows.length - 1]?.id ?? null) : null;
+
+    const [actorsById, tenantsById] = await Promise.all([
+      namesFor(rows.map((r) => r.platformUserId)),
+      dealersFor(rows.map((r) => r.targetTenantId)),
+    ]);
+
+    const entries = rows.map((r) => {
+      const dealer = r.targetTenantId ? tenantsById.get(r.targetTenantId) : undefined;
+      return {
+        id: r.id,
+        action: r.action,
+        actorId: r.platformUserId,
+        // Deactivated staff still resolve — accounts are never deleted, which
+        // is exactly so this line can never read "unknown".
+        actorName: actorsById.get(r.platformUserId) ?? 'A removed account',
+        targetTenantId: r.targetTenantId,
+        tenantName: dealer?.name ?? null,
+        tenantSlug: dealer?.slug ?? null,
+        targetId: r.targetId,
+        metadata: r.metadata,
+        ipAddress: r.ipAddress,
+        timestamp: r.timestamp,
+      };
+    });
+
+    // The filter options describe the whole log, not this page — otherwise the
+    // dropdown loses an option as soon as you scroll past its last entry. Sent
+    // with the first page only; paging back for more does not need them again.
+    const filters = q.cursor ? undefined : await auditFilterOptions();
+
+    return { entries, nextCursor, ...(filters ? { filters } : {}) };
   });
+
+  /** Resolve platform staff ids to names, in one query. */
+  async function namesFor(ids: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+    const people = await app.prisma.platformUser.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, name: true },
+    });
+    return new Map(people.map((p) => [p.id, p.name]));
+  }
+
+  /** Resolve dealer ids to name and slug, in one query. */
+  async function dealersFor(ids: (string | null)[]): Promise<Map<string, { name: string; slug: string }>> {
+    const unique = [...new Set(ids.filter((id): id is string => id !== null))];
+    if (unique.length === 0) return new Map();
+    const tenants = await app.prisma.tenant.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, name: true, slug: true },
+    });
+    return new Map(tenants.map((t) => [t.id, { name: t.name, slug: t.slug }]));
+  }
+
+  /**
+   * Who has ever acted, and what kinds of action exist — grouped in the
+   * database rather than counted in the page, so the filters cover the whole
+   * log however long it grows.
+   */
+  async function auditFilterOptions() {
+    const [byActor, byAction, byTenant] = await Promise.all([
+      app.prisma.platformAuditLog.groupBy({ by: ['platformUserId'], _count: { _all: true } }),
+      app.prisma.platformAuditLog.groupBy({ by: ['action'], _count: { _all: true } }),
+      app.prisma.platformAuditLog.groupBy({
+        by: ['targetTenantId'],
+        where: { targetTenantId: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const [names, dealers] = await Promise.all([
+      namesFor(byActor.map((a) => a.platformUserId)),
+      dealersFor(byTenant.map((t) => t.targetTenantId)),
+    ]);
+
+    return {
+      actors: byActor
+        .map((a) => ({
+          id: a.platformUserId,
+          name: names.get(a.platformUserId) ?? 'A removed account',
+          count: a._count._all,
+        }))
+        .sort((a, b) => b.count - a.count),
+      actions: byAction
+        .map((a) => ({ action: a.action, count: a._count._all }))
+        .sort((a, b) => b.count - a.count),
+      // Only dealers that appear in the log: a filter that can only ever
+      // return nothing is worse than no filter.
+      dealers: byTenant
+        .flatMap((t) => {
+          const dealer = t.targetTenantId ? dealers.get(t.targetTenantId) : undefined;
+          return dealer ? [{ id: t.targetTenantId as string, name: dealer.name, count: t._count._all }] : [];
+        })
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  }
 }

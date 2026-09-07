@@ -53,6 +53,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           {[
             { href: '/platform', label: 'Dealers' },
             { href: '/platform/users', label: 'Team' },
+            { href: '/platform/activity', label: 'Activity' },
           ].map((item) => {
             const active = item.href === '/platform' ? pathname === '/platform' : pathname.startsWith(item.href);
             return (

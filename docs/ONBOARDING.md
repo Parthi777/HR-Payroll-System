@@ -88,7 +88,7 @@ sign-ins are refused with a clear message.
 | `GET /api/platform/tenants` | every dealer, with status and headcount |
 | `GET /api/platform/tenants/:id` | one dealer, with its admin accounts |
 | `PATCH /api/platform/tenants/:id` | rename (slug stays fixed) |
-| `GET /api/platform/audit` | platform actions, newest first; `?tenantId=` to filter |
+| `GET /api/platform/audit` | the activity log — see below |
 
 ## The two surfaces do not overlap
 
@@ -109,8 +109,36 @@ above are asserted in `tests/platform.test.ts`.
 
 Every platform action is recorded in `PlatformAuditLog` with the actor, the
 dealer, the IP and a timestamp: `TENANT_CREATED`, `TENANT_ADMIN_CREATED`,
-`TENANT_SUSPENDED`, `TENANT_RESUMED`, `TENANT_RENAMED`. Passwords are never
-recorded — a test asserts that.
+`TENANT_SUSPENDED`, `TENANT_RESUMED`, `TENANT_RENAMED`, and the console's own
+`PLATFORM_USER_CREATED`, `PLATFORM_USER_DEACTIVATED`,
+`PLATFORM_USER_REACTIVATED`, `PLATFORM_USER_PASSWORD_RESET` and
+`PLATFORM_PASSWORD_CHANGED`. Passwords are never recorded — a test asserts that.
 
 This is the only place where one account can affect every customer, so it is the
 most closely recorded part of the system.
+
+### Reading it
+
+**Activity** in the console (`/platform/activity`) is the whole log, newest
+first, grouped by day. A dealer's own page shows the entries for that dealer and
+links through to the same page filtered to it.
+
+```http
+GET /api/platform/audit?tenantId=&actorId=&action=&limit=50&cursor=
+```
+
+- Rows store the actor and the dealer **by id**, so a rename never rewrites
+  history. The endpoint resolves both to names on the way out — an entry whose
+  dealer has since been deleted still renders, and a deactivated administrator
+  still resolves, which is why platform accounts are deactivated and never
+  deleted.
+- Paged by **cursor**, not offset: entries arrive while someone is reading, and
+  an offset would show a row twice or skip one. Pass the previous response's
+  `nextCursor`; a null one means the end. `limit` is capped at 200.
+- The first page also carries `filters` — the actors, actions and dealers that
+  appear **anywhere** in the log, with counts, so a dropdown option does not
+  vanish as soon as you scroll past its last entry. Cursored pages omit them.
+
+Turning a stored action into English happens in one place,
+`web/src/lib/platform-activity.ts`, so the activity page and a dealer's own
+history cannot describe the same event differently.
