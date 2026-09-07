@@ -1,5 +1,12 @@
 # Deploying the Backend to Railway
 
+> **Out of date.** This was written before the deployment existed and does not
+> describe it: the database is Postgres, not a SQLite volume, and the web app
+> *is* deployed to Railway alongside the backend. Both services are currently
+> deployed by `railway up` snapshots — see [AUTO-DEPLOY.md](AUTO-DEPLOY.md) for
+> how to connect them to GitHub, and [DEPLOY.md](DEPLOY.md) for the live setup.
+> Kept for the environment-variable list, which is still accurate.
+
 The backend (`backend/`) is a Node + Fastify + Prisma API. These steps deploy it on
 [Railway](https://railway.app) and give you a public HTTPS URL the Android app and web
 dashboard can point at.
