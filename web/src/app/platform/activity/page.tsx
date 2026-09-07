@@ -41,6 +41,7 @@ export default function ActivityPage() {
   // Null until the query string has been read — see the effect below.
   const [filters, setFilters] = useState<Filters | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +68,7 @@ export default function ActivityPage() {
   const load = useCallback(async (f: Filters) => {
     const mine = ++generation.current;
     setError(null);
+    setBusy(true);
     try {
       const page = await platformApi.get<AuditPage>(query(f));
       if (mine !== generation.current) return;
@@ -78,6 +80,8 @@ export default function ActivityPage() {
     } catch (err) {
       if (mine !== generation.current) return;
       setError(err instanceof Error ? err.message : 'Could not load the activity log');
+    } finally {
+      if (mine === generation.current) setBusy(false);
     }
   }, [query]);
 
@@ -190,32 +194,45 @@ export default function ActivityPage() {
         )}
       </div>
 
-      {entries === null ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading activity…
-        </div>
-      ) : entries.length === 0 ? (
-        <Empty filtered={filtered} onClear={() => apply(NO_FILTERS)} />
-      ) : (
-        <>
-          <Timeline entries={entries} showDealer={active.tenantId === ''} />
+      {/*
+        * One region for the results, whatever they are.
+        *
+        * aria-busy sits here rather than on the list, so the signal survives a
+        * filter that empties it — and the rows stay put but go quiet while a
+        * request is in flight, because until it lands they are still the
+        * previous filter's answer and should not be read as this one's.
+        */}
+      <div
+        aria-busy={busy}
+        className={`space-y-4 transition-opacity ${busy ? 'pointer-events-none opacity-40' : ''}`}
+      >
+        {entries === null ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading activity…
+          </div>
+        ) : entries.length === 0 ? (
+          <Empty filtered={filtered} onClear={() => apply(NO_FILTERS)} />
+        ) : (
+          <>
+            <Timeline entries={entries} showDealer={active.tenantId === ''} />
 
-          {cursor ? (
-            <button
-              onClick={loadMore}
-              disabled={loadingMore}
-              className="w-full rounded-xl border border-border py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-60"
-            >
-              {loadingMore ? 'Loading…' : 'Show older entries'}
-            </button>
-          ) : (
-            <p className="text-center text-xs text-muted-foreground">
-              That is the whole log{filtered ? ' for this filter' : ''} — {entries.length}{' '}
-              {entries.length === 1 ? 'entry' : 'entries'}.
-            </p>
-          )}
-        </>
-      )}
+            {cursor ? (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="w-full rounded-xl border border-border py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-60"
+              >
+                {loadingMore ? 'Loading…' : 'Show older entries'}
+              </button>
+            ) : (
+              <p className="text-center text-xs text-muted-foreground">
+                That is the whole log{filtered ? ' for this filter' : ''} — {entries.length}{' '}
+                {entries.length === 1 ? 'entry' : 'entries'}.
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

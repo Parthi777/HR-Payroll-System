@@ -6,3 +6,8 @@ out/
 *.log
 next-env.d.ts.timestamp
 *.tsbuildinfo
+
+# Playwright
+/test-results/
+/playwright-report/
+/e2e/.auth/

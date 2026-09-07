@@ -142,3 +142,6 @@ GET /api/platform/audit?tenantId=&actorId=&action=&limit=50&cursor=
 Turning a stored action into English happens in one place,
 `web/src/lib/platform-activity.ts`, so the activity page and a dealer's own
 history cannot describe the same event differently.
+
+The page is covered end to end by `web/e2e/activity.spec.ts` — run it with
+`cd web && npm run e2e`. See `web/e2e/README.md` for what a run does.
