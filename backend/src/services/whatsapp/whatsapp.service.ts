@@ -126,6 +126,30 @@ export async function dispatchWhatsApp(prisma: PrismaClient, input: DispatchInpu
   }
 }
 
+/**
+ * Reply to an inbound message, without a tenant.
+ *
+ * `dispatchWhatsApp` writes a WhatsAppLog row and so needs a workspace to own
+ * it. Some replies have none — a number registered to two dealers is refused
+ * precisely because we do not know whose it is, and that refusal still has to
+ * reach the sender. This sends and never throws; the webhook must answer Meta
+ * either way.
+ */
+export async function sendReply(phone: string, message: string): Promise<void> {
+  if (!isWhatsAppEnabled()) {
+    logger.info({ phone: maskPhone(phone) }, 'WhatsApp not configured — reply not sent');
+    return;
+  }
+  try {
+    await provider().sendText(phone, message);
+  } catch (err) {
+    logger.error({ err, phone: maskPhone(phone) }, 'WhatsApp reply failed');
+  }
+}
+
+/** Last four digits only — CLAUDE.md requires phone numbers masked in logs. */
+const maskPhone = (phone: string) => `••••${phone.slice(-4)}`;
+
 // ── Message templates (see CLAUDE.md "Message Templates") ──
 export const waTemplates = {
   checkIn: (name: string, time: string, branch: string) =>

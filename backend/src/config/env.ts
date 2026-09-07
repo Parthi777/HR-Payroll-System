@@ -54,6 +54,9 @@ const envSchema = z.object({
   META_WHATSAPP_TOKEN: z.string().optional(),
   META_WHATSAPP_PHONE_ID: z.string().optional(),
   META_WHATSAPP_VERIFY_TOKEN: z.string().optional(),
+  // Signs every inbound webhook payload. Without it the webhook refuses to act
+  // on anything, because it cannot tell Meta from anyone else who finds the URL.
+  META_WHATSAPP_APP_SECRET: z.string().optional(),
 
   FACE_MATCH_THRESHOLD: z.coerce.number().default(85),
 });

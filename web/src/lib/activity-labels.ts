@@ -221,6 +221,13 @@ const SHAPES: Record<string, Shape> = {
     detail: (m) => join(text(m.title), money(m.amount), text(m.voucherNo) && `voucher ${text(m.voucherNo)}`),
   },
 
+  WHATSAPP_BROADCAST: {
+    title: 'WhatsApp broadcast sent',
+    kind: 'money',
+    tone: 'neutral',
+    detail: (m) => join(`${text(m.recipients)} recipient(s)`, text(m.preview)),
+  },
+
   // Configuration
   GEOFENCE_UPDATED: {
     title: 'Geofence changed',

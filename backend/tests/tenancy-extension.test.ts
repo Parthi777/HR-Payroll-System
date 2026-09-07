@@ -181,7 +181,18 @@ describe('bypass audit', () => {
    * adding one is a deliberate act that shows up in review.
    */
   const ALLOWED = new Set<string>([
-    // populated as Phase 4 adds login resolution; every entry needs a reason
+    /**
+     * The WhatsApp webhook is called by Meta, so it arrives with no session and
+     * no workspace — which tenant a message belongs to is the very question it
+     * has to answer, and it cannot be answered from inside a tenant's scope.
+     *
+     * Reviewed: the unscoped query reads `id`, `name` and `tenantId` for active
+     * employees on one phone number and nothing else, and its caller refuses to
+     * act when that returns more than one row rather than picking a winner —
+     * see `resolveInbound`, and the test that a number on two payrolls resolves
+     * to AMBIGUOUS. Everything after resolution runs inside `runInTenant`.
+     */
+    'services/whatsapp/inbound.service.ts',
   ]);
 
   function walk(dir: string): string[] {

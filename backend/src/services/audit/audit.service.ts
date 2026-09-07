@@ -60,6 +60,7 @@ export type AuditAction =
   | 'CLAIM_REJECTED'
   | 'CLAIM_CLARIFICATION_REQUESTED'
   | 'CLAIM_PAID'
+  | 'WHATSAPP_BROADCAST'
   // Configuration
   | 'GEOFENCE_UPDATED'
   | 'SHIFT_CREATED'
@@ -85,6 +86,7 @@ export type AuditEntity =
   | 'Leave'
   | 'Payroll'
   | 'Claim'
+  | 'WhatsApp'
   | 'Branch'
   | 'Shift'
   | 'Department'

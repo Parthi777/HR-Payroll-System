@@ -612,6 +612,29 @@ GEOFENCE_VIOLATION:
 Please return to {{branch_name}}."
 ```
 
+### Inbound webhook — how a message is trusted
+
+`POST /api/whatsapp/webhook` is unauthenticated by necessity (Meta calls it), so
+three things gate it, in `services/whatsapp/inbound.service.ts`:
+
+1. **Signature.** Every payload is HMAC-signed with `META_WHATSAPP_APP_SECRET`
+   and checked in constant time against the raw bytes (a scoped content-type
+   parser keeps them). No secret set → the webhook refuses everything with 503
+   rather than falling open.
+2. **Tenant resolution.** `Employee.phone` is unique *per tenant*, so one number
+   can belong to employees of two dealers. `resolveInbound` refuses an ambiguous
+   number instead of picking one — answering STATUS or SLIP for the wrong dealer
+   would hand over someone else's attendance or salary. A dealer on its own
+   WhatsApp number is unambiguous via the receiving `phone_number_id`. This is
+   the codebase's only `runUnscoped` bypass, reviewed and pinned in
+   `tenancy-extension.test.ts`.
+3. **Scope.** Every command runs inside `runInTenant` as that employee, so a
+   caller who never signed in still only reaches their own rows.
+
+Unknown senders get silence, not "no such employee" — either reply would confirm
+which numbers are registered. Payslip PDFs are never attached; the reply gives
+the figure and points at the app, which authenticates.
+
 ### Inbound WhatsApp Commands (Two-way)
 ```
 Employee sends "IN"     → Triggers check-in instructions (must use app for selfie)

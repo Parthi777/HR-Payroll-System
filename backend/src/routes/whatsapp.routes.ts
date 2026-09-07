@@ -2,9 +2,30 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole } from '../middleware/auth.js';
 import { env } from '../config/env.js';
-import { dispatchWhatsApp, isWhatsAppEnabled } from '../services/whatsapp/whatsapp.service.js';
+import { dispatchWhatsApp, isWhatsAppEnabled, sendReply } from '../services/whatsapp/whatsapp.service.js';
+import { handleInbound, parseInbound, resolveInbound, verifyMetaSignature } from '../services/whatsapp/inbound.service.js';
+import { logger } from '../utils/logger.js';
+import { runInTenant } from '../context/tenant-context.js';
+import { recordAudit } from '../services/audit/audit.service.js';
 
 export async function whatsappRoutes(app: FastifyInstance) {
+  /**
+   * Keep the exact bytes Meta sent, for the signature check.
+   *
+   * A signature covers the raw payload, and `JSON.parse` then `JSON.stringify`
+   * does not reproduce it — key order, whitespace and number formatting are all
+   * free to differ. So the body is captured verbatim here and parsed
+   * afterwards. Scoped to this plugin, so no other route is affected.
+   */
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+    (req as { rawBody?: Buffer }).rawBody = body as Buffer;
+    try {
+      done(null, JSON.parse((body as Buffer).toString('utf8') || '{}'));
+    } catch {
+      done(null, {});
+    }
+  });
+
   // Meta webhook verification (GET) — echoes hub.challenge
   app.get('/whatsapp/webhook', async (req, reply) => {
     const q = req.query as Record<string, string>;
@@ -14,10 +35,65 @@ export async function whatsappRoutes(app: FastifyInstance) {
     return reply.status(403).send('Forbidden');
   });
 
-  // Inbound messages (POST) — IN / OUT / LEAVE / STATUS / BALANCE / SLIP
-  app.post('/whatsapp/webhook', async (req) => {
-    // TODO: parse Meta payload -> route command to handler
-    return { received: true, body: req.body };
+  /**
+   * Inbound messages: IN / OUT / LEAVE / STATUS / BALANCE / SLIP.
+   *
+   * This route has no authentication and cannot have any — Meta calls it. What
+   * stands in for a session is the signature check below plus the tenant
+   * resolution in `resolveInbound`, which refuses a phone number that belongs
+   * to more than one dealer rather than picking one.
+   *
+   * It always answers 200. Meta retries anything else, and a message we could
+   * not act on will not succeed on the fourth delivery either — the failure is
+   * logged instead, where somebody can see it.
+   */
+  app.post('/whatsapp/webhook', async (req, reply) => {
+    const secret = env.META_WHATSAPP_APP_SECRET;
+    if (!secret) {
+      // Refuse rather than fall open: without the secret, anyone who finds this
+      // URL can pose as Meta and ask for an employee's payslip.
+      logger.error('WhatsApp webhook called but META_WHATSAPP_APP_SECRET is not set — ignoring');
+      return reply.status(503).send({ error: 'Webhook not configured' });
+    }
+
+    const raw = (req as { rawBody?: Buffer }).rawBody ?? Buffer.from('');
+    const signature = req.headers['x-hub-signature-256'] as string | undefined;
+    if (!verifyMetaSignature(raw, signature, secret)) {
+      logger.warn({ ip: req.ip }, 'WhatsApp webhook: bad or missing signature');
+      return reply.status(401).send({ error: 'Bad signature' });
+    }
+
+    const messages = parseInbound(req.body);
+    for (const message of messages) {
+      try {
+        const resolution = await resolveInbound(app.prisma, message);
+        const replyText = await handleInbound(app.prisma, message, resolution);
+        if (!replyText) continue;
+
+        if (resolution.kind === 'EMPLOYEE') {
+          // A known sender's conversation belongs in their employer's log,
+          // beside every other message that employee was sent.
+          await runInTenant(
+            { tenantId: resolution.tenantId, subjectId: resolution.employeeId, role: 'EMPLOYEE' },
+            () =>
+              dispatchWhatsApp(app.prisma, {
+                phone: message.from,
+                employeeId: resolution.employeeId,
+                message: replyText,
+                trigger: 'INBOUND_REPLY',
+                templateName: 'INBOUND_REPLY',
+              }),
+          );
+        } else {
+          // Nobody owns this conversation — send it, log nothing.
+          await sendReply(message.from, replyText);
+        }
+      } catch (err) {
+        logger.error({ err, messageId: message.messageId }, 'WhatsApp inbound handling failed');
+      }
+    }
+
+    return reply.send({ received: messages.length });
   });
 
   app.get('/admin/whatsapp/logs', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async () => {
@@ -33,9 +109,36 @@ export async function whatsappRoutes(app: FastifyInstance) {
     return { sent: isWhatsAppEnabled(), logged: true };
   });
 
+  /**
+   * Send one message to many people.
+   *
+   * This used to return `{ queued: phones.length }` having sent nothing — the
+   * caller was told a broadcast went out that never did. Each recipient is now
+   * dispatched and logged individually, so the WhatsApp log shows one row per
+   * person and a partial failure is visible rather than averaged away.
+   */
   app.post('/admin/whatsapp/broadcast', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
-    const { phones, templateName } = z.object({ phones: z.array(z.string()), templateName: z.string() }).parse(req.body);
-    return { queued: phones.length, templateName };
+    const { phones, templateName, message } = z
+      .object({
+        phones: z.array(z.string().min(8)).min(1, 'Select at least one recipient').max(500),
+        templateName: z.string().default('BROADCAST'),
+        message: z.string().min(1, 'A message is required'),
+      })
+      .parse(req.body);
+
+    // Sequential on purpose: providers rate-limit, and a burst of 500 parallel
+    // sends is the reliable way to get the number throttled.
+    let sent = 0;
+    for (const phone of [...new Set(phones)]) {
+      await dispatchWhatsApp(app.prisma, { phone, message, trigger: 'BROADCAST', templateName });
+      sent += 1;
+    }
+
+    await recordAudit(req, 'WHATSAPP_BROADCAST', 'WhatsApp', {
+      metadata: { recipients: sent, templateName, preview: message.slice(0, 120) },
+    });
+
+    return { recipients: sent, delivering: isWhatsAppEnabled() };
   });
 
   app.get('/admin/whatsapp/templates', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async () => {
