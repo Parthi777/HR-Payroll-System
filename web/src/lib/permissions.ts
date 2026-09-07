@@ -37,6 +37,7 @@ export const ROUTE_ROLES: Record<string, AdminRole[]> = {
   '/whatsapp': ['SUPER_ADMIN', 'HR_MANAGER'],
   '/reports': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN'],
   '/access': ['SUPER_ADMIN'],
+  '/activity': ['SUPER_ADMIN'],
   '/settings': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'],
 };
 

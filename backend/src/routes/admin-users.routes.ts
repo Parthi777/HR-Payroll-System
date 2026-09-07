@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { requireTenantId } from '../context/tenant-context.js';
+import { changed, recordAudit } from '../services/audit/audit.service.js';
 
 const ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER'] as const;
 
@@ -40,6 +41,10 @@ export async function adminUsersRoutes(app: FastifyInstance) {
     const { password, ...rest } = createSchema.parse(req.body);
     const passwordHash = await bcrypt.hash(password, 12);
     const admin = await app.prisma.adminUser.create({ data: { ...rest, passwordHash, tenantId: requireTenantId() }, select: safeSelect });
+    await recordAudit(req, 'ADMIN_CREATED', 'AdminUser', {
+      entityId: admin.id,
+      metadata: { name: admin.name, email: admin.email, role: admin.role, branchId: admin.branchId },
+    });
     return { admin };
   });
 
@@ -53,10 +58,15 @@ export async function adminUsersRoutes(app: FastifyInstance) {
     if (id === req.user.sub && rest.role && rest.role !== 'SUPER_ADMIN') {
       throw new AppError('You cannot demote your own account', 400);
     }
+    // Read once, for both the last-Super-Admin guard and the audit line: an
+    // entry saying only "role changed" is not worth writing, so the previous
+    // values are captured before the update overwrites them.
+    const before = await app.prisma.adminUser.findUnique({ where: { id }, select: safeSelect });
+    if (!before) throw new AppError('User not found', 404);
+
     // Never allow the last active SUPER_ADMIN to be disabled or demoted.
     if (rest.isActive === false || (rest.role && rest.role !== 'SUPER_ADMIN')) {
-      const target = await app.prisma.adminUser.findUnique({ where: { id } });
-      if (target?.role === 'SUPER_ADMIN' && target.isActive) {
+      if (before.role === 'SUPER_ADMIN' && before.isActive) {
         const supers = await app.prisma.adminUser.count({ where: { role: 'SUPER_ADMIN', isActive: true } });
         if (supers <= 1) throw new AppError('Cannot remove the last active Super Admin', 409);
       }
@@ -64,6 +74,20 @@ export async function adminUsersRoutes(app: FastifyInstance) {
 
     const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 12) } : {}) };
     const admin = await app.prisma.adminUser.update({ where: { id }, data, select: safeSelect });
+
+    await recordAudit(req, 'ADMIN_UPDATED', 'AdminUser', {
+      entityId: admin.id,
+      metadata: {
+        account: admin.email,
+        ...changed('name', before.name, admin.name),
+        ...changed('role', before.role, admin.role),
+        ...changed('active', before.isActive, admin.isActive),
+        ...changed('branchId', before.branchId, admin.branchId),
+        // The password itself never appears — only that it was replaced, which
+        // is the part an investigation needs.
+        ...(password ? { passwordReset: true } : {}),
+      },
+    });
     return { admin };
   });
 }

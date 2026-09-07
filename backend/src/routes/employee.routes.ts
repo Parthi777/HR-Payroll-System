@@ -12,6 +12,7 @@ import { isS3Enabled, tenantKey, uploadImage } from '../services/storage/storage
 import { normalizePhone } from '../utils/phone.js';
 import { requireTenantId } from '../context/tenant-context.js';
 import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
+import { changed, recordAudit } from '../services/audit/audit.service.js';
 
 const CODE_PAD = 3;
 
@@ -147,6 +148,17 @@ export async function employeeRoutes(app: FastifyInstance) {
 
     const data = { ...rest, employeeCode, tenantId: requireTenantId(), ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
     const employee = await app.prisma.employee.create({ data });
+    await recordAudit(req, 'EMPLOYEE_CREATED', 'Employee', {
+      entityId: employee.id,
+      metadata: {
+        name: employee.name,
+        employeeCode: employee.employeeCode,
+        salary: employee.salary,
+        branchId: employee.branchId,
+        // Whether a login was set, never what it was.
+        appLogin: Boolean(password),
+      },
+    });
     return { employee: safeEmployee(employee) };
   });
 
@@ -210,6 +222,15 @@ export async function employeeRoutes(app: FastifyInstance) {
         errors.push(`Row ${r + 1} (${name}): ${e instanceof Error ? e.message : 'failed'}`);
       }
     }
+    await recordAudit(req, 'EMPLOYEE_IMPORTED', 'Employee', {
+      metadata: {
+        imported: created.length,
+        failed: errors.length,
+        // Codes only. `created` also holds each generated password, which must
+        // never reach a table built to be read.
+        employeeCodes: created.map((c) => c.employeeCode),
+      },
+    });
     return { imported: created.length, created, errors };
   });
 
@@ -225,7 +246,28 @@ export async function employeeRoutes(app: FastifyInstance) {
     const { password, ...rest } = createEmployeeSchema.partial().parse(req.body);
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
     const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
+    const before = await app.prisma.employee.findUnique({ where: { id } });
+    if (!before) throw AppError.notFound('Employee');
     const employee = await app.prisma.employee.update({ where: { id }, data });
+
+    await recordAudit(req, 'EMPLOYEE_UPDATED', 'Employee', {
+      entityId: employee.id,
+      metadata: {
+        name: employee.name,
+        employeeCode: employee.employeeCode,
+        ...changed('salary', before.salary, employee.salary),
+        ...changed('status', before.status, employee.status),
+        ...changed('branchId', before.branchId, employee.branchId),
+        ...changed('departmentId', before.departmentId, employee.departmentId),
+        ...changed('designationId', before.designationId, employee.designationId),
+        ...changed('shiftId', before.shiftId, employee.shiftId),
+        ...changed('phone', before.phone, employee.phone),
+        ...changed('reportingManagerId', before.reportingManagerId, employee.reportingManagerId),
+        ...changed('pfEnabled', before.pfEnabled, employee.pfEnabled),
+        ...changed('esiEnabled', before.esiEnabled, employee.esiEnabled),
+        ...(password ? { passwordReset: true } : {}),
+      },
+    });
     return { employee: safeEmployee(employee) };
   });
 
@@ -252,13 +294,24 @@ export async function employeeRoutes(app: FastifyInstance) {
       data: { passwordHash: await bcrypt.hash(password, 10) },
     });
 
+    // That it happened, and to whom — never the value itself, which exists
+    // only on the caller's screen.
+    await recordAudit(req, 'EMPLOYEE_PASSWORD_RESET', 'Employee', {
+      entityId: employee.id,
+      metadata: { name: employee.name, employeeCode: employee.employeeCode },
+    });
+
     // The only time this value exists outside the caller's screen.
     return { employee: { name: employee.name, employeeCode: employee.employeeCode, phone: employee.phone }, password };
   });
 
   app.delete('/:id', async (req) => {
     const { id } = req.params as { id: string };
-    await app.prisma.employee.update({ where: { id }, data: { status: 'INACTIVE' } });
+    const employee = await app.prisma.employee.update({ where: { id }, data: { status: 'INACTIVE' } });
+    await recordAudit(req, 'EMPLOYEE_DEACTIVATED', 'Employee', {
+      entityId: id,
+      metadata: { name: employee.name, employeeCode: employee.employeeCode },
+    });
     return { id, deactivated: true };
   });
 
@@ -312,7 +365,16 @@ export async function employeeRoutes(app: FastifyInstance) {
       faceTemplateUrl = `/uploads/faces/${name}`;
     }
 
-    await app.prisma.employee.update({ where: { id }, data: { faceTemplateId: faceId, faceTemplateUrl } });
+    const enrolled = await app.prisma.employee.update({ where: { id }, data: { faceTemplateId: faceId, faceTemplateUrl } });
+    // Enrolment decides who the attendance gate will accept as this person.
+    await recordAudit(req, 'EMPLOYEE_FACE_ENROLLED', 'Employee', {
+      entityId: id,
+      metadata: {
+        name: enrolled.name,
+        employeeCode: enrolled.employeeCode,
+        replacedPrevious: Boolean(existing.faceTemplateId),
+      },
+    });
     return { id, faceId, enrolled: true };
   });
 
@@ -344,6 +406,10 @@ export async function employeeRoutes(app: FastifyInstance) {
     await app.prisma.employee.update({
       where: { id },
       data: { faceTemplateId: null, faceTemplateUrl: null },
+    });
+    await recordAudit(req, 'EMPLOYEE_FACE_DELETED', 'Employee', {
+      entityId: id,
+      metadata: { name: employee.name },
     });
     return { id, deleted: true };
   });

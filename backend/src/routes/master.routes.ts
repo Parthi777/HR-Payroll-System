@@ -4,6 +4,7 @@ import { requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { clearCachedPolicy, requireTenantId } from '../context/tenant-context.js';
 import { defaultPolicy } from '../services/settings/tenant-settings.service.js';
+import { recordAudit } from '../services/audit/audit.service.js';
 
 const branchSchema = z.object({
   name: z.string().min(1),
@@ -96,6 +97,10 @@ export async function masterRoutes(app: FastifyInstance) {
     // The per-request memo now holds the pre-write values; drop it so anything
     // later in this request (a PDF header, a re-read) sees what was just saved.
     clearCachedPolicy();
+    await recordAudit(req, 'COMPANY_UPDATED', 'Company', {
+      entityId: company.tenantId,
+      metadata: data,
+    });
     return { company };
   });
 
@@ -105,12 +110,19 @@ export async function masterRoutes(app: FastifyInstance) {
   }));
   app.post('/admin/branches', async (req) => {
     const data = branchSchema.parse(req.body);
-    return { branch: await app.prisma.branch.create({ data: { ...data, tenantId: requireTenantId() } }) };
+    const branch = await app.prisma.branch.create({ data: { ...data, tenantId: requireTenantId() } });
+    await recordAudit(req, 'BRANCH_CREATED', 'Branch', {
+      entityId: branch.id,
+      metadata: { name: branch.name, address: branch.address, radiusMetres: branch.geofenceRadius },
+    });
+    return { branch };
   });
   app.put('/admin/branches/:id', async (req) => {
     const { id } = req.params as { id: string };
     const data = branchSchema.partial().parse(req.body);
-    return { branch: await app.prisma.branch.update({ where: { id }, data }) };
+    const branch = await app.prisma.branch.update({ where: { id }, data });
+    await recordAudit(req, 'BRANCH_UPDATED', 'Branch', { entityId: branch.id, metadata: { name: branch.name, ...data } });
+    return { branch };
   });
   app.delete('/admin/branches/:id', async (req) => {
     const { id } = req.params as { id: string };
@@ -118,8 +130,11 @@ export async function masterRoutes(app: FastifyInstance) {
     if (staff > 0) {
       throw new AppError(`Cannot delete — ${staff} employee(s) are assigned to this branch. Reassign them first.`, 409);
     }
+    // Named before it is gone — afterwards the id resolves to nothing.
+    const doomed = await app.prisma.branch.findUnique({ where: { id }, select: { name: true } });
     await app.prisma.geofenceViolation.deleteMany({ where: { branchId: id } });
     await app.prisma.branch.delete({ where: { id } });
+    await recordAudit(req, 'BRANCH_DELETED', 'Branch', { entityId: id, metadata: { name: doomed?.name ?? null } });
     return { id, deleted: true };
   });
 
@@ -129,12 +144,20 @@ export async function masterRoutes(app: FastifyInstance) {
   }));
   app.post('/admin/departments', async (req) => {
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
-    return { department: await app.prisma.department.create({ data: { name, tenantId: requireTenantId() } }) };
+    const department = await app.prisma.department.create({ data: { name, tenantId: requireTenantId() } });
+    await recordAudit(req, 'DEPARTMENT_CREATED', 'Department', { entityId: department.id, metadata: { name } });
+    return { department };
   });
   app.put('/admin/departments/:id', async (req) => {
     const { id } = req.params as { id: string };
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
-    return { department: await app.prisma.department.update({ where: { id }, data: { name } }) };
+    const before = await app.prisma.department.findUnique({ where: { id }, select: { name: true } });
+    const department = await app.prisma.department.update({ where: { id }, data: { name } });
+    await recordAudit(req, 'DEPARTMENT_UPDATED', 'Department', {
+      entityId: department.id,
+      metadata: { name, ...(before && before.name !== name ? { renamedFrom: before.name } : {}) },
+    });
+    return { department };
   });
   app.delete('/admin/departments/:id', async (req) => {
     const { id } = req.params as { id: string };
@@ -142,7 +165,9 @@ export async function masterRoutes(app: FastifyInstance) {
     if (staff > 0) {
       throw new AppError(`Cannot delete — ${staff} employee(s) are in this department. Reassign them first.`, 409);
     }
+    const doomed = await app.prisma.department.findUnique({ where: { id }, select: { name: true } });
     await app.prisma.department.delete({ where: { id } });
+    await recordAudit(req, 'DEPARTMENT_DELETED', 'Department', { entityId: id, metadata: { name: doomed?.name ?? null } });
     return { id, deleted: true };
   });
 
@@ -152,12 +177,20 @@ export async function masterRoutes(app: FastifyInstance) {
   }));
   app.post('/admin/designations', async (req) => {
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
-    return { designation: await app.prisma.designation.create({ data: { name, tenantId: requireTenantId() } }) };
+    const designation = await app.prisma.designation.create({ data: { name, tenantId: requireTenantId() } });
+    await recordAudit(req, 'DESIGNATION_CREATED', 'Designation', { entityId: designation.id, metadata: { name } });
+    return { designation };
   });
   app.put('/admin/designations/:id', async (req) => {
     const { id } = req.params as { id: string };
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
-    return { designation: await app.prisma.designation.update({ where: { id }, data: { name } }) };
+    const before = await app.prisma.designation.findUnique({ where: { id }, select: { name: true } });
+    const designation = await app.prisma.designation.update({ where: { id }, data: { name } });
+    await recordAudit(req, 'DESIGNATION_UPDATED', 'Designation', {
+      entityId: designation.id,
+      metadata: { name, ...(before && before.name !== name ? { renamedFrom: before.name } : {}) },
+    });
+    return { designation };
   });
   app.delete('/admin/designations/:id', async (req) => {
     const { id } = req.params as { id: string };
@@ -165,7 +198,9 @@ export async function masterRoutes(app: FastifyInstance) {
     if (staff > 0) {
       throw new AppError(`Cannot delete — ${staff} employee(s) hold this designation. Reassign them first.`, 409);
     }
+    const doomed = await app.prisma.designation.findUnique({ where: { id }, select: { name: true } });
     await app.prisma.designation.delete({ where: { id } });
+    await recordAudit(req, 'DESIGNATION_DELETED', 'Designation', { entityId: id, metadata: { name: doomed?.name ?? null } });
     return { id, deleted: true };
   });
 }

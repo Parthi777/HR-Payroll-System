@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { checkGeofence } from '../services/geofence/geofence.service.js';
+import { changed, recordAudit } from '../services/audit/audit.service.js';
+import { AppError } from '../utils/AppError.js';
 
 const checkSchema = z.object({
   lat: z.coerce.number(),
@@ -34,7 +36,23 @@ export async function geofenceRoutes(app: FastifyInstance) {
         strictMode: z.boolean().optional(),
       })
       .parse(req.body);
+    const before = await app.prisma.branch.findUnique({ where: { id: branchId } });
+    if (!before) throw new AppError('Branch not found', 404);
     const branch = await app.prisma.branch.update({ where: { id: branchId }, data });
+
+    // A fence that quietly grew, or strict mode switched off, is what someone
+    // investigating attendance from the wrong place will be looking for — so
+    // both sides of the move are recorded, not just the new value.
+    await recordAudit(req, 'GEOFENCE_UPDATED', 'Branch', {
+      entityId: branch.id,
+      metadata: {
+        branch: branch.name,
+        ...changed('lat', before.geofenceLat, branch.geofenceLat),
+        ...changed('lng', before.geofenceLng, branch.geofenceLng),
+        ...changed('radiusMetres', before.geofenceRadius, branch.geofenceRadius),
+        ...changed('strictMode', before.strictMode, branch.strictMode),
+      },
+    });
     return { branch };
   });
 

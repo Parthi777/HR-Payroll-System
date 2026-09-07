@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  ScrollText,
   LayoutDashboard,
   Users,
   MapPin,
@@ -95,6 +96,7 @@ const nav = [
   { href: '/whatsapp', label: 'WhatsApp', icon: MessageSquare },
   { href: '/reports', label: 'Reports', icon: BarChart3 },
   { href: '/access', label: 'User Access', icon: ShieldCheck },
+  { href: '/activity', label: 'Activity', icon: ScrollText },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

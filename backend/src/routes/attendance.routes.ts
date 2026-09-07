@@ -15,6 +15,7 @@ import { classifyDay, type DayCode } from '../services/attendance/day-classify.j
 import { getObjectBytes } from '../services/storage/storage.service.js';
 import { dayKey } from '../utils/time.js';
 import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
+import { recordAudit } from '../services/audit/audit.service.js';
 
 const HHMM = z.string().regex(/^\d{1,2}:\d{2}$/, 'Use a HH:MM time, e.g. 09:30');
 
@@ -153,7 +154,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
       // employeeId comes straight from the request body — check the caller is
       // allowed to raise a punch for that person before creating one.
       await assertManages(app.prisma, req.user, employeeId);
-      return markManualPunch(app.prisma, {
+      const result = await markManualPunch(app.prisma, {
         employeeId,
         mode: fields.mode,
         checkIn: fields.checkIn,
@@ -163,6 +164,21 @@ export async function attendanceRoutes(app: FastifyInstance) {
         selfie,
         raisedByAdminId: req.user.sub,
       });
+      // Times typed by hand, with the geofence and face checks skipped — the
+      // punch most worth being able to trace back to whoever entered it.
+      await recordAudit(req, 'ATTENDANCE_MANUAL_PUNCH', 'Attendance', {
+        entityId: result.id,
+        metadata: {
+          ...(await employeeLabel(employeeId)),
+          mode: fields.mode,
+          date: fields.date ?? null,
+          checkIn: fields.checkIn ?? null,
+          checkOut: fields.checkOut ?? null,
+          reason: fields.reason,
+          approvalStatus: result.approvalStatus,
+        },
+      });
+      return result;
     },
   );
 
@@ -482,6 +498,18 @@ export async function attendanceRoutes(app: FastifyInstance) {
     return { month, year, days, summary };
   });
 
+  /**
+   * Name and code for an audit line. Ids are what the row stores, but an entry
+   * reading only `cmf3x…` tells a reader nothing a year later.
+   */
+  async function employeeLabel(employeeId: string) {
+    const e = await app.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { name: true, employeeCode: true },
+    });
+    return { employee: e?.name ?? null, employeeCode: e?.employeeCode ?? null };
+  }
+
   // ── Out-of-geofence check-in approvals (HR / admin) ──
   const approvalGuard = requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER');
 
@@ -523,12 +551,36 @@ export async function attendanceRoutes(app: FastifyInstance) {
 
   app.patch('/admin/attendance/:id/approve', { preHandler: approvalGuard }, async (req) => {
     const { id } = req.params as { id: string };
-    return { attendance: await decideAttendanceApproval(app.prisma, req.user, id, true) };
+    const attendance = await decideAttendanceApproval(app.prisma, req.user, id, true);
+    // Approval is what makes an unpaid day paid, so it is recorded on both
+    // outcomes — an approval and a refusal are equally worth explaining later.
+    await recordAudit(req, 'ATTENDANCE_APPROVED', 'Attendance', {
+      entityId: attendance.id,
+      metadata: {
+        ...(await employeeLabel(attendance.employeeId)),
+        date: fmtDate(attendance.date),
+        punchMode: attendance.punchMode,
+        status: attendance.status,
+      },
+    });
+    return { attendance };
   });
 
   app.patch('/admin/attendance/:id/reject', { preHandler: approvalGuard }, async (req) => {
     const { id } = req.params as { id: string };
-    return { attendance: await decideAttendanceApproval(app.prisma, req.user, id, false) };
+    const attendance = await decideAttendanceApproval(app.prisma, req.user, id, false);
+    await recordAudit(req, 'ATTENDANCE_REJECTED', 'Attendance', {
+      entityId: attendance.id,
+      metadata: {
+        ...(await employeeLabel(attendance.employeeId)),
+        date: fmtDate(attendance.date),
+        punchMode: attendance.punchMode,
+        // Where the day landed once refused: leave for a late punch, absent
+        // for an out-of-zone or hand-entered one.
+        markedAs: attendance.status,
+      },
+    });
+    return { attendance };
   });
 
   // Check-in selfie (S3 signed redirect or local file) so HR can verify before approving.

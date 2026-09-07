@@ -18,6 +18,7 @@ import {
 } from '../services/claim/claim.service.js';
 import { generateClaimVoucherPdf } from '../services/claim/claim-voucher-pdf.service.js';
 import { CLAIM_TYPES, claimTypeLabel } from '../services/claim/claim-types.js';
+import { recordAudit } from '../services/audit/audit.service.js';
 import { formatDocNo } from '../services/claim/claim-number.js';
 import { getDriveFileStream } from '../services/storage/drive.service.js';
 import { getSignedSelfieUrl } from '../services/storage/storage.service.js';
@@ -101,6 +102,16 @@ export async function claimRoutes(app: FastifyInstance) {
         claimId: claim.id,
       });
     }
+    await recordAudit(req, 'CLAIM_APPROVED', 'Claim', {
+      entityId: claim.id,
+      metadata: {
+        claimNo: claim.claimNo,
+        voucherNo: claim.voucherNo,
+        title: claim.title,
+        amount: claim.amount,
+        employee: emp?.name ?? null,
+      },
+    });
     return { claim };
   });
 
@@ -233,6 +244,10 @@ export async function claimRoutes(app: FastifyInstance) {
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'REJECTED', note, req.user.branchId);
     await app.prisma.notification.deleteMany({ where: { claimId: id, type: 'CLAIM_SUBMITTED' } });
     await pushToEmployee(app.prisma, claim.employeeId, 'Claim rejected', `${claim.title}${note ? ` \u2014 ${note}` : ''}`);
+    await recordAudit(req, 'CLAIM_REJECTED', 'Claim', {
+      entityId: claim.id,
+      metadata: { claimNo: claim.claimNo, title: claim.title, amount: claim.amount, ...(note ? { note } : {}) },
+    });
     return { claim };
   });
 
@@ -242,6 +257,10 @@ export async function claimRoutes(app: FastifyInstance) {
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'NEEDS_CLARIFICATION', note, req.user.branchId);
     await app.prisma.notification.deleteMany({ where: { claimId: id, type: 'CLAIM_SUBMITTED' } });
     await pushToEmployee(app.prisma, claim.employeeId, 'Clarification needed on your claim', `${claim.title}${note ? ` \u2014 ${note}` : ''}. Open My Claims to reply.`);
+    await recordAudit(req, 'CLAIM_CLARIFICATION_REQUESTED', 'Claim', {
+      entityId: claim.id,
+      metadata: { claimNo: claim.claimNo, title: claim.title, amount: claim.amount, ...(note ? { note } : {}) },
+    });
     return { claim };
   });
 
@@ -252,6 +271,16 @@ export async function claimRoutes(app: FastifyInstance) {
     // Paid → nothing left to act on; clear all remaining notifications for this claim.
     await app.prisma.notification.deleteMany({ where: { claimId: id } });
     await pushToEmployee(app.prisma, claim.employeeId, 'Claim paid \u2713', `${claim.title} \u2014 Rs.${claim.amount.toLocaleString('en-IN')} paid. Collect/verify with the cashier.`);
+    await recordAudit(req, 'CLAIM_PAID', 'Claim', {
+      entityId: claim.id,
+      metadata: {
+        claimNo: claim.claimNo,
+        voucherNo: claim.voucherNo,
+        title: claim.title,
+        amount: claim.amount,
+        ...(note ? { note } : {}),
+      },
+    });
     return { claim };
   });
 }

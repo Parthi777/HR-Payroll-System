@@ -534,6 +534,21 @@ GET    /api/admin/reports/employee/:id?month=&year=
 GET    /api/admin/reports/late?month=&year=
 ```
 
+### Audit trail
+Every administrative action inside a workspace is recorded — approvals, payroll
+runs, salary changes, geofence edits, face enrolment, account changes. Written
+by `recordAudit()` (`services/audit/audit.service.ts`) at the call site, after
+the action succeeds, so a refused action leaves no entry claiming otherwise.
+Credentials are never recorded: a password reset is logged as having happened,
+never with the value. SUPER_ADMIN only — the trail gathers salaries and payroll
+totals into one place, so it is gated above the screens it describes.
+```
+GET    /api/admin/audit?actorId=&entity=&action=&cursor=&limit=
+```
+Read on the web at `/activity`. Rows are tenant-owned, so the Prisma extension
+scopes them; one dealer can never read another's (pinned by `isolation.test.ts`
+and `audit.test.ts`).
+
 ### WhatsApp
 ```
 POST   /api/whatsapp/webhook               # Incoming messages from Meta
@@ -706,7 +721,9 @@ policy (`isLateArrival()` is tracked separately).
 - **Face templates:** stored only in AWS Rekognition (never in plain storage)
 - **GPS data:** encrypted at rest in DB
 - **Phone numbers:** masked in logs (show only last 4 digits)
-- **Audit log:** every admin action logged with userId, action, timestamp, IP
+- **Audit log:** every admin action logged with userId, action, timestamp, IP —
+  dealer side via `recordAudit()` (read at `/activity`), platform side via
+  `PlatformAuditLog` (read at `/platform/activity`)
 - **Rate limiting:** OTP endpoints limited to 3 attempts per 10 minutes
 - **HTTPS only** for all API communication
 - **Certificate pinning** in Android app

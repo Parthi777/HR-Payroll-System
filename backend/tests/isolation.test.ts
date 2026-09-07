@@ -198,6 +198,27 @@ suite('cross-tenant isolation', () => {
       expect(check.json().employee.name).toBe('bravo employee');
     });
 
+    /**
+     * The audit trail is the one endpoint that exists to be read after the
+     * fact, which makes leaking it across tenants worse than most: it would
+     * hand one dealer the other's salary changes and payroll totals in a
+     * single, conveniently formatted list.
+     */
+    it('GET /api/admin/audit shows a tenant only its own trail', async () => {
+      const created = await as(A.adminToken, A.slug, 'POST', '/api/admin/departments', {
+        name: 'Alpha Only Department',
+      });
+      expect(created.statusCode, created.body).toBe(200);
+
+      const mine = await as(A.adminToken, A.slug, 'GET', '/api/admin/audit');
+      expect(mine.statusCode).toBe(200);
+      expect(JSON.stringify(mine.json().entries)).toContain('Alpha Only Department');
+
+      const theirs = await as(B.adminToken, B.slug, 'GET', '/api/admin/audit');
+      expect(theirs.statusCode).toBe(200);
+      expect(JSON.stringify(theirs.json().entries)).not.toContain('Alpha Only Department');
+    });
+
     it('GET /api/claims/:id', async () => {
       const res = await as(A.adminToken, A.slug, 'GET', `/api/claims/${B.claimId}`);
       expect(res.statusCode).toBe(404);
@@ -294,6 +315,7 @@ suite('cross-tenant isolation', () => {
     'GET /api/admin/leaves/pending',
     'GET /api/admin/attendance/approvals',
     'GET /api/admin/geofence',
+    'GET /api/admin/audit',
     'GET /api/admin/employees/:id',
     'PUT /api/admin/employees/:id',
     'GET /api/claims/:id',

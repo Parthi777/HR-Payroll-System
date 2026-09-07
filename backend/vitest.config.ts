@@ -4,6 +4,20 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     /**
+     * One file at a time.
+     *
+     * The database-backed suites (isolation, platform, audit) share a single
+     * database and each begins by wiping it, so running two of them at once
+     * means one suite deleting the other's fixtures mid-assertion. Vitest runs
+     * files in parallel workers by default, which made that a matter of
+     * scheduling luck rather than a guarantee.
+     *
+     * The pure suites finish in milliseconds, so serialising costs almost
+     * nothing next to a test that fails depending on which worker got there
+     * first.
+     */
+    fileParallelism: false,
+    /**
      * Pin both clocks.
      *
      * The fixtures build calendar days with local-time constructors

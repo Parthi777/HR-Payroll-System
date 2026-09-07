@@ -6,6 +6,7 @@ import { runMonthlyPayroll } from '../services/payroll/payroll-run.service.js';
 import { generatePayslipPdf } from '../services/payroll/payslip-pdf.service.js';
 import { generateSalaryRegisterPdf } from '../services/payroll/salary-register-pdf.service.js';
 import { getCompanyProfile } from '../services/settings/tenant-settings.service.js';
+import { recordAudit } from '../services/audit/audit.service.js';
 
 /** Company profile for PDF headers (empty object when unset). */
 async function getCompany(app: FastifyInstance): Promise<{ name: string; address: string }> {
@@ -31,7 +32,13 @@ export async function payrollRoutes(app: FastifyInstance) {
   app.post('/admin/payroll/run', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN') }, async (req) => {
     const { month, year } = runSchema.parse(req.body);
     // Synchronous run for now. TODO: enqueue via BullMQ for large companies.
-    return runMonthlyPayroll(app.prisma, month, year);
+    const summary = await runMonthlyPayroll(app.prisma, month, year);
+    // A payroll run rewrites the month's payslips. Recording the totals means a
+    // later re-run can be told apart from the first one, and by whom.
+    await recordAudit(req, 'PAYROLL_RUN', 'Payroll', {
+      metadata: { month, year, employees: summary.employees, totalNet: summary.totalNet },
+    });
+    return summary;
   });
 
   // Admin: list all payslips for a month with employee names (web Payroll page).

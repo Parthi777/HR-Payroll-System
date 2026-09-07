@@ -5,6 +5,7 @@ import { AppError } from '../utils/AppError.js';
 import { pushToEmployee } from '../services/push.service.js';
 import { dispatchWhatsApp, waTemplates } from '../services/whatsapp/whatsapp.service.js';
 import { requireTenantId } from '../context/tenant-context.js';
+import { recordAudit } from '../services/audit/audit.service.js';
 
 const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
@@ -76,6 +77,18 @@ export async function leaveRoutes(app: FastifyInstance) {
       templateName: 'LEAVE_APPROVED',
       message: waTemplates.leaveApproved(leave.type, fmtDate(leave.fromDate), fmtDate(leave.toDate), leave.days),
     });
+    await recordAudit(req, 'LEAVE_APPROVED', 'Leave', {
+      entityId: leave.id,
+      metadata: {
+        employee: leave.employee.name,
+        employeeCode: leave.employee.employeeCode,
+        type: leave.type,
+        from: fmtDate(leave.fromDate),
+        to: fmtDate(leave.toDate),
+        days: leave.days,
+        ...(note ? { note } : {}),
+      },
+    });
     return { leave };
   });
 
@@ -107,6 +120,22 @@ export async function leaveRoutes(app: FastifyInstance) {
       update: { total },
       create: { employeeId, type: 'CL', year, total, used: 0, tenantId: requireTenantId() },
     });
+    // Granting leave days is granting paid time, so it is recorded like any
+    // other change with a cost attached.
+    const staff = await app.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { name: true, employeeCode: true },
+    });
+    await recordAudit(req, 'LEAVE_BALANCE_UPDATED', 'Leave', {
+      entityId: balance.id,
+      metadata: {
+        employee: staff?.name ?? null,
+        employeeCode: staff?.employeeCode ?? null,
+        type: 'CL',
+        year,
+        total,
+      },
+    });
     return { balance };
   });
 
@@ -129,6 +158,18 @@ export async function leaveRoutes(app: FastifyInstance) {
       trigger: 'LEAVE_REJECTED',
       templateName: 'LEAVE_REJECTED',
       message: waTemplates.leaveRejected(fmtDate(leave.fromDate), fmtDate(leave.toDate), note),
+    });
+    await recordAudit(req, 'LEAVE_REJECTED', 'Leave', {
+      entityId: leave.id,
+      metadata: {
+        employee: leave.employee.name,
+        employeeCode: leave.employee.employeeCode,
+        type: leave.type,
+        from: fmtDate(leave.fromDate),
+        to: fmtDate(leave.toDate),
+        days: leave.days,
+        note,
+      },
     });
     return { leave };
   });
