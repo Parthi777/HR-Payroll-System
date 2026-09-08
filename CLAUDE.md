@@ -617,10 +617,15 @@ Please return to {{branch_name}}."
 `POST /api/whatsapp/webhook` is unauthenticated by necessity (Meta calls it), so
 three things gate it, in `services/whatsapp/inbound.service.ts`:
 
-1. **Signature.** Every payload is HMAC-signed with `META_WHATSAPP_APP_SECRET`
-   and checked in constant time against the raw bytes (a scoped content-type
-   parser keeps them). No secret set → the webhook refuses everything with 503
-   rather than falling open.
+1. **Signature.** Both providers are accepted, chosen by `WHATSAPP_PROVIDER`,
+   and they sign different things. Meta signs the raw body (HMAC-SHA256, header
+   `X-Hub-Signature-256`, key `META_WHATSAPP_APP_SECRET`) — a scoped
+   content-type parser keeps the exact bytes. Twilio signs the URL it called
+   plus every POST parameter sorted by name (HMAC-SHA1, header
+   `X-Twilio-Signature`, key `TWILIO_AUTH_TOKEN`); set `WHATSAPP_WEBHOOK_URL`
+   when a proxy makes the derived URL differ from the signed one. Both compare
+   in constant time, and both refuse everything with 503 when their key is
+   unset rather than falling open. See `docs/whatsapp-flows.md`.
 2. **Tenant resolution.** `Employee.phone` is unique *per tenant*, so one number
    can belong to employees of two dealers. `resolveInbound` refuses an ambiguous
    number instead of picking one — answering STATUS or SLIP for the wrong dealer

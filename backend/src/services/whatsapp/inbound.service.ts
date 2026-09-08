@@ -4,13 +4,18 @@
  * The webhook used to be `return { received: true, body: req.body }`: it echoed
  * whatever was posted to it and did nothing. That is a problem beyond the
  * missing feature, because the endpoint is necessarily unauthenticated — it is
- * a URL Meta calls — so anything reachable through it is reachable by anyone
- * who finds the URL.
+ * a URL the provider calls — so anything reachable through it is reachable by
+ * anyone who finds the URL.
  *
- * Three things therefore have to be true before a message is acted on:
+ * Meta and Twilio both deliver here and agree on nothing: Meta posts signed
+ * JSON that can batch several messages, Twilio posts one form-encoded message
+ * signed over its URL and parameters. Each has its own verifier and parser;
+ * both produce an `InboundMessage`, and everything after that is the same code.
  *
- * 1. **It really came from Meta.** Every payload is signed with the app secret;
- *    an unsigned or wrongly signed one is refused before it is parsed.
+ * Three things have to be true before a message is acted on:
+ *
+ * 1. **It really came from the provider.** Every payload is signed; an unsigned
+ *    or wrongly signed one is refused before it is parsed.
  * 2. **We know whose employee sent it.** Phone numbers are unique *per tenant*
  *    (`@@unique([tenantId, phone])`), so the same number can belong to an
  *    employee of two different dealers. See `resolveInbound` — an ambiguous
@@ -51,8 +56,59 @@ export function verifyMetaSignature(rawBody: Buffer | string, header: string | u
   return timingSafeEqual(Buffer.from(given, 'utf8'), Buffer.from(expected, 'utf8'));
 }
 
+/**
+ * Confirm the request was signed by Twilio.
+ *
+ * Twilio signs something different from Meta: not the body, but the exact URL
+ * it called plus every POST parameter, sorted by name and concatenated
+ * key-then-value, HMAC-SHA1 with the account's auth token, base64. Getting the
+ * URL wrong is the classic reason this fails in production — see
+ * `webhookUrlFor` in the route, and `WHATSAPP_WEBHOOK_URL`.
+ */
+export function verifyTwilioSignature(
+  url: string,
+  params: Record<string, string>,
+  authToken: string,
+  header: string | undefined,
+): boolean {
+  if (!header) return false;
+  const payload = Object.keys(params)
+    .sort()
+    .reduce((acc, key) => acc + key + params[key], url);
+  const expected = createHmac('sha1', authToken).update(Buffer.from(payload, 'utf8')).digest('base64');
+  if (header.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(header, 'utf8'), Buffer.from(expected, 'utf8'));
+}
+
+/**
+ * One inbound message out of Twilio's form post.
+ *
+ * Twilio sends `application/x-www-form-urlencoded`, one message per request —
+ * where Meta sends JSON that can batch several. Both end up as the same
+ * `InboundMessage`, so everything downstream is provider-agnostic.
+ *
+ * Numbers arrive as `whatsapp:+9190000...`; the prefix is stripped so a phone
+ * looks the same whichever provider delivered it.
+ */
+export function parseTwilioInbound(body: unknown): InboundMessage[] {
+  const form = (body ?? {}) as Record<string, string>;
+  const from = String(form.From ?? '').replace(/^whatsapp:/, '').trim();
+  const text = String(form.Body ?? '').trim();
+  if (!from || !text) return [];
+  return [
+    {
+      from,
+      text,
+      messageId: String(form.MessageSid ?? form.SmsMessageSid ?? ''),
+      // The business number that received it, the counterpart of Meta's
+      // phone_number_id — what identifies a dealer on their own account.
+      phoneNumberId: String(form.To ?? '').replace(/^whatsapp:/, '') || null,
+    },
+  ];
+}
+
 /** Pull the text messages out of Meta's webhook envelope, ignoring everything else. */
-export function parseInbound(payload: unknown): InboundMessage[] {
+export function parseMetaInbound(payload: unknown): InboundMessage[] {
   const out: InboundMessage[] = [];
   const body = payload as {
     entry?: {

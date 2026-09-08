@@ -10,7 +10,12 @@ import { createHmac } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
-import { parseInbound, verifyMetaSignature } from '../src/services/whatsapp/inbound.service.js';
+import {
+  parseMetaInbound,
+  parseTwilioInbound,
+  verifyMetaSignature,
+  verifyTwilioSignature,
+} from '../src/services/whatsapp/inbound.service.js';
 
 const SECRET = 'test-app-secret';
 const sign = (body: string) => `sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`;
@@ -64,7 +69,7 @@ describe('webhook signatures', () => {
 
 describe('parsing Meta’s envelope', () => {
   it('pulls out the sender, the text and the business number', () => {
-    const [msg] = parseInbound(envelope('919000000001', ' status '));
+    const [msg] = parseMetaInbound(envelope('919000000001', ' status '));
     expect(msg.from).toBe('919000000001');
     expect(msg.text).toBe('status');
     expect(msg.phoneNumberId).toBe('PHONE_ID');
@@ -77,16 +82,68 @@ describe('parsing Meta’s envelope', () => {
     const image = {
       entry: [{ changes: [{ value: { messages: [{ from: '91900', id: 'i', type: 'image' }] } }] }],
     };
-    expect(parseInbound(statuses)).toEqual([]);
-    expect(parseInbound(image)).toEqual([]);
+    expect(parseMetaInbound(statuses)).toEqual([]);
+    expect(parseMetaInbound(image)).toEqual([]);
   });
 
   it('survives a shape it has never seen', () => {
     // Meta adds fields; a webhook that throws on an unfamiliar payload stops
     // processing the messages it *did* understand.
-    expect(parseInbound({})).toEqual([]);
-    expect(parseInbound(null)).toEqual([]);
-    expect(parseInbound({ entry: [{ changes: [{}] }] })).toEqual([]);
+    expect(parseMetaInbound({})).toEqual([]);
+    expect(parseMetaInbound(null)).toEqual([]);
+    expect(parseMetaInbound({ entry: [{ changes: [{}] }] })).toEqual([]);
+  });
+});
+
+describe('Twilio signatures and form posts', () => {
+  const AUTH = 'twilio-auth-token';
+  const URL = 'https://api.example.com/api/whatsapp/webhook';
+  const form = { From: 'whatsapp:+919000000001', To: 'whatsapp:+14155238886', Body: 'STATUS', MessageSid: 'SM123' };
+
+  /** Twilio's scheme: URL, then every parameter sorted by name, key then value. */
+  const twilioSign = (url: string, params: Record<string, string>, token = AUTH) =>
+    createHmac('sha1', token)
+      .update(Buffer.from(Object.keys(params).sort().reduce((acc, k) => acc + k + params[k], url), 'utf8'))
+      .digest('base64');
+
+  it('accepts a correctly signed form post', () => {
+    expect(verifyTwilioSignature(URL, form, AUTH, twilioSign(URL, form))).toBe(true);
+  });
+
+  it('rejects it when a parameter changed after signing', () => {
+    const signature = twilioSign(URL, form);
+    expect(verifyTwilioSignature(URL, { ...form, Body: 'SLIP' }, AUTH, signature)).toBe(false);
+  });
+
+  it('rejects it when the URL is not the one that was signed', () => {
+    // The commonest production failure: a proxy rewrites host or scheme, so the
+    // URL we reconstruct is not the URL Twilio signed.
+    const signature = twilioSign(URL, form);
+    expect(verifyTwilioSignature('http://internal:3001/api/whatsapp/webhook', form, AUTH, signature)).toBe(false);
+  });
+
+  it('rejects a signature made with someone else’s auth token', () => {
+    expect(verifyTwilioSignature(URL, form, AUTH, twilioSign(URL, form, 'wrong-token'))).toBe(false);
+  });
+
+  it('rejects a missing signature rather than throwing', () => {
+    expect(verifyTwilioSignature(URL, form, AUTH, undefined)).toBe(false);
+    expect(verifyTwilioSignature(URL, form, AUTH, 'nonsense')).toBe(false);
+  });
+
+  it('reads the sender and text, stripping the whatsapp: prefix', () => {
+    const [msg] = parseTwilioInbound(form);
+    // Numbers must look the same whichever provider delivered them.
+    expect(msg.from).toBe('+919000000001');
+    expect(msg.text).toBe('STATUS');
+    expect(msg.messageId).toBe('SM123');
+    expect(msg.phoneNumberId).toBe('+14155238886');
+  });
+
+  it('ignores a post with no message in it', () => {
+    expect(parseTwilioInbound({ From: 'whatsapp:+919000000001' })).toEqual([]);
+    expect(parseTwilioInbound({ MessageStatus: 'delivered', MessageSid: 'SM1' })).toEqual([]);
+    expect(parseTwilioInbound({})).toEqual([]);
   });
 });
 

@@ -51,6 +51,9 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_WHATSAPP_FROM: z.string().optional(),
+  // The exact public webhook URL, when the one derived from the request does
+  // not match what Twilio signed (proxies rewrite host and protocol).
+  WHATSAPP_WEBHOOK_URL: z.string().optional(),
   META_WHATSAPP_TOKEN: z.string().optional(),
   META_WHATSAPP_PHONE_ID: z.string().optional(),
   META_WHATSAPP_VERIFY_TOKEN: z.string().optional(),
