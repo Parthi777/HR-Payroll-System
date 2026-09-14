@@ -6,9 +6,12 @@
  *   2. OAuth2 refresh token — files land in the connected Gmail's Drive.
  *
  * Layout: one folder per employee named "<Employee Name> - <Employee Code>",
- * under GOOGLE_DRIVE_PARENT_FOLDER_ID when set. Folders created by a service
- * account are auto-shared with GOOGLE_DRIVE_SHARE_WITH so they appear in the
- * HR admin's "Shared with me".
+ * under the calling tenant's own parent folder. That parent, and the address a
+ * new folder is shared with, are per-tenant (TenantSettings.driveParentFolderId
+ * / driveShareWith) and are passed in by the caller. They are deliberately NOT
+ * read from the environment here: the env folder belongs to the first dealer,
+ * and using it for a second dealer files their receipts in the first dealer's
+ * Drive.
  *
  * Files are kept PRIVATE (no public links) — the app streams them back through an
  * authenticated backend route. Callers check isDriveEnabled() and fall back to
@@ -54,13 +57,21 @@ function drive(): drive_v3.Drive {
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
+/** Where one tenant's claim files live. Resolved from that tenant's settings. */
+export interface DriveTarget {
+  /** This tenant's parent folder; null when the dealer has none configured. */
+  parentFolderId: string | null;
+  /** Address new folders are shared with, so they reach that dealer's HR admin. */
+  shareWith: string | null;
+}
+
 /** Best-effort: share a folder with the HR admin so it shows in "Shared with me". */
-async function shareFolder(folderId: string): Promise<void> {
-  if (!env.GOOGLE_DRIVE_SHARE_WITH) return;
+async function shareFolder(folderId: string, shareWith: string | null): Promise<void> {
+  if (!shareWith) return;
   try {
     await drive().permissions.create({
       fileId: folderId,
-      requestBody: { type: 'user', role: 'writer', emailAddress: env.GOOGLE_DRIVE_SHARE_WITH },
+      requestBody: { type: 'user', role: 'writer', emailAddress: shareWith },
       sendNotificationEmail: false,
     });
   } catch (err) {
@@ -72,18 +83,35 @@ async function shareFolder(folderId: string): Promise<void> {
  * Find-or-create the Drive folder for an employee, named
  * "<Employee Name> - <Employee Code>" (e.g. "Ravi Kumar - EMP001").
  * Returns the folder id; cache it on Employee.driveFolderId.
+ *
+ * The lookup is by name, so it is only ever performed INSIDE this tenant's own
+ * parent folder. A name search with no parent spans the whole Drive, and folder
+ * names collide readily across dealers — every new dealer starts on the default
+ * `EMP` code prefix, so two of them with a "Ravi Kumar - EMP001" would resolve
+ * to one folder and the second dealer's receipts would upload into the first
+ * dealer's Drive.
+ *
+ * With no parent configured we therefore create instead of searching. That can
+ * leave a duplicate folder if an employee's cached `driveFolderId` is ever
+ * lost, which is recoverable; one dealer reading another's receipts is not.
  */
-export async function ensureEmployeeFolder(employeeCode: string, employeeName: string): Promise<string> {
+export async function ensureEmployeeFolder(
+  employeeCode: string,
+  employeeName: string,
+  target: DriveTarget,
+): Promise<string> {
   const name = `${employeeName} - ${employeeCode}`;
-  const parent = env.GOOGLE_DRIVE_PARENT_FOLDER_ID;
-  const parentClause = parent ? ` and '${parent}' in parents` : '';
-  const existing = await drive().files.list({
-    q: `mimeType='${FOLDER_MIME}' and name='${name.replace(/'/g, "\\'")}' and trashed=false${parentClause}`,
-    fields: 'files(id)',
-    spaces: 'drive',
-  });
-  const found = existing.data.files?.[0]?.id;
-  if (found) return found;
+  const parent = target.parentFolderId;
+
+  if (parent) {
+    const existing = await drive().files.list({
+      q: `mimeType='${FOLDER_MIME}' and name='${name.replace(/'/g, "\\'")}' and trashed=false and '${parent}' in parents`,
+      fields: 'files(id)',
+      spaces: 'drive',
+    });
+    const found = existing.data.files?.[0]?.id;
+    if (found) return found;
+  }
 
   const created = await drive().files.create({
     requestBody: { name, mimeType: FOLDER_MIME, parents: parent ? [parent] : undefined },
@@ -91,8 +119,8 @@ export async function ensureEmployeeFolder(employeeCode: string, employeeName: s
   });
   const id = created.data.id;
   if (!id) throw new Error('Failed to create employee Drive folder');
-  await shareFolder(id);
-  logger.info({ employeeCode, folderId: id }, 'Created Drive folder for employee claims');
+  await shareFolder(id, target.shareWith);
+  logger.info({ employeeCode, folderId: id, parent }, 'Created Drive folder for employee claims');
   return id;
 }
 

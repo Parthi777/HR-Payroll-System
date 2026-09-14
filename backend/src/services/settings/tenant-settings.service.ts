@@ -136,8 +136,14 @@ function toPolicy(row: SettingsRow): TenantPolicy {
       // already enrolled there, and moving them would mean re-enrolling everyone.
       rekognitionCollectionId: row.rekognitionCollectionId ?? fallback.resources.rekognitionCollectionId,
       s3Prefix: row.s3Prefix,
-      driveParentFolderId: row.driveParentFolderId ?? fallback.resources.driveParentFolderId,
-      driveShareWith: row.driveShareWith ?? fallback.resources.driveShareWith,
+      // No env fallback, unlike the collection above: the env folder is the
+      // FIRST dealer's Drive folder, so inheriting it would file a second
+      // dealer's receipts inside the first dealer's. A dealer that has no
+      // folder of its own gets none, and claim files fall back to S3.
+      // The first dealer keeps the env folder because the tenancy backfill
+      // wrote it onto its row explicitly (scripts/backfill-tenant.ts).
+      driveParentFolderId: row.driveParentFolderId,
+      driveShareWith: row.driveShareWith,
       whatsappMode: row.whatsappMode === 'OWN' ? 'OWN' : 'SHARED',
       whatsappConfig: parseConfig(row.whatsappConfig),
     },

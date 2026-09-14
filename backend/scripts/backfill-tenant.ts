@@ -58,6 +58,12 @@ function settingsFromEnv() {
     rekognitionCollectionId: process.env.AWS_REKOGNITION_COLLECTION_ID ?? 'hr-payroll-faces',
     s3Prefix: '',
     driveParentFolderId: process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ?? null,
+    // Recorded for the same reason: the Drive folder and the address it is
+    // shared with are per-tenant now, and nothing falls back to the
+    // environment — a second dealer inheriting either would file its receipts
+    // in this dealer's Drive, or hand this dealer's HR admin write access to
+    // the other dealer's folders.
+    driveShareWith: process.env.GOOGLE_DRIVE_SHARE_WITH ?? null,
   };
 }
 

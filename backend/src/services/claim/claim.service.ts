@@ -14,7 +14,7 @@ import { dispatchWhatsApp } from '../whatsapp/whatsapp.service.js';
 import { withNextNumber, formatDocNo } from './claim-number.js';
 import { claimTypeLabel, isValidClaimType } from './claim-types.js';
 import { requireTenantId } from '../../context/tenant-context.js';
-import { getTenantPolicy } from '../settings/tenant-settings.service.js';
+import { getTenantPolicy, type ResourcePolicy } from '../settings/tenant-settings.service.js';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads', 'claims');
 
@@ -30,11 +30,23 @@ export interface FileInput {
 }
 type StoredFile = { fileId?: string; url?: string };
 
-/** Resolve (and cache) the employee's Drive folder when Drive is the active backend. */
-async function resolveFolder(prisma: PrismaClient, employee: Employee): Promise<string | undefined> {
+/**
+ * Resolve (and cache) the employee's Drive folder when Drive is the active backend.
+ *
+ * The folder is created inside this dealer's own parent folder, so one dealer's
+ * employee folders can never be found — or written into — by another.
+ */
+async function resolveFolder(
+  prisma: PrismaClient,
+  employee: Employee,
+  resources: ResourcePolicy,
+): Promise<string | undefined> {
   if (!isDriveEnabled()) return undefined;
   if (employee.driveFolderId) return employee.driveFolderId;
-  const folderId = await ensureEmployeeFolder(employee.employeeCode, employee.name);
+  const folderId = await ensureEmployeeFolder(employee.employeeCode, employee.name, {
+    parentFolderId: resources.driveParentFolderId,
+    shareWith: resources.driveShareWith,
+  });
   await prisma.employee.update({ where: { id: employee.id }, data: { driveFolderId: folderId } });
   return folderId;
 }
@@ -86,8 +98,8 @@ export async function createClaim(
     throw new AppError(`"${input.type}" is not a valid claim type`, 400);
   }
 
-  const folderId = await resolveFolder(prisma, employee);
   const { resources } = await getTenantPolicy(prisma);
+  const folderId = await resolveFolder(prisma, employee, resources);
   const photoRes = photo ? await storeFile(employee, folderId, photo, 'photo', resources.s3Prefix) : {};
   const pdfRes = pdf ? await storeFile(employee, folderId, pdf, 'doc', resources.s3Prefix) : {};
 
@@ -127,8 +139,8 @@ export async function resubmitClaim(
     throw new AppError('Only claims awaiting clarification can be resubmitted', 409);
   }
 
-  const folderId = await resolveFolder(prisma, claim.employee);
   const { resources } = await getTenantPolicy(prisma);
+  const folderId = await resolveFolder(prisma, claim.employee, resources);
   const data: Prisma.ClaimUpdateInput = { status: 'PENDING', employeeNote: input.employeeNote ?? claim.employeeNote };
   if (input.description != null) data.description = input.description;
   if (photo) {

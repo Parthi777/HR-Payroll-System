@@ -29,8 +29,14 @@ const PDF = Buffer.from(
 async function main() {
   if (!isDriveEnabled()) throw new Error('Drive not configured (set GOOGLE_SERVICE_ACCOUNT_FILE or OAuth vars)');
 
+  // Standalone tooling, so there is no tenant in scope: verify against the
+  // platform folder from the environment. Application code passes the calling
+  // tenant's own folder instead — see drive.service.ts.
   console.log('\n1) ensureEmployeeFolder("TEST01", "Drive Test") …');
-  const folderId = await ensureEmployeeFolder('TEST01', 'Drive Test');
+  const folderId = await ensureEmployeeFolder('TEST01', 'Drive Test', {
+    parentFolderId: process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ?? null,
+    shareWith: process.env.GOOGLE_DRIVE_SHARE_WITH ?? null,
+  });
   console.log(`   ✓ folder id: ${folderId}  (name should be "Drive Test - TEST01")`);
 
   console.log('2) upload photo + pdf …');
