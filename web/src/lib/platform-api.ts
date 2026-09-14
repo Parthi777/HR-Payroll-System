@@ -70,6 +70,18 @@ export interface Dealer {
   loginUrl: string;
 }
 
+/**
+ * Where one dealer's files live. Only the platform console can change these:
+ * a Drive folder id is a capability, so a dealer able to edit its own could
+ * enter another dealer's and read their receipts.
+ */
+export interface DealerStorage {
+  driveParentFolderId: string | null;
+  driveShareWith: string | null;
+  s3Prefix: string;
+  rekognitionCollectionId: string | null;
+}
+
 export interface DealerAdmin {
   id: string;
   name: string;

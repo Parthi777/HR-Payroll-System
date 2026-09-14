@@ -77,6 +77,16 @@ const SHAPES: Record<string, Shape> = {
     tone: 'grant',
     detail: (m) => join(text(m.email), ROLE_LABEL[text(m.role)] ?? text(m.role)),
   },
+  TENANT_STORAGE_UPDATED: {
+    title: 'Dealer file storage changed',
+    kind: 'dealer',
+    tone: 'neutral',
+    detail: (m) =>
+      join(
+        m.driveParentFolderId ? `Drive folder ${text(m.driveParentFolderId)}` : 'Drive folder cleared',
+        text(m.driveShareWith) && `shared with ${text(m.driveShareWith)}`,
+      ),
+  },
   PLATFORM_USER_CREATED: {
     title: 'Console administrator added',
     kind: 'access',

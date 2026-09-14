@@ -575,7 +575,7 @@ model PlatformUser {
 model PlatformAuditLog {
   id             String   @id @default(cuid())
   platformUserId String
-  action         String // TENANT_CREATED | TENANT_SUSPENDED | TENANT_RESUMED | TENANT_ADMIN_CREATED
+  action         String // TENANT_CREATED | TENANT_RENAMED | TENANT_SUSPENDED | TENANT_RESUMED | TENANT_ADMIN_CREATED | TENANT_STORAGE_UPDATED | PLATFORM_USER_*
   targetTenantId String?
   targetId       String? // the row acted on, e.g. the AdminUser created
   metadata       String? // JSON-encoded detail

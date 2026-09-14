@@ -49,6 +49,24 @@ const auditQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+const storageSchema = z.object({
+  driveParentFolderId: z.string().trim().nullable().optional(),
+  driveShareWith: z.string().trim().email('That does not look like an email address').nullable().optional(),
+});
+
+/**
+ * Accept either a bare folder id or a pasted Drive URL — people copy the address
+ * bar, not the id, and silently storing "https://drive.google.com/..." as an id
+ * would fail later at upload time with nothing to point at.
+ */
+function driveFolderId(raw: string): string {
+  const id = (raw.match(/\/folders\/([A-Za-z0-9_-]+)/)?.[1] ?? raw).trim();
+  if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) {
+    throw new AppError(`"${raw}" is not a Drive folder id or folder link`, 400);
+  }
+  return id;
+}
+
 const addAdminSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
@@ -271,10 +289,25 @@ export async function platformRoutes(app: FastifyInstance) {
     });
     const employees = await app.prisma.employee.count({ where: { tenantId: id, status: 'ACTIVE' } });
 
+    // Where this dealer's claim files, selfies and faces live. Read here rather
+    // than on the dealer's own settings screen: a dealer that could edit its own
+    // Drive folder could point it at another dealer's and read their receipts.
+    const settings = await app.prisma.tenantSettings.findFirst({
+      where: { tenantId: id },
+      select: {
+        driveParentFolderId: true, driveShareWith: true,
+        s3Prefix: true, rekognitionCollectionId: true,
+      },
+    });
+
     return {
       tenant: { ...tenant, loginUrl: tenantLoginUrl(tenant.slug) },
       admins,
       employees,
+      storage: settings ?? {
+        driveParentFolderId: null, driveShareWith: null,
+        s3Prefix: '', rekognitionCollectionId: null,
+      },
     };
   });
 
@@ -347,6 +380,71 @@ export async function platformRoutes(app: FastifyInstance) {
     const updated = await app.prisma.tenant.update({ where: { id }, data: { name: name.trim() } });
     await audit(req, 'TENANT_RENAMED', { targetTenantId: id, metadata: { from: tenant.name, to: updated.name } });
     return { tenant: updated };
+  });
+
+  /**
+   * Point a dealer at its own Drive folder.
+   *
+   * Only the platform can set this. A folder id is a capability: whoever holds
+   * it can read and write everything inside, so a dealer able to edit its own
+   * would simply enter a rival's and collect their receipts. The same reasoning
+   * is why the folder is never inherited from the environment — see
+   * services/settings/tenant-settings.service.ts.
+   *
+   * Two dealers may never share a folder, so a folder already claimed by another
+   * dealer is refused here rather than discovered later as mixed-up receipts.
+   */
+  app.patch('/platform/tenants/:id/storage', { preHandler: requirePlatform }, async (req) => {
+    const { id } = req.params as { id: string };
+    const input = storageSchema.parse(req.body);
+
+    const tenant = await app.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw AppError.notFound('Dealer');
+
+    const folder = input.driveParentFolderId ? driveFolderId(input.driveParentFolderId) : null;
+    const shareWith = input.driveShareWith || null;
+
+    if (folder) {
+      const clash = await app.prisma.tenantSettings.findFirst({
+        where: { driveParentFolderId: folder, NOT: { tenantId: id } },
+        select: { tenantId: true },
+      });
+      if (clash) {
+        const other = await app.prisma.tenant.findUnique({ where: { id: clash.tenantId } });
+        throw new AppError(
+          `That folder already belongs to ${other?.name ?? 'another dealer'}. ` +
+            'Each dealer needs a folder of its own, or their claim files end up in the same place.',
+          409,
+        );
+      }
+    }
+
+    const before = await app.prisma.tenantSettings.findFirst({
+      where: { tenantId: id },
+      select: { driveParentFolderId: true, driveShareWith: true },
+    });
+
+    // A dealer provisioned before this existed may have no settings row yet.
+    const saved = await app.prisma.tenantSettings.upsert({
+      where: { tenantId: id },
+      update: { driveParentFolderId: folder, driveShareWith: shareWith },
+      create: { tenantId: id, name: tenant.name, driveParentFolderId: folder, driveShareWith: shareWith },
+      select: {
+        driveParentFolderId: true, driveShareWith: true,
+        s3Prefix: true, rekognitionCollectionId: true,
+      },
+    });
+
+    await audit(req, 'TENANT_STORAGE_UPDATED', {
+      targetTenantId: id,
+      metadata: {
+        driveParentFolderId: folder,
+        driveShareWith: shareWith,
+        previousFolder: before?.driveParentFolderId ?? null,
+      },
+    });
+
+    return { storage: saved };
   });
 
   /**

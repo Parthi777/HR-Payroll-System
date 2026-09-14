@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import {
   DEALER_ROLES, platformApi, suggestPassword,
-  type AuditEntry, type AuditPage, type Dealer, type DealerAdmin, type NewDealerAdmin,
+  type AuditEntry, type AuditPage, type Dealer, type DealerAdmin, type DealerStorage,
+  type NewDealerAdmin,
 } from '@/lib/platform-api';
 import { describeActivity, exactTime } from '@/lib/platform-activity';
 
@@ -16,6 +17,7 @@ interface DealerDetail {
   tenant: Dealer & { updatedAt: string };
   admins: DealerAdmin[];
   employees: number;
+  storage: DealerStorage;
 }
 
 const ROLE_LABEL = Object.fromEntries(DEALER_ROLES.map((r) => [r.value, r.label]));
@@ -76,7 +78,7 @@ export default function DealerDetailPage() {
     );
   }
 
-  const { tenant, admins, employees } = data;
+  const { tenant, admins, employees, storage } = data;
   const active = tenant.status === 'ACTIVE';
 
   return (
@@ -181,6 +183,16 @@ export default function DealerDetailPage() {
         </div>
       </section>
 
+      {/* ── file storage ── */}
+      <StorageSection
+        dealerName={tenant.name}
+        storage={storage}
+        onSave={async (body) => {
+          await platformApi.patch(`/tenants/${id}/storage`, body);
+          await load();
+        }}
+      />
+
       {/* ── activity ── */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -223,6 +235,170 @@ export default function DealerDetailPage() {
           </ol>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Where this dealer's claim files go.
+ *
+ * Set here and nowhere else. A Drive folder id is a capability — anyone holding
+ * it can read everything inside — so a dealer that could edit its own would
+ * simply enter a rival's and collect their receipts. Platform staff set it, the
+ * server refuses a folder another dealer already uses, and the change is
+ * recorded in the activity log.
+ */
+function StorageSection({
+  dealerName,
+  storage,
+  onSave,
+}: {
+  dealerName: string;
+  storage: DealerStorage;
+  onSave: (body: { driveParentFolderId: string | null; driveShareWith: string | null }) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [folder, setFolder] = useState(storage.driveParentFolderId ?? '');
+  const [shareWith, setShareWith] = useState(storage.driveShareWith ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function open() {
+    setFolder(storage.driveParentFolderId ?? '');
+    setShareWith(storage.driveShareWith ?? '');
+    setError(null);
+    setEditing(true);
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave({ driveParentFolderId: folder.trim() || null, driveShareWith: shareWith.trim() || null });
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save these settings');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Claim file storage</h2>
+          <p className="text-sm text-muted-foreground">
+            Where {dealerName}&rsquo;s receipts and bills are kept. Every dealer needs a folder of its
+            own — two dealers sharing one would file their receipts together.
+          </p>
+        </div>
+        {!editing && (
+          <button
+            onClick={open}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+          >
+            <Pencil className="h-4 w-4" /> Change
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        <form onSubmit={submit} className="space-y-4 rounded-2xl border border-border bg-card p-5">
+          <div className="space-y-1.5">
+            <label htmlFor="drive-folder" className="text-sm font-medium">Google Drive folder</label>
+            <input
+              id="drive-folder"
+              value={folder}
+              onChange={(e) => setFolder(e.target.value)}
+              placeholder="Paste the folder link, or its id"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Open the folder in Drive and paste the address — the id is taken from it. Leave this
+              empty and {dealerName}&rsquo;s claim files go to S3 instead, which works but is not
+              browsable.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="drive-share" className="text-sm font-medium">Share new folders with</label>
+            <input
+              id="drive-share"
+              type="email"
+              value={shareWith}
+              onChange={(e) => setShareWith(e.target.value)}
+              placeholder="hr@dealer.example"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Each employee folder is shared with this address as it is created, so it appears in
+              that person&rsquo;s &ldquo;Shared with me&rdquo;. Use {dealerName}&rsquo;s own HR admin, never
+              another dealer&rsquo;s. Folders that already exist are not changed.
+            </p>
+          </div>
+
+          {error && <p className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={busy}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <dl className="grid gap-4 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2">
+          <StorageRow
+            label="Drive folder"
+            value={storage.driveParentFolderId}
+            empty="Not set — claim files go to S3"
+            mono
+          />
+          <StorageRow
+            label="New folders shared with"
+            value={storage.driveShareWith}
+            empty="Nobody"
+          />
+          {/* Fixed at onboarding: changing either would strand this dealer's
+              existing selfies or require re-enrolling every face. */}
+          <StorageRow label="Selfie storage" value={storage.s3Prefix || 'bucket root'} mono readOnly />
+          <StorageRow label="Face collection" value={storage.rekognitionCollectionId} empty="Platform default" mono readOnly />
+        </dl>
+      )}
+    </section>
+  );
+}
+
+function StorageRow({
+  label, value, empty, mono, readOnly,
+}: {
+  label: string;
+  value: string | null;
+  empty?: string;
+  mono?: boolean;
+  readOnly?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+        {readOnly && <span className="normal-case tracking-normal">(set at onboarding)</span>}
+      </dt>
+      <dd className={`mt-0.5 truncate text-sm ${mono ? 'font-mono text-[13px]' : ''} ${value ? '' : 'text-muted-foreground'}`}>
+        {value || empty || '—'}
+      </dd>
     </div>
   );
 }

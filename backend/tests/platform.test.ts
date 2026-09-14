@@ -296,6 +296,105 @@ suite('dealer onboarding', () => {
     });
   });
 
+  describe('claim file storage is set per dealer, by the platform only', () => {
+    const tenantIdOf = async (slug: string) => {
+      const res = await asPlatform('GET', '/api/platform/tenants');
+      const found = res.json().tenants.find((t: { slug: string }) => t.slug === slug);
+      expect(found, `no dealer ${slug}`).toBeTruthy();
+      return found.id as string;
+    };
+
+    const storageOf = async (slug: string) => {
+      const res = await asPlatform('GET', `/api/platform/tenants/${await tenantIdOf(slug)}`);
+      expect(res.statusCode, res.body).toBe(200);
+      return res.json().storage;
+    };
+
+    it('starts unset, so claim files fall back to S3 rather than a shared folder', async () => {
+      expect((await storageOf('abc-motors')).driveParentFolderId).toBeNull();
+    });
+
+    it('sets a dealer’s own folder', async () => {
+      const res = await asPlatform('PATCH', `/api/platform/tenants/${await tenantIdOf('abc-motors')}/storage`, {
+        driveParentFolderId: 'abcMotorsFolder123',
+        driveShareWith: 'hr@abc.test',
+      });
+      expect(res.statusCode, res.body).toBe(200);
+
+      const saved = await storageOf('abc-motors');
+      expect(saved.driveParentFolderId).toBe('abcMotorsFolder123');
+      expect(saved.driveShareWith).toBe('hr@abc.test');
+    });
+
+    it('takes the id out of a pasted Drive link', async () => {
+      const res = await asPlatform('PATCH', `/api/platform/tenants/${await tenantIdOf('xyz-autos')}/storage`, {
+        driveParentFolderId: 'https://drive.google.com/drive/folders/xyzAutosFolder99?usp=sharing',
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      expect((await storageOf('xyz-autos')).driveParentFolderId).toBe('xyzAutosFolder99');
+    });
+
+    it('refuses a folder another dealer already uses', async () => {
+      // The whole point of the field: two dealers sharing a folder would file
+      // their receipts together, which is what this guard exists to stop.
+      const res = await asPlatform('PATCH', `/api/platform/tenants/${await tenantIdOf('xyz-autos')}/storage`, {
+        driveParentFolderId: 'abcMotorsFolder123',
+      });
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json().message).toContain('ABC Motors');
+
+      // and the attempt changed nothing
+      expect((await storageOf('xyz-autos')).driveParentFolderId).toBe('xyzAutosFolder99');
+    });
+
+    it('lets a dealer keep its own folder on a re-save', async () => {
+      const res = await asPlatform('PATCH', `/api/platform/tenants/${await tenantIdOf('abc-motors')}/storage`, {
+        driveParentFolderId: 'abcMotorsFolder123',
+        driveShareWith: 'newhr@abc.test',
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      expect((await storageOf('abc-motors')).driveShareWith).toBe('newhr@abc.test');
+    });
+
+    it('rejects something that is not a folder id', async () => {
+      const res = await asPlatform('PATCH', `/api/platform/tenants/${await tenantIdOf('abc-motors')}/storage`, {
+        driveParentFolderId: 'my folder',
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('clears the folder when emptied', async () => {
+      const id = await tenantIdOf('xyz-autos');
+      expect((await asPlatform('PATCH', `/api/platform/tenants/${id}/storage`, {
+        driveParentFolderId: null, driveShareWith: null,
+      })).statusCode).toBe(200);
+
+      const saved = await storageOf('xyz-autos');
+      expect(saved.driveParentFolderId).toBeNull();
+      expect(saved.driveShareWith).toBeNull();
+    });
+
+    it('refuses a dealer’s own administrator — a folder id is a capability', async () => {
+      const token = await dealerLogin('abc-motors', 'owner@abc.test');
+      const res = await app.inject({
+        method: 'PATCH', url: `/api/platform/tenants/${await tenantIdOf('xyz-autos')}/storage`,
+        headers: { authorization: `Bearer ${token}`, 'x-tenant-slug': 'abc-motors' },
+        payload: { driveParentFolderId: 'stolenFolder123' },
+      });
+      expect([401, 403]).toContain(res.statusCode);
+      expect((await storageOf('xyz-autos')).driveParentFolderId).toBeNull();
+    });
+
+    it('records the change in the activity log', async () => {
+      const res = await asPlatform('GET', `/api/platform/audit?tenantId=${await tenantIdOf('abc-motors')}`);
+      expect(res.statusCode, res.body).toBe(200);
+      const entry = res.json().entries.find((e: { action: string }) => e.action === 'TENANT_STORAGE_UPDATED');
+      expect(entry, 'no TENANT_STORAGE_UPDATED entry').toBeTruthy();
+      // Stored as a JSON string; the console parses it the same way.
+      expect(JSON.parse(entry.metadata).driveParentFolderId).toBe('abcMotorsFolder123');
+    });
+  });
+
   describe('the two surfaces stay separate', () => {
     it('a platform token cannot reach a dealer’s data', async () => {
       const res = await app.inject({

@@ -460,6 +460,7 @@ suite('cross-tenant isolation', () => {
     'GET /api/platform/tenants/:id',
     'PATCH /api/platform/tenants/:id',
     'PATCH /api/platform/tenants/:id/status',
+    'PATCH /api/platform/tenants/:id/storage',
     'POST /api/platform/tenants/:id/admins',
     'GET /api/platform/audit',
   ];
