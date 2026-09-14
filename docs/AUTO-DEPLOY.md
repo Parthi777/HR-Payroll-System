@@ -1,14 +1,24 @@
-# Deploying from GitHub instead of by hand
+# Deploying: push to `main`
 
-Today both services are deployed by `railway up`, which uploads a snapshot of a
-local directory. That is why pushing to `main` changes nothing in production
-until somebody remembers to run two more commands — and why, twice now,
-production has sat a commit behind the repo without anything looking wrong.
+**This is connected and in force.** Both services build from
+`Parthi777/HR-Payroll-System` and deploy on every push to `main`. To ship:
 
-Connecting each service to the repo removes that step: a merge to `main` builds
-and deploys on its own.
+```bash
+git push origin main      # this is the deploy
+```
 
-## What has to happen in the browser
+**Do not use `railway up`** — see "Why `railway up` no longer works" below.
+
+It was connected on 2026-09-08, and the rest of this page is the record of how,
+kept because it is what to redo if a service is ever recreated.
+
+Before that, both services were deployed by `railway up`, which uploads a
+snapshot of a local directory — so pushing to `main` changed nothing in
+production until somebody ran two more commands, and twice production sat a
+commit behind the repo without anything looking wrong. That is the problem this
+removed.
+
+## How it was connected, in the browser
 
 Connecting a repo needs the Railway GitHub App authorised against
 `Parthi777/HR-Payroll-System`, which is an OAuth flow. The CLI has no command
@@ -61,19 +71,70 @@ So either:
 The first is simpler and is the right default while one person is merging. The
 second is what to switch to once more than one person is.
 
-## Verifying it took
+**In force today: the first.** The services watch `main`, so a migration merged
+to `main` runs against the production database on the next deploy, unattended.
+Review the `backend/prisma/migrations/` diff before merging — that review is the
+only thing standing between a merge and a schema change in production.
 
-Push a trivial commit to the watched branch, then confirm both services built
-from it — the deployment's source in the dashboard should name the commit rather
-than reading "CLI upload". Then probe, as ever, rather than trusting the UI:
+## Verifying a deploy actually shipped
+
+Two checks, and the second is the one that means anything.
+
+**Did it build?**
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://backend-production-0b26.up.railway.app/api/health
-curl -s -o /dev/null -w "%{http_code}\n" https://web-production-2b851.up.railway.app/activity
+railway deployment list --service backend
+railway deployment list --service web
 ```
 
-`railway up` keeps working afterwards, so an urgent fix can still be pushed
-straight from a laptop without waiting on a merge.
+A push deploys BOTH services at the *identical* timestamp — that is how to tell
+a push from two CLI uploads, which land seconds apart. Wait for `SUCCESS`;
+`BUILDING` and `DEPLOYING` are not outcomes, and `FAILED` is silent from outside.
+
+**Is the new code actually serving?**
+
+Neither `SUCCESS` nor `/api/health` proves this — health answers exactly the same
+on old code, which is why a failed deploy looks like a healthy service. Probe a
+route that is *new in this deploy* and watch its status change. When the
+tenant-storage work shipped:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X PATCH \
+  https://backend-production-0b26.up.railway.app/api/platform/tenants/probe/storage
+# 404 before (no such route) -> 401 after (route exists, auth refuses)
+```
+
+Pick the equivalent for whatever shipped: a route that did not exist before, hit
+without credentials, moving 404 -> 401/403. Do **not** probe
+`/api/auth/admin/login` — it is rate-limited to 5 attempts per 10 minutes per IP,
+and a probe burns a real allowance.
+
+## Why `railway up` no longer works
+
+This page originally said `railway up` would keep working afterwards as an
+escape hatch for an urgent fix. **It does not, and that line cost two failed
+deployments on 2026-09-14** before anyone checked why.
+
+Once a service has a **Root Directory** set (step 3 above), `railway up backend
+--path-as-root --service backend` fails during the build:
+
+```
+Error: Failed to read app source directory
+    No such file or directory (os error 2)
+nixpacks exited with an error
+```
+
+The upload already makes `backend/` the archive root, and the service then
+applies its own root directory on top — so the build looks for `backend/backend`
+and finds nothing. The form is right (it is Railway's own documented example);
+it is the Root Directory setting that makes it wrong here.
+
+A failed deploy is harmless: the previous SUCCESS deployment keeps serving, and
+`/api/health` stays up throughout — which is exactly why this can fail without
+looking like anything. Check `railway deployment list --service backend` rather
+than assuming an upload that printed a build-log URL actually built.
+
+**The escape hatch is a push.** There is no faster path that works.
 
 ## Checked before recommending this
 

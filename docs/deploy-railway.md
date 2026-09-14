@@ -2,9 +2,9 @@
 
 > **Out of date.** This was written before the deployment existed and does not
 > describe it: the database is Postgres, not a SQLite volume, and the web app
-> *is* deployed to Railway alongside the backend. Both services are currently
-> deployed by `railway up` snapshots — see [AUTO-DEPLOY.md](AUTO-DEPLOY.md) for
-> how to connect them to GitHub, and [DEPLOY.md](DEPLOY.md) for the live setup.
+> *is* deployed to Railway alongside the backend. Both services now deploy from
+> GitHub on a push to `main` — `railway up` no longer works at all; see
+> [AUTO-DEPLOY.md](AUTO-DEPLOY.md), and [DEPLOY.md](DEPLOY.md) for the live setup.
 > Kept for the environment-variable list, which is still accurate.
 
 The backend (`backend/`) is a Node + Fastify + Prisma API. These steps deploy it on
