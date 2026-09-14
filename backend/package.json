@@ -15,6 +15,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "pretest": "prisma generate",
     "test": "vitest run",
     "test:isolation": "tsx scripts/run-isolation-tests.ts"
   },

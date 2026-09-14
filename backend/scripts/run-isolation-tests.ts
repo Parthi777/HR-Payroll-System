@@ -27,6 +27,10 @@ const run = (cmd: string, args: string[], env: NodeJS.ProcessEnv = {}) =>
 
 console.log(`\nIsolation suite → ${url}\n`);
 
+// A generated client older than schema.prisma fails the DMMF coverage tests
+// with errors that look like real tenancy bugs and are not. Cheap; do it first.
+run('npx', ['prisma', 'generate']);
+
 // Bring the schema up to date first; the suite assumes the tables exist.
 run('npx', ['prisma', 'migrate', 'deploy'], { DATABASE_URL: url });
 
