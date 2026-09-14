@@ -34,10 +34,21 @@ run('npx', ['prisma', 'generate']);
 // Bring the schema up to date first; the suite assumes the tables exist.
 run('npx', ['prisma', 'migrate', 'deploy'], { DATABASE_URL: url });
 
-run('npx', ['vitest', 'run', 'tests/isolation.test.ts', 'tests/platform.test.ts', 'tests/audit.test.ts', 'tests/attendance-override.test.ts', 'tests/whatsapp-inbound.test.ts'], {
-  DATABASE_URL: url,
-  TEST_DATABASE_URL: url,
-  // The app refuses to boot without these; values are irrelevant to isolation.
-  JWT_SECRET: process.env.JWT_SECRET ?? 'isolation-suite-secret-key',
-  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? 'isolation-suite-refresh-key',
-});
+// whatsapp-queue also wants a REDIS_URL and skips without one, so a machine
+// with no Redis still runs the rest of this list rather than failing.
+run(
+  'npx',
+  [
+    'vitest', 'run',
+    'tests/isolation.test.ts', 'tests/platform.test.ts', 'tests/audit.test.ts',
+    'tests/attendance-override.test.ts', 'tests/whatsapp-inbound.test.ts',
+    'tests/whatsapp-queue.test.ts',
+  ],
+  {
+    DATABASE_URL: url,
+    TEST_DATABASE_URL: url,
+    // The app refuses to boot without these; values are irrelevant to isolation.
+    JWT_SECRET: process.env.JWT_SECRET ?? 'isolation-suite-secret-key',
+    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? 'isolation-suite-refresh-key',
+  },
+);

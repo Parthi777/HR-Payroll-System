@@ -20,6 +20,7 @@ import { requireTenantId } from '../../context/tenant-context.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 import { getTenantPolicy, type ResourcePolicy } from '../settings/tenant-settings.service.js';
+import { enqueueWhatsApp, isQueueEnabled, MAX_ATTEMPTS, type WhatsAppJob } from '../queue/whatsapp.queue.js';
 
 export interface DispatchInput {
   phone: string;
@@ -167,11 +168,78 @@ export async function senderFor(prisma: PrismaClient): Promise<WhatsAppSender | 
   return usable(shared) ? shared : null;
 }
 
-/** Log + send a WhatsApp message. Never throws — failures are recorded on the log row. */
+/**
+ * Send one message and record the outcome on its log row.
+ *
+ * Throws when the send fails, so a queued job can be retried. The inline path
+ * catches; the worker lets it through until the last attempt. Shared so both
+ * paths mark a row the same way — a message must not read SENT down one route
+ * and FAILED down the other.
+ */
+async function deliver(prisma: PrismaClient, logId: string, phone: string, message: string): Promise<void> {
+  const sender = await senderFor(prisma);
+  if (!sender) {
+    logger.info({ logId }, 'WhatsApp not configured — message stays QUEUED (not sent)');
+    return;
+  }
+  const { messageId } = await provider(sender.provider).sendText(sender, phone, message);
+  await prisma.whatsAppLog.update({
+    where: { id: logId },
+    data: { status: 'SENT', messageId, sentAt: new Date() },
+  });
+}
+
+/**
+ * Run one queued job. Called by the worker, inside the job's tenant.
+ *
+ * Retries by throwing, which is how BullMQ is told to try again. On the last
+ * attempt it marks the row FAILED and returns instead — CLAUDE.md's "retry 3
+ * times, then log as failed" — because a job that ends by throwing leaves the
+ * row saying QUEUED forever and the admin screen would show a message still
+ * waiting to go out that nothing will ever send.
+ */
+export async function runWhatsAppJob(
+  prisma: PrismaClient,
+  job: WhatsAppJob,
+  attemptsMade: number,
+): Promise<void> {
+  // At-least-once, so this has to be idempotent. Two ways the same message can
+  // arrive twice: BullMQ redelivering a job whose worker stalled, and an
+  // enqueue that timed out, was sent inline, and then landed in Redis after
+  // all. A row that is already SENT has been delivered — leave it alone rather
+  // than message the employee a second time.
+  const row = await prisma.whatsAppLog.findUnique({ where: { id: job.logId } });
+  if (!row) {
+    logger.warn({ logId: job.logId }, 'WhatsApp job for a log row that no longer exists — dropping');
+    return;
+  }
+  if (row.status === 'SENT') {
+    logger.info({ logId: job.logId }, 'WhatsApp message already sent — skipping duplicate job');
+    return;
+  }
+
+  try {
+    await deliver(prisma, job.logId, job.phone, job.message);
+  } catch (err) {
+    if (attemptsMade + 1 < MAX_ATTEMPTS) throw err;
+    logger.error({ err, trigger: job.trigger }, 'WhatsApp send failed after every attempt');
+    await prisma.whatsAppLog.update({ where: { id: job.logId }, data: { status: 'FAILED' } });
+  }
+}
+
+/**
+ * Log a WhatsApp message and get it sent. Never throws.
+ *
+ * The row is written here, in the request, because that is where the tenant is
+ * known. Delivery goes to the queue when one is configured so that a slow
+ * provider cannot hold up a check-in; with no queue it happens inline, exactly
+ * as it did before the queue existed.
+ */
 export async function dispatchWhatsApp(prisma: PrismaClient, input: DispatchInput): Promise<void> {
+  const tenantId = requireTenantId();
   const log = await prisma.whatsAppLog.create({
     data: {
-      tenantId: requireTenantId(),
+      tenantId,
       phone: input.phone,
       employeeId: input.employeeId ?? null,
       templateName: input.templateName ?? input.trigger,
@@ -181,18 +249,21 @@ export async function dispatchWhatsApp(prisma: PrismaClient, input: DispatchInpu
     },
   });
 
-  const sender = await senderFor(prisma);
-  if (!sender) {
-    logger.info({ trigger: input.trigger }, 'WhatsApp not configured — message queued (not sent)');
-    return;
+  if (isQueueEnabled()) {
+    const queued = await enqueueWhatsApp({
+      logId: log.id,
+      tenantId,
+      phone: input.phone,
+      message: input.message,
+      trigger: input.trigger,
+    });
+    // Enqueue failing is Redis being unreachable, not a reason to lose the
+    // message: fall through and send it here instead.
+    if (queued) return;
   }
 
   try {
-    const { messageId } = await provider(sender.provider).sendText(sender, input.phone, input.message);
-    await prisma.whatsAppLog.update({
-      where: { id: log.id },
-      data: { status: 'SENT', messageId, sentAt: new Date() },
-    });
+    await deliver(prisma, log.id, input.phone, input.message);
   } catch (err) {
     logger.error({ err, trigger: input.trigger }, 'WhatsApp send failed');
     await prisma.whatsAppLog.update({ where: { id: log.id }, data: { status: 'FAILED' } });

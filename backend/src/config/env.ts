@@ -9,7 +9,12 @@ const envSchema = z.object({
 
   // Accepts both Postgres URLs (prod) and SQLite file: paths (local dev, e.g. file:./dev.db)
   DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+  // No default, deliberately. A default makes "no Redis" indistinguishable from
+  // "Redis on localhost", and production has no Redis — so a defaulted value
+  // would have the queue dialling a port that nothing listens on. Unset means
+  // the WhatsApp queue is off and sends happen inline, which is the old
+  // behaviour exactly. See services/queue/whatsapp.queue.ts.
+  REDIS_URL: z.string().optional(),
 
   JWT_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),

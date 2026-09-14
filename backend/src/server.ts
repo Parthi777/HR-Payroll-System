@@ -13,6 +13,9 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { registerRoutes } from './routes/index.js';
 import { beginRequestContext } from './context/tenant-context.js';
 import { ensureSeedData } from './bootstrap.js';
+import { runInTenant } from './context/tenant-context.js';
+import { closeWhatsAppQueue, isQueueEnabled, startWhatsAppWorker } from './services/queue/whatsapp.queue.js';
+import { runWhatsAppJob } from './services/whatsapp/whatsapp.service.js';
 
 /**
  * Who may call this API from a browser.
@@ -93,16 +96,53 @@ async function buildServer() {
   return app;
 }
 
+/**
+ * Drain the WhatsApp queue.
+ *
+ * Started here rather than in buildServer(): the tests build the real app
+ * in-process and must not open a Redis connection or start competing for jobs.
+ * No-op when REDIS_URL is unset, which is every deployment that has not
+ * provisioned a Redis — those send inline exactly as before.
+ *
+ * A worker runs in no request, so it has no tenant context and every
+ * tenant-scoped query would refuse to run. The job carries its tenant and the
+ * worker re-enters it here. `subjectId` names the worker rather than a person
+ * because no person asked for this particular send.
+ */
+function startQueueWorker(app: FastifyInstance) {
+  startWhatsAppWorker((job, attemptsMade) =>
+    runInTenant(
+      { tenantId: job.tenantId, subjectId: 'whatsapp-worker', role: 'SUPER_ADMIN' },
+      () => runWhatsAppJob(app.prisma, job, attemptsMade),
+    ),
+  );
+}
+
 async function start() {
   const app = await buildServer();
 
   try {
     await ensureSeedData(app.prisma); // no-op once seeded; makes fresh deploys log-in-ready
+    startQueueWorker(app);
     await app.listen({ port: env.PORT, host: '0.0.0.0' });
-    logger.info(`🚀 Backend listening on http://localhost:${env.PORT}`);
+    logger.info(
+      { queue: isQueueEnabled() ? 'on' : 'off (no REDIS_URL — WhatsApp sends inline)' },
+      `🚀 Backend listening on http://localhost:${env.PORT}`,
+    );
   } catch (err) {
     logger.error(err);
     process.exit(1);
+  }
+
+  // Railway sends SIGTERM on redeploy. Close the worker first so a send in
+  // flight finishes and its row is not left reading QUEUED.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, async () => {
+      logger.info({ signal }, 'shutting down');
+      await closeWhatsAppQueue();
+      await app.close();
+      process.exit(0);
+    });
   }
 }
 

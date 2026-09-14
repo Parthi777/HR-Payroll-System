@@ -113,7 +113,7 @@ ai-hr-payroll/
 | Cache | Redis |
 | File Storage | Cloudinary (selfie photos) |
 | Real-time | Socket.io |
-| Queue | BullMQ (WhatsApp jobs, payroll) |
+| Queue | BullMQ — WhatsApp sends when `REDIS_URL` is set (payroll runs are still synchronous) |
 | WhatsApp | WhatsApp Business API (via Meta / Twilio / WATI) |
 | Face Match | AWS Rekognition or Azure Face API |
 | Auth | JWT + bcrypt |
@@ -777,6 +777,9 @@ policy (`isLateArrival()` is tracked separately).
 ```env
 # Backend
 DATABASE_URL=postgresql://user:pass@localhost:5432/hrpayroll
+# Optional. Unset = the WhatsApp queue is off and sends happen inline (this is
+# what production does today — it has Postgres and no Redis). Setting it turns
+# the queue on; nothing else changes.
 REDIS_URL=redis://localhost:6379
 JWT_SECRET=your_jwt_secret_here
 JWT_REFRESH_SECRET=your_refresh_secret_here
@@ -856,7 +859,7 @@ NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
 - [ ] Backend: WhatsApp service (WATI/Twilio)
 - [ ] Backend: Message templates registration
 - [ ] Backend: Webhook handler (inbound messages)
-- [ ] Backend: BullMQ queue for async WhatsApp sending
+- [x] Backend: BullMQ queue for async WhatsApp sending (off without `REDIS_URL`)
 - [ ] Web: WhatsApp automation center UI
 - [ ] Testing: All trigger scenarios
 
@@ -902,7 +905,12 @@ When working in this repo, Claude should:
 - Every route must validate input with Zod
 - All errors thrown as `AppError(message, statusCode)` — caught by global handler
 - Never `console.log` in production code — use structured logger (pino)
-- WhatsApp sends always go through the BullMQ queue (never direct from request handler)
+- WhatsApp sends go through the BullMQ queue when one is configured, never
+  straight out of a request handler. The queue is on only when `REDIS_URL` is
+  set; with no Redis the send happens inline, which is what a deployment without
+  one does — see `services/queue/whatsapp.queue.ts`. Enqueue failing (Redis
+  down) falls back to an inline send rather than losing the message, and the
+  worker is idempotent because BullMQ is at-least-once.
 
 ### Web App conventions
 - Use Server Components by default; add `"use client"` only when needed
@@ -945,7 +953,7 @@ When working in this repo, Claude should:
 | Employee checks in from home | Geofence will flag; HR to investigate |
 | Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days. Check-out finds nothing open today and falls back to yesterday's open punch (`Shift.isNightShift` only). |
 | Same employee multiple devices | Block — only registered device allowed (device fingerprint) |
-| WhatsApp delivery failure | Retry 3 times via BullMQ, then log as failed |
+| WhatsApp delivery failure | Retry 3 times via BullMQ, then the log row is marked FAILED. Without a queue there is one inline attempt, then FAILED. |
 | Payroll run mid-month | System allows partial month calculation (pro-rata) |
 | Public holidays | Holiday calendar configurable; auto-mark as holiday, not absent |
 | Employee on approved leave | Auto-mark with leave type; don't send absent alert |
