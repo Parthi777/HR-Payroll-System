@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { authenticate } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { resolveUploadPath } from '../utils/upload-path.js';
 import { getSignedSelfieUrl } from '../services/storage/storage.service.js';
 
 /** Logged-in employee's own profile (for the app home/dashboard header). */
@@ -39,7 +40,7 @@ export async function profileRoutes(app: FastifyInstance) {
     }
     if (!src) throw AppError.notFound('Photo');
     if (src.startsWith('/uploads/')) {
-      const abs = path.resolve(process.cwd(), src.replace(/^\//, ''));
+      const abs = resolveUploadPath(src);
       return reply.type('image/jpeg').send(await fs.readFile(abs));
     }
     return reply.redirect(await getSignedSelfieUrl(src));

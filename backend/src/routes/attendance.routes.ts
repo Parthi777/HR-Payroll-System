@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { assertManages, authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { resolveUploadPath } from '../utils/upload-path.js';
 import {
   markCheckIn,
   markCheckOut,
@@ -632,7 +633,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const att = await app.prisma.attendance.findUnique({ where: { id } });
     if (!att?.checkInSelfie) throw AppError.notFound('Selfie');
     if (att.checkInSelfie.startsWith('/uploads/')) {
-      const abs = path.resolve(process.cwd(), att.checkInSelfie.replace(/^\//, ''));
+      const abs = resolveUploadPath(att.checkInSelfie);
       return reply.type('image/jpeg').send(await fs.readFile(abs));
     }
     // Stream through the API rather than redirecting to a signed S3 URL —

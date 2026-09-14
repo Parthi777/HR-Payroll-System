@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { isS3Enabled, headObjectMetadata, getSignedSelfieUrl, getObjectBytes } from '../services/storage/storage.service.js';
+import { isS3Enabled, headObjectMetadata, getSignedSelfieUrl } from '../services/storage/storage.service.js';
 import { AppError } from '../utils/AppError.js';
 
 const APK_KEY = 'app/latest.apk';
@@ -25,15 +25,32 @@ export async function appRoutes(app: FastifyInstance) {
     };
   });
 
-  // Permanent, shareable download link — always serves the latest published APK.
-  // e.g. https://<backend>/api/app/download (send this to staff via WhatsApp).
-  app.get('/app/download', async (_req, reply) => {
-    if (!isS3Enabled()) throw new AppError('App download is not available', 503);
-    const meta = await headObjectMetadata(APK_KEY);
-    if (!meta) throw AppError.notFound('No app has been published yet');
-    const bytes = await getObjectBytes(APK_KEY);
-    reply.header('Content-Type', 'application/vnd.android.package-archive');
-    reply.header('Content-Disposition', `attachment; filename="HR-Payroll-v${meta.versionname ?? ''}.apk"`);
-    return reply.send(bytes);
-  });
+  /**
+   * Permanent, shareable download link — always serves the latest published APK.
+   * e.g. https://<backend>/api/app/download (send this to staff via WhatsApp).
+   *
+   * Redirects to a signed S3 URL rather than proxying the bytes. It used to
+   * read the whole APK into a Buffer and send it: ~60 MB of heap per request,
+   * unauthenticated and unthrottled, on a single backend instance — a handful
+   * of concurrent requests was an easy way to exhaust memory and bill the
+   * egress to us. The link stays permanent and always current; only the hop
+   * changes, and S3 serves the bytes.
+   *
+   * Rate-limited because presigning is cheap but not free, and because a public
+   * endpoint with no ceiling is how you find out what a botnet costs. Generous
+   * enough for a whole branch installing at once from one NAT address.
+   *
+   * 6h signature: a ~60 MB download over a weak mobile link can outlive a short
+   * one and 403 midway, which leaves the device prompting again.
+   */
+  app.get(
+    '/app/download',
+    { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } },
+    async (_req, reply) => {
+      if (!isS3Enabled()) throw new AppError('App download is not available', 503);
+      const meta = await headObjectMetadata(APK_KEY);
+      if (!meta) throw AppError.notFound('No app has been published yet');
+      return reply.redirect(await getSignedSelfieUrl(APK_KEY, 6 * 3600));
+    },
+  );
 }

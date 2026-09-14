@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   parseMetaInbound,
   parseTwilioInbound,
+  verifyChallenge,
   verifyMetaSignature,
   verifyTwilioSignature,
 } from '../src/services/whatsapp/inbound.service.js';
@@ -64,6 +65,45 @@ describe('webhook signatures', () => {
     expect(verifyMetaSignature(body, undefined, SECRET)).toBe(false);
     expect(verifyMetaSignature(body, 'sha256=short', SECRET)).toBe(false);
     expect(verifyMetaSignature(body, 'md5=whatever', SECRET)).toBe(false);
+  });
+});
+
+describe('the verification handshake', () => {
+  // The bug this pins could not be caught by a test that read the real
+  // environment. Locally META_WHATSAPP_VERIFY_TOKEN is set to an empty string,
+  // so the old check was `undefined === ''` — false, refused, apparently fine.
+  // Production runs Twilio and has the variable absent, so it was
+  // `undefined === undefined` — true. Omitting the parameter passed, confirmed
+  // live: HTTP 200 echoing an arbitrary challenge. So each case says outright
+  // what `expected` is rather than hoping the machine reproduces it.
+  const subscribe = { 'hub.mode': 'subscribe', 'hub.challenge': 'ECHO_ME' };
+
+  it('refuses when no token is configured and none is offered', () => {
+    expect(verifyChallenge({ ...subscribe }, undefined)).toBeNull();
+  });
+
+  it('refuses when the configured token is an empty string', () => {
+    expect(verifyChallenge({ ...subscribe }, '')).toBeNull();
+  });
+
+  it('refuses a caller who offers nothing, whatever is configured', () => {
+    expect(verifyChallenge({ ...subscribe }, 'the-real-token')).toBeNull();
+  });
+
+  it('refuses a wrong token', () => {
+    expect(verifyChallenge({ ...subscribe, 'hub.verify_token': 'wrong' }, 'the-real-token')).toBeNull();
+  });
+
+  it('refuses the right token on the wrong mode', () => {
+    expect(
+      verifyChallenge({ ...subscribe, 'hub.mode': 'unsubscribe', 'hub.verify_token': 'the-real-token' }, 'the-real-token'),
+    ).toBeNull();
+  });
+
+  it('echoes the challenge only when the token matches', () => {
+    expect(
+      verifyChallenge({ ...subscribe, 'hub.verify_token': 'the-real-token' }, 'the-real-token'),
+    ).toBe('ECHO_ME');
   });
 });
 

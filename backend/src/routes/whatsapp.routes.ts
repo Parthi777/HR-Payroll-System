@@ -8,6 +8,7 @@ import {
   parseMetaInbound,
   parseTwilioInbound,
   resolveInbound,
+  verifyChallenge,
   verifyMetaSignature,
   verifyTwilioSignature,
 } from '../services/whatsapp/inbound.service.js';
@@ -46,13 +47,23 @@ export async function whatsappRoutes(app: FastifyInstance) {
     }
   });
 
-  // Meta webhook verification (GET) — echoes hub.challenge
-  app.get('/whatsapp/webhook', async (req, reply) => {
-    const q = req.query as Record<string, string>;
-    if (q['hub.mode'] === 'subscribe' && q['hub.verify_token'] === env.META_WHATSAPP_VERIFY_TOKEN) {
-      return reply.send(q['hub.challenge']);
-    }
-    return reply.status(403).send('Forbidden');
+  /**
+   * Meta webhook verification (GET) — echoes hub.challenge.
+   *
+   * The `expected &&` is load-bearing. Without it, a deployment that has no
+   * META_WHATSAPP_VERIFY_TOKEN — which is every deployment on Twilio, including
+   * this one — compared `undefined === undefined` and passed anyone who simply
+   * omitted the parameter. Verified against production: omitting it returned
+   * 200 and echoed an arbitrary challenge, while a *wrong* token correctly got
+   * 403. Fails closed now: no token configured, nothing verifies.
+   */
+  app.get('/whatsapp/webhook', { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } }, async (req, reply) => {
+    const challenge = verifyChallenge(
+      req.query as Record<string, string | undefined>,
+      env.META_WHATSAPP_VERIFY_TOKEN,
+    );
+    if (challenge === null) return reply.status(403).send('Forbidden');
+    return reply.send(challenge);
   });
 
   /**

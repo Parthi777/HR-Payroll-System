@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { resolveUploadPath } from '../utils/upload-path.js';
 import { notifyAdmins, approverIds, cashierIds } from '../services/notification.service.js';
 import { pushToEmployee } from '../services/push.service.js';
 import {
@@ -61,7 +62,7 @@ async function serveClaimFile(
   }
   if (url) {
     if (url.startsWith('/uploads/')) {
-      const abs = path.resolve(process.cwd(), url.replace(/^\//, ''));
+      const abs = resolveUploadPath(url);
       const buf = await fs.readFile(abs);
       const mime = url.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
       return reply.type(mime).send(buf);

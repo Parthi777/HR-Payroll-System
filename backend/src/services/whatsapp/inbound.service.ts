@@ -41,6 +41,35 @@ export interface InboundMessage {
 }
 
 /**
+ * Meta's verification handshake: the challenge to echo, or null to refuse.
+ *
+ * A pure function, and deliberately not left inline in the route, because the
+ * bug it replaces could not be reproduced by a test that read the real
+ * environment. The check was:
+ *
+ *     q['hub.verify_token'] === env.META_WHATSAPP_VERIFY_TOKEN
+ *
+ * On a machine where the variable is set to an empty string that is
+ * `undefined === ''` — false, refused, apparently fine. In production the
+ * variable is absent entirely, because this deployment runs Twilio, so it was
+ * `undefined === undefined` — true, and anyone who simply omitted the parameter
+ * passed. Confirmed live before the fix: HTTP 200 echoing an arbitrary value.
+ *
+ * Taking `expected` as an argument is what lets a test state that condition
+ * outright instead of hoping the machine reproduces it.
+ */
+export function verifyChallenge(
+  query: Record<string, string | undefined>,
+  expected: string | undefined,
+): string | null {
+  // No token configured means nothing can verify — not that everything does.
+  if (!expected) return null;
+  if (query['hub.mode'] !== 'subscribe') return null;
+  if (query['hub.verify_token'] !== expected) return null;
+  return query['hub.challenge'] ?? '';
+}
+
+/**
  * Confirm the payload was signed by Meta with our app secret.
  *
  * Compared in constant time: a byte-by-byte comparison that returns early
