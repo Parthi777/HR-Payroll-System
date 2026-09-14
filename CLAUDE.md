@@ -506,7 +506,7 @@ POST   /api/admin/payroll/run              # Trigger payroll for month/year
 GET    /api/admin/payroll/preview/:month/:year
 GET    /api/payroll/my-payslips
 GET    /api/payroll/my-payslips/:id/pdf
-POST   /api/admin/payroll/send-slips       # Send all payslips via WhatsApp
+POST   /api/admin/payroll/send-slips       # NOT IMPLEMENTED — returns { queued: 0, status: 'TODO' }
 ```
 
 ### Claims
