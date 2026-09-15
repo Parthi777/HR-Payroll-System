@@ -1,7 +1,10 @@
 {
   "name": "ai-hr-payroll-backend",
   "version": "0.1.0",
-  "description": "AI HR Payroll System — API Server (Fastify + Prisma + PostgreSQL)",
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "AI HR Payroll System \u2014 API Server (Fastify + Prisma + PostgreSQL)",
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
@@ -55,8 +58,5 @@
     "eslint": "^8.57.0",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"
-  },
-  "engines": {
-    "node": ">=20"
   }
 }
