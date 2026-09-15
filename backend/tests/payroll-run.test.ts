@@ -222,6 +222,46 @@ describe('payroll policy is per dealer', () => {
     expect(byDaysInMonth.perDaySalary).not.toBe(base.perDaySalary);
   });
 
+  it('does not count a late arrival on a Sunday against the employee', async () => {
+    // 5, 12, 19 and 26 July 2026 are Sundays. Turning up at 11:00 to help out
+    // on all four used to read as four late punches — on days nobody is rostered
+    // for — and fed the discipline policy that moves the pay date.
+    const r = await run([5, 12, 19, 26].map((day) => ({ day, in: '11:00', out: '18:00' })));
+    expect(r.lateDays).toBe(0);
+    expect(r.sundayDays).toBe(4); // still paid as Sunday duty
+  });
+
+  it('does not count a late arrival on a holiday either', async () => {
+    const holidays = new Set(['2026-6-8']); // dayKey: year-monthIndex-day
+    const r = await computeMonthlyPayroll(
+      fakePrisma([{ day: 8, in: '11:00', out: '18:00' }]),
+      EMPLOYEE, MONTH, YEAR, holidays,
+    );
+    expect(r.lateDays).toBe(0);
+  });
+
+  it('still counts late arrivals on working days', async () => {
+    // The guard must not swallow the policy it is narrowing.
+    const r = await run([1, 2, 3].map((day) => ({ day, in: '11:00', out: '18:00' })));
+    expect(r.lateDays).toBe(3);
+  });
+
+  it('does not let Sunday arrivals push the pay date out', async () => {
+    // Four Sundays plus two weekday lates: six "late" punches under the old
+    // rule, over a threshold of five, so the salary was dated the 8th instead
+    // of the 5th. Only the two weekday punches should count.
+    const punches = [
+      ...[5, 12, 19, 26].map((day) => ({ day, in: '11:00', out: '18:00' })),
+      ...[1, 2].map((day) => ({ day, in: '11:00', out: '18:00' })),
+    ];
+    const r = await computeMonthlyPayroll(
+      fakePrisma(punches), EMPLOYEE, MONTH, YEAR, new Set(),
+      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, lateWithholdOver: 8, payDay: 5, payDayLate: 8 },
+    );
+    expect(r.lateDays).toBe(2);
+    expect(r.payDate?.getDate()).toBe(5);
+  });
+
   it('honours the dealer’s pay-day rules', async () => {
     const lates = fullMonth().map((p, i) => (i < 6 ? { ...p, in: '11:00' } : p));
     const strict = await computeMonthlyPayroll(

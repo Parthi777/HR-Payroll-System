@@ -72,6 +72,11 @@ export interface DayFacts {
   worked: boolean;
   /** Punch held for sign-off: not paid, counted absent until approved. */
   pending: boolean;
+  /**
+   * A late arrival on a working day. Always false on a Sunday or a holiday:
+   * those are not days anyone is due at a particular time, and `late` feeds the
+   * discipline policy that moves the pay date and can withhold a payslip.
+   */
   late: boolean;
   /** Duty credit toward pay: 1 for a full day, 0.5 for a half day, else 0. */
   credit: number;
@@ -107,7 +112,12 @@ export function classifyDay(input: ClassifyInput): DayFacts {
     isOff: isSunday || isHoliday,
     worked,
     pending,
-    late: worked && status === 'LATE',
+    // Not on a weekly-off or a holiday. Nobody is due in at a shift time on a
+    // day they are not rostered for, and this flag is what the late-punch
+    // discipline counts — turning up at 11:00 to help out on a Sunday used to
+    // push the employee's own pay date out, and enough of them withheld the
+    // slip entirely.
+    late: worked && status === 'LATE' && !isSunday && !isHoliday,
     credit: worked ? (status === 'HALF_DAY' ? 0.5 : 1) : 0,
     status,
     leave,
