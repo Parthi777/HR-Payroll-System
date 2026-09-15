@@ -5,14 +5,13 @@ and the tenancy layer they share. Carried out 14–15 September 2026 against
 commit `9dc74ad` and the work that followed it.
 
 Seven findings. **All seven are fixed and deployed.** One was confirmed
-exploitable against production before it was closed. What remains open is listed
-under [Still open](#still-open) — it is dependency upgrades that need a major
-version, and three claims in CLAUDE.md that describe controls the system does
-not have.
+exploitable against production before it was closed. What remained open when this was
+written — dependency upgrades needing a major version — has since been done, and
+both applications are now free of critical and high advisories. What is still
+outstanding is listed under [Still open](#still-open).
 
-> Keep this in the repository. It names dependency weaknesses that are still
-> unpatched, so it is not a document to publish or send outside the team without
-> trimming that section first.
+> Keep this in the repository. It describes a live production system in detail,
+> so it is not a document to publish or send outside the team as it stands.
 
 ## Method
 
@@ -32,7 +31,7 @@ bug it is meant to catch is worse than no test, and two of these did at first.
 |---|---|---|---|
 | 1 | Webhook verification accepted unauthenticated callers | **High** — confirmed live | Fixed `d82edde` |
 | 2 | Unauthenticated 60 MB download buffered into memory | Medium | Fixed `d82edde` |
-| 3 | 30 dependency CVEs across both apps | Medium | Reduced `3f754c7` |
+| 3 | 30 dependency CVEs across both apps | Medium | Cleared `3f754c7`, `ea774de`, and the Next 16 upgrade |
 | 4 | Stored file paths resolved without containment | Low | Fixed `d82edde` |
 | 5 | Refresh tokens shared the access-token secret | Low | Fixed `4714d49` |
 | 6 | `/auth/refresh-token` had no rate limit | Low | Fixed `4714d49` |
@@ -200,18 +199,47 @@ trade-off rather than a finding.
 
 ## Still open
 
-### Dependency upgrades needing a major version
+### Dependency upgrades needing a major version — **done**
 
-| Package | Severity | Needs | Reachability |
-|---|---|---|---|
-| `fast-jwt` (via `@fastify/jwt` 8) | critical | `@fastify/jwt` 10 | Improper `iss` validation and an unknown `crit` header. Nothing here signs or reads an `iss` claim, which narrows the first considerably. |
-| `fastify` 4 | high | `fastify` 5 | DoS. Rewrites the HTTP layer the entire API sits on. |
-| `next` 14 | critical | `next` 16 | DoS in the Image Optimizer via `remotePatterns`. **`next/image` is never imported and there is no images config, so the vulnerable path is not reachable.** |
-| `tar` | critical | `bcrypt` major | Arrives via `bcrypt → @mapbox/node-pre-gyp`, which runs at install time to fetch a prebuilt binary. Not reachable from a request. |
+Closed after this review was first written. `fastify` 4 → 5 (with the
+`@fastify/*` plugins and `fastify-plugin`), `bcrypt` 5 → 6, `next` 14 → 16 and
+`react` 18 → 19.
 
-The Fastify and `@fastify/jwt` upgrades are the two worth planning: they sit
-under every authenticated request and deserve a deliberate pass against the
-suite, not a bundled `--force`.
+| | At review | Now |
+|---|---|---|
+| backend | 21 (2 critical) | **2**, both moderate |
+| web | 9 (2 critical) | **0** |
+
+The two backend moderates that remain are `exceljs` and `uuid`. Their only
+offered fix is `exceljs` 4 → 3.4.0, which is a downgrade, and the issue is a
+missing buffer bounds check in `uuid` v3/v5/v6 when a caller supplies a buffer —
+report export does not.
+
+Two things are worth carrying forward from doing it:
+
+- **`bcrypt` verifies real passwords**, so 5 → 6 was checked rather than
+  assumed: a hash generated under 5 was kept and confirmed to still verify under
+  6, correct password true and wrong password false. The `$2b$` format is
+  unchanged.
+- **Neither typecheck nor build catches this class of upgrade.** Both were clean
+  on Fastify 5 before a single test ran; the database suites then failed all at
+  once on a rejected logger option. On the web side the build was clean while
+  the sign-in page rendered blank, and only the browser tests noticed. Multipart
+  had no test at all — it carries every selfie, face enrolment and claim receipt
+  — so one was written before trusting the plugin's two-major jump.
+
+> **Correction to an earlier version of this report.** The Next.js image
+> advisory was recorded here as unreachable, on the grounds that `next/image` is
+> never imported and there was no `images` configuration. The second half was
+> wrong: the check had been run against `next.config.ts`, which does not exist —
+> the file is `next.config.mjs` — so the grep found nothing and the absence was
+> read as evidence. `images.remotePatterns` was configured, for
+> `res.cloudinary.com`, and `/_next/image` is served whether or not any
+> component imports `next/image`. The advisory should have been treated as
+> reachable. It is now moot — Next is upgraded and the configuration removed,
+> Cloudinary having been replaced by S3 and Drive — but the reasoning error is
+> the point: *a search that finds nothing is only evidence if you have confirmed
+> you searched the right place.*
 
 ### Documented controls that do not exist
 
