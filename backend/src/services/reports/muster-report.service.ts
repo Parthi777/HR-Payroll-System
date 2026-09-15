@@ -167,7 +167,8 @@ export async function buildMusterReport(
       });
 
       // Per-day OT — duty past the shift close plus its OT grace.
-      const otMin = day.worked ? overtimeMinutes(att!.checkOut, emp.shift, d) : 0;
+      // Sundays earn an extra day rather than overtime — see payroll-run.service.
+      const otMin = day.worked && !day.isSunday ? overtimeMinutes(att!.checkOut, emp.shift, d) : 0;
       if (day.worked) {
         workMinutes += att!.workingMinutes ?? 0;
         otTotal += otMin;

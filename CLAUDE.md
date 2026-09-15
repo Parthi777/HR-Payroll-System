@@ -686,7 +686,10 @@ Service window  = days before joining (and dates still to come) are counted
                   NOWHERE — not present, not absent, not a paid off day. A
                   mid-month joiner is therefore paid pro-rata.
 Sundays/holidays = paid weekly-offs (counted as paid days, never absent)
-Sunday duty     = +1 EXTRA full day's pay — a half day on a Sunday still pays a FULL OT day
+Sunday duty     = +1 EXTRA full day's pay (a half day on a Sunday still pays a
+                  FULL extra day). NO overtime on a Sunday — the extra day is the
+                  rate for Sunday duty, so OT on top would pay the same hours
+                  twice. A worked HOLIDAY does earn OT: it has no extra day.
 Half day        = pays 0.5 AND adds 0.5 to absentDays
                   (2 absences + 1 half day reports as 2.5)
 Casual leave    = paid up to 12 days/calendar year; beyond the quota it becomes LOP

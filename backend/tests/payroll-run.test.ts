@@ -106,6 +106,39 @@ describe('computeMonthlyPayroll', () => {
     expect(r.halfDays).toBe(0);
   });
 
+  it('pays no overtime on a Sunday — the extra day is the rate for Sunday duty', async () => {
+    // 5 July 2026 is a Sunday. Nine hours past the 18:00 close would once have
+    // added 9 OT hours on top of the extra day, paying the same hours twice.
+    const r = await run([{ day: 5, in: '09:00', out: '23:00' }]);
+    expect(r.sundayDays).toBe(1);
+    expect(r.sundayPay).toBe(300); // the whole of what Sunday duty pays
+    expect(r.otHours).toBe(0);
+    expect(r.otPay).toBe(0);
+  });
+
+  it('still pays overtime on a worked holiday, which earns no extra day', async () => {
+    // 8 July 2026 declared a holiday. Unlike a Sunday it adds no extra day, so
+    // without OT a holiday worked would pay exactly what staying home pays.
+    const holidays = new Set(['2026-6-8']); // dayKey: year-monthIndex-day
+    const r = await computeMonthlyPayroll(
+      fakePrisma([{ day: 8, in: '09:00', out: '23:00' }]),
+      EMPLOYEE, MONTH, YEAR, holidays,
+    );
+    expect(r.sundayDays).toBe(0); // a holiday is not Sunday duty
+    expect(r.otHours).toBe(5); // 18:00 -> 23:00
+    expect(r.otPay).toBe(150); // 0.5 day
+  });
+
+  it('counts a weekday’s overtime while ignoring a Sunday’s', async () => {
+    // Both days run to 23:00; only Wednesday the 1st should contribute OT.
+    const r = await run([
+      { day: 1, in: '09:00', out: '23:00' },
+      { day: 5, in: '09:00', out: '23:00' },
+    ]);
+    expect(r.otHours).toBe(5);
+    expect(r.sundayDays).toBe(1);
+  });
+
   it('accrues OT past the shift close and pays 10 OT hours as one day', async () => {
     // Five days of 09:00→23:00 = 5 h OT each = 25 OT hours → 2.5 days.
     const r = await run([1, 2, 3, 6, 7].map((day) => ({ day, in: '09:00', out: '23:00' })));

@@ -14,7 +14,10 @@ import { DEFAULT_HALF_DAY_WINDOW, type HalfDayWindow } from '../attendance/atten
  *  - Casual Leave (CL) is paid up to the tenant's CL quota (12 by default) per calendar year;
  *    CL beyond the quota becomes LOP. SL/EL stay paid; LOP is unpaid.
  *  - Working a Sunday earns one EXTRA full day's salary on top of the paid
- *    weekly-off — even for a half day, a Sunday pays a full day of OT.
+ *    weekly-off — even for a half day, a Sunday pays a full day. Overtime is
+ *    NOT additionally paid on a Sunday: the extra day is the rate for Sunday
+ *    duty, and charging OT on top paid the same hours twice. A worked holiday
+ *    does earn OT, having no extra day of its own.
  *  - Half day (check-in or check-out inside the midday window — see
  *    attendance-policy) pays 0.5 and adds 0.5 to the absent-day count, so two
  *    absences plus one half day report as 2.5.
@@ -171,7 +174,16 @@ export async function computeMonthlyPayroll(
 
     // OT = duty worked past the shift's close plus its OT grace, measured from
     // the day the shift began (see overtimeMinutes).
-    if (day.worked) otMinutes += overtimeMinutes(att!.checkOut, emp.shift, d);
+    //
+    // Never on a Sunday. Sunday duty is already paid at the dealer's agreed
+    // rate — the weekly-off stays paid AND the day earns an extra full day on
+    // top (below), so a worked Sunday pays two days however long it ran.
+    // Adding overtime to that paid the same hours twice.
+    //
+    // A worked *holiday* still earns overtime, and deliberately: unlike a
+    // Sunday it earns no extra day, so without OT a holiday worked would pay
+    // exactly what staying at home pays.
+    if (day.worked && !day.isSunday) otMinutes += overtimeMinutes(att!.checkOut, emp.shift, d);
     servedDays += 1;
     if (day.late) lateDays += 1;
 
