@@ -57,6 +57,13 @@ async function buildServer() {
   // this tightens by itself the moment the domain is configured.
   await app.register(cors, { origin: corsOrigin(), credentials: true });
   await app.register(jwt, { secret: env.JWT_SECRET });
+  // Refresh tokens get their own secret, reachable as `app.jwt.refresh`.
+  // JWT_REFRESH_SECRET has been required by config/env.ts since the beginning
+  // and was never used — both kinds of token were signed with JWT_SECRET, which
+  // meant the two could only ever be invalidated together. Rotating this one
+  // now ends every session's ability to refresh without also invalidating the
+  // access tokens people are holding.
+  await app.register(jwt, { secret: env.JWT_REFRESH_SECRET, namespace: 'refresh' });
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB selfies
   await app.register(rateLimit, { global: false, max: 100, timeWindow: '1 minute' });
   await app.register(prismaPlugin);

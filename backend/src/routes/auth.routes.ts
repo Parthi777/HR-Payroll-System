@@ -39,18 +39,38 @@ export async function authRoutes(app: FastifyInstance) {
    * `branchId` and `tenantId` — dropping either used to widen access on the
    * next refresh.
    */
-  app.post('/refresh-token', async (req) => {
+  app.post(
+    '/refresh-token',
+    // Unauthenticated, and it verifies a token and reads the database. Every
+    // other auth route was throttled and this one was not. Loose enough for a
+    // branch coming online together on one office address — a device refreshes
+    // at most once every 12h (admin) or 7d (employee) — and tight enough that
+    // it is not free to hammer.
+    { config: { rateLimit: { max: 30, timeWindow: '10 minutes' } } },
+    async (req) => {
     const { refreshToken } = z.object({ refreshToken: z.string() }).parse(req.body);
 
     type Refresh = { sub: string; role: JwtRole; tenantId?: string; typ?: string };
     let decoded: Refresh;
     try {
-      decoded = app.jwt.verify<Refresh>(refreshToken);
+      decoded = app.jwt.refresh.verify<Refresh>(refreshToken);
     } catch {
-      throw AppError.unauthorized('Invalid or expired refresh token');
+      // LEGACY, REMOVE AFTER 2026-10-15 (30 days — one REFRESH_TTL — from the
+      // deploy that split the secrets). Refresh tokens used to be signed with
+      // JWT_SECRET. Rejecting them outright would sign out every employee in
+      // the field the moment their 7-day access token expired, so they are
+      // still accepted until the last one issued has expired on its own. The
+      // `typ` check below still applies, so this is not a way in for an access
+      // token.
+      try {
+        decoded = app.jwt.verify<Refresh>(refreshToken);
+      } catch {
+        throw AppError.unauthorized('Invalid or expired refresh token');
+      }
     }
-    // Access and refresh tokens are signed with the same secret, so without this
-    // an access token would itself be accepted here as a refresh token.
+    // An access token must never be spendable as a refresh token. This mattered
+    // more when both were signed with the same secret; it still guards the
+    // legacy path above, and costs nothing once that is gone.
     if (decoded.typ !== 'refresh') throw AppError.unauthorized('Not a refresh token');
     if (!decoded.tenantId) throw AppError.unauthorized('Session is out of date — please sign in again');
 
@@ -104,7 +124,7 @@ export async function authRoutes(app: FastifyInstance) {
         { sub: employee.id, role, tenantId: tenant.id, branchId: employee.branchId },
         { expiresIn: TOKEN_TTL },
       );
-      const refreshToken = app.jwt.sign(
+      const refreshToken = app.jwt.refresh.sign(
         { sub: employee.id, role, tenantId: tenant.id, typ: 'refresh' },
         { expiresIn: REFRESH_TTL },
       );
@@ -188,8 +208,16 @@ export async function authRoutes(app: FastifyInstance) {
     });
   });
 
-  /** Public: the branding a login page shows before anyone has signed in. */
-  app.get('/workspace/:slug', async (req) => {
+  /**
+   * Public: the branding a login page shows before anyone has signed in.
+   *
+   * It has to be public — it is what puts a dealer's name on their own sign-in
+   * page before there is a session — and it therefore confirms whether a slug
+   * belongs to a customer, and names them. That cannot be hidden without
+   * removing the feature, so it is throttled instead: enough for real sign-ins,
+   * far too slow to walk a dictionary of names through.
+   */
+  app.get('/workspace/:slug', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (req) => {
     const { slug } = req.params as { slug: string };
     const tenant = await resolveTenant(app.prisma, slug.toLowerCase());
     return { slug: tenant.slug, name: tenant.name };

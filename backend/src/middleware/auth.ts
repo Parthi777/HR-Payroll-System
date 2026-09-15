@@ -43,6 +43,16 @@ declare module '@fastify/jwt' {
     payload: JwtPayload;
     user: JwtPayload;
   }
+
+  /**
+   * The second signer, registered in server.ts with `namespace: 'refresh'` so
+   * refresh tokens carry their own secret. The plugin creates
+   * `fastify.jwt[namespace]` at runtime but cannot type a name it only learns
+   * at registration, so it is declared here.
+   */
+  interface JWT {
+    refresh: import('@fastify/jwt').JWT;
+  }
 }
 
 /**
