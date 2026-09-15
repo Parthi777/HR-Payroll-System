@@ -241,22 +241,43 @@ Two things are worth carrying forward from doing it:
 > the point: *a search that finds nothing is only evidence if you have confirmed
 > you searched the right place.*
 
-### Documented controls that do not exist
+### Documented controls that did not exist — **resolved**
 
-CLAUDE.md's security section describes three controls the code does not
-implement:
+CLAUDE.md's security section described four controls the code does not
+implement. Each has been settled as either a fix or an honest description; none
+was left as a promise.
 
-- **Device binding** — "only registered device allowed". `Employee.deviceId`
-  exists in the schema and is referenced nowhere in `backend/src`.
-- **GPS encrypted at rest** — latitude and longitude are plain `Float` columns.
-- **Certificate pinning in the Android app** — not present. (The
-  `network_security_config.xml` is a correctly scoped development cleartext
-  allowance for LAN addresses and is not a production weakness.)
+**Device binding** — dropped as a claim, by decision. `Employee.deviceId` exists
+and nothing reads it. Attendance fraud is already stopped by the two controls
+that *are* enforced and are harder to defeat — the strict face-match gate, which
+refuses a check-in whose selfie does not match the signed-in employee, and the
+geofence. Binding a device adds little on top of that and turns every new or
+replaced phone into a support call.
 
-The practical anti-fraud risk from the missing device binding is limited,
-because the strict face-match gate and the geofence **are** enforced and are the
-real controls. The documentation should say what is actually enforced. A
-security document that overstates its controls is how a gap survives a review.
+**GPS encrypted at rest** — reworded. Column-level encryption would have to be
+undone on every read: geofence distance and every location report are computed
+from these coordinates, and ciphertext cannot be filtered in the database at
+all. The database provider encrypts at rest at the disk level, and that is what
+the document now says.
+
+**Certificate pinning** — dropped as a claim, and a real defect found in its
+place. Pinning is the wrong control here: the API is on a platform-managed
+domain whose certificate rotates, and a pin that outlives its certificate
+bricks every installed app until an update ships.
+
+The defect: `network_security_config.xml` lived in `src/main`, carrying cleartext
+exceptions for a LAN address, the emulator host and localhost, with a comment
+asking whoever cut a release to remove them first. There was no release source
+set to remove them from, so **every released APK shipped those exceptions**. It
+now lives in `src/debug`, and `src/main` states `cleartextTrafficPermitted="false"`
+outright — which matters rather than merely documenting, because minSdk is 24
+and Android blocks cleartext by default only from API 28. Verified by building
+both variants and reading the merged resource: debug has the exceptions,
+release has none.
+
+**Rate limiting "OTP endpoints"** — OTP was removed from this system some time
+ago, so the line described nothing. Replaced with the nine limits actually
+configured, cross-checked against the routes.
 
 ### Lower-priority hardening
 

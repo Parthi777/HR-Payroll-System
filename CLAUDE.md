@@ -760,15 +760,34 @@ policy (`isLateArrival()` is tracked separately).
 - **Role-based access:** SUPER_ADMIN > HR_MANAGER > BRANCH_MANAGER > PAYROLL_ADMIN
 - **Selfie photos:** stored in Cloudinary with private signed URLs (expire in 24h)
 - **Face templates:** stored only in AWS Rekognition (never in plain storage)
-- **GPS data:** encrypted at rest in DB
+- **GPS data:** stored as plain coordinates, on a database the provider encrypts
+  at rest. Not encrypted at the column level, and deliberately not: geofence
+  distance and every location report are computed from these values, so
+  ciphertext would have to be decrypted on every read and could not be filtered
+  in the database at all.
 - **Phone numbers:** masked in logs (show only last 4 digits)
 - **Audit log:** every admin action logged with userId, action, timestamp, IP —
   dealer side via `recordAudit()` (read at `/activity`), platform side via
   `PlatformAuditLog` (read at `/platform/activity`)
-- **Rate limiting:** OTP endpoints limited to 3 attempts per 10 minutes
+- **Rate limiting** (per client IP, so `trustProxy` must stay on behind the
+  platform proxy or everyone shares one bucket). OTP no longer exists; these are
+  the limits actually configured, per 10 minutes:
+  admin sign-in 5, platform sign-in 5, platform password change 5,
+  employee sign-in 10, Google sign-in 10, workspace lookup 20,
+  refresh token 30, webhook handshake 30, APK download 30.
 - **HTTPS only** for all API communication
-- **Certificate pinning** in Android app
-- **Device binding:** employee can only use registered device for attendance (device fingerprint stored at first login)
+- **No certificate pinning.** The API is on a platform-managed domain whose
+  certificate rotates; a pin that outlives its certificate bricks every
+  installed app until an update ships. What is enforced instead is HTTPS with
+  no exceptions: `src/main/res/xml/network_security_config.xml` sets
+  `cleartextTrafficPermitted="false"` explicitly, because minSdk is 24 and
+  Android only blocks cleartext by default from API 28. The development
+  exceptions live in `src/debug/` and are not part of a release build.
+- **No device binding.** `Employee.deviceId` exists in the schema and nothing
+  reads it. Attendance fraud is stopped by the two controls that are actually
+  enforced and are harder to defeat: the strict face-match gate (check-in is
+  refused unless the selfie matches the logged-in employee) and the geofence.
+  Binding a device would mostly generate support calls when staff change phone.
 
 ---
 
@@ -952,7 +971,7 @@ When working in this repo, Claude should:
 | Cashier verifying a bill | Sees the scanned bill before disbursing — image bills inline, PDF bills via "View bill PDF" (Android) / the PDF button (web) |
 | Employee checks in from home | Geofence will flag; HR to investigate |
 | Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days. Check-out finds nothing open today and falls back to yesterday's open punch (`Shift.isNightShift` only). |
-| Same employee multiple devices | Block — only registered device allowed (device fingerprint) |
+| Same employee multiple devices | Allowed. Each punch still needs a matching face inside the geofence, which is what stops someone else clocking you in. |
 | WhatsApp delivery failure | Retry 3 times via BullMQ, then the log row is marked FAILED. Without a queue there is one inline attempt, then FAILED. |
 | Payroll run mid-month | System allows partial month calculation (pro-rata) |
 | Public holidays | Holiday calendar configurable; auto-mark as holiday, not absent |
