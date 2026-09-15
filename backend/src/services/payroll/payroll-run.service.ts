@@ -164,12 +164,14 @@ export async function computeMonthlyPayroll(
       now,
     });
 
-    // OT = duty time worked PAST the shift close + the shift's OT grace (minutes).
-    // Based on the actual check-out clock time, so leaving late earns OT.
-    if (day.worked) otMinutes += overtimeMinutes(att!.checkOut, emp.shift);
-
-    // Before joining, or not yet happened — no pay, no absence.
+    // Before joining, or not yet happened — no pay, no absence. Checked before
+    // overtime, not after: a day that counts toward nothing should not be able
+    // to contribute hours either.
     if (!day.counts) continue;
+
+    // OT = duty worked past the shift's close plus its OT grace, measured from
+    // the day the shift began (see overtimeMinutes).
+    if (day.worked) otMinutes += overtimeMinutes(att!.checkOut, emp.shift, d);
     servedDays += 1;
     if (day.late) lateDays += 1;
 

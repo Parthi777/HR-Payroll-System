@@ -17,7 +17,7 @@
  *   6. Anything else on a working day is Absent.
  */
 import { effectiveStatus, type HalfDayWindow, type ShiftClock } from './attendance-policy.js';
-import { dayKey, endOfDay, minutesSinceMidnight, parseHHMM, startOfDay } from '../../utils/time.js';
+import { atCompanyTime, dayKey, endOfDay, parseHHMM, startOfDay } from '../../utils/time.js';
 
 /**
  * Day status codes (kept short so they fit a 31-column grid):
@@ -132,18 +132,47 @@ export function classifyDay(input: ClassifyInput): DayFacts {
 
 /**
  * Overtime for one day: duty worked past the shift's close plus its OT grace
- * (`Shift.otAfterMinutes`), read from the actual check-out clock time. Shared by
- * payroll, the muster grid and the daily report so one OT rule serves them all.
+ * (`Shift.otAfterMinutes`). Shared by payroll, the muster grid and the daily
+ * report so one OT rule serves them all.
+ *
+ * Measured between two real instants — when the shift closed, and when the
+ * employee checked out — rather than by comparing clock readings.
+ *
+ * That distinction is the whole of this function. It previously read the
+ * check-out as minutes-since-midnight and assumed that a value *below* the
+ * shift's end time meant the punch had crossed into the next day:
+ *
+ *     if (outMin < endMin) outMin += 1440;  // "night shift"
+ *
+ * For a night shift that is sometimes right. For the general shift it is the
+ * definition of leaving early, and it paid for it: checking out at 17:00 on an
+ * 18:00 shift produced 1380 minutes — 23 hours — of overtime, which at ten OT
+ * hours to the day is 2.3 extra days of salary for going home an hour early.
+ *
+ * `shiftDate` is required rather than optional: the day the shift began is what
+ * anchors everything, and a default guessed from the check-out would put a
+ * night shift's close on the wrong date without anyone noticing.
  */
 export function overtimeMinutes(
   checkOut: Date | null | undefined,
-  shift: { endTime?: string | null; otAfterMinutes?: number | null } | null | undefined,
+  shift: { startTime?: string | null; endTime?: string | null; otAfterMinutes?: number | null } | null | undefined,
+  shiftDate: Date,
 ): number {
   if (!checkOut) return 0;
-  const endMin = parseHHMM(shift?.endTime ?? '18:00');
-  let outMin = minutesSinceMidnight(checkOut);
-  if (outMin < endMin) outMin += 1440; // checked out after midnight (night shift)
-  return Math.max(0, outMin - (endMin + (shift?.otAfterMinutes ?? 0)));
+
+  const startTime = shift?.startTime ?? '09:00';
+  const endTime = shift?.endTime ?? '18:00';
+
+  // A shift whose end is not after its start runs past midnight, so it closes
+  // on the day after the one it began.
+  const closesNextDay = parseHHMM(endTime) <= parseHHMM(startTime);
+  const closeDay = new Date(shiftDate);
+  if (closesNextDay) closeDay.setDate(closeDay.getDate() + 1);
+
+  // Anchored to the company clock, not the server's — production runs UTC.
+  const close = atCompanyTime(closeDay, endTime);
+  const overMinutes = (checkOut.getTime() - close.getTime()) / 60_000;
+  return Math.max(0, Math.round(overMinutes) - (shift?.otAfterMinutes ?? 0));
 }
 
 export type { ShiftClock };

@@ -167,7 +167,7 @@ export async function buildMusterReport(
       });
 
       // Per-day OT — duty past the shift close plus its OT grace.
-      const otMin = day.worked ? overtimeMinutes(att!.checkOut, emp.shift) : 0;
+      const otMin = day.worked ? overtimeMinutes(att!.checkOut, emp.shift, d) : 0;
       if (day.worked) {
         workMinutes += att!.workingMinutes ?? 0;
         otTotal += otMin;

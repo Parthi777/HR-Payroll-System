@@ -184,7 +184,7 @@ export async function reportsRoutes(app: FastifyInstance) {
         holidays: holidaySet,
         joiningDate: e.joiningDate,
       });
-      const otMin = day.worked ? overtimeMinutes(a?.checkOut, e.shift) : 0;
+      const otMin = day.worked ? overtimeMinutes(a?.checkOut, e.shift, dayStart) : 0;
       return {
         employeeCode: e.employeeCode,
         name: e.name,
