@@ -21,6 +21,8 @@ export interface AttendancePolicy {
   halfDayWindowEnd: string;
   lateRequiresApproval: boolean;
   openPunchLookbackDays: number;
+  /** Latest "HH:MM" an employee may type as a manual check-out. */
+  manualPunchLatest: string;
 }
 
 /** Payroll rules. See CLAUDE.md "Payroll Calculation Engine" for the meaning. */
@@ -74,6 +76,7 @@ export function defaultPolicy(): TenantPolicy {
       halfDayWindowEnd: process.env.HALF_DAY_WINDOW_END ?? '14:00',
       lateRequiresApproval: process.env.LATE_REQUIRES_APPROVAL !== 'false',
       openPunchLookbackDays: Number(process.env.OPEN_PUNCH_LOOKBACK_DAYS ?? 7),
+      manualPunchLatest: process.env.MANUAL_PUNCH_LATEST ?? '20:00',
     },
     payroll: {
       monthDivisor: 30,
@@ -100,6 +103,7 @@ type SettingsRow = {
   name: string; address: string; phone: string; email: string; gstin: string;
   timezone: string; halfDayWindowStart: string; halfDayWindowEnd: string;
   lateRequiresApproval: boolean; openPunchLookbackDays: number;
+  manualPunchLatest: string;
   monthDivisor: number; clPerYear: number; otHoursPerDay: number;
   payrollLateShiftAt: number; payrollLateWithholdOver: number;
   payrollPayDay: number; payrollPayDayLate: number;
@@ -120,6 +124,7 @@ function toPolicy(row: SettingsRow): TenantPolicy {
       halfDayWindowEnd: row.halfDayWindowEnd,
       lateRequiresApproval: row.lateRequiresApproval,
       openPunchLookbackDays: row.openPunchLookbackDays,
+      manualPunchLatest: row.manualPunchLatest,
     },
     payroll: {
       monthDivisor: row.monthDivisor,

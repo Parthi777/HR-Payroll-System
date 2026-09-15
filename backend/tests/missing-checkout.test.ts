@@ -220,3 +220,58 @@ describe('check-in gate', () => {
     expect(result.approvalStatus).toBe('PENDING');
   });
 });
+
+/**
+ * Settling a forgotten check-out the next morning means typing yesterday's
+ * departure time, and nothing used to stop that being 23:00. With overtime now
+ * measured properly from the shift's close, that is five hours of overtime for
+ * an evening nobody witnessed. The dealer's cut-off (20:00 by default) is the
+ * hour past which a self-reported departure is not taken on trust.
+ */
+describe('the cut-off on a manual check-out', () => {
+  /** Yesterday is open; settle it by typing a check-out time. */
+  const settle = (checkOut: string, extra: Record<string, unknown> = {}, shift = SHIFT) => {
+    const p = fakePrisma([{ daysAgo: 1, in: '09:00' }]);
+    // Override the employee's shift where a test needs a night shift.
+    (p as unknown as { employee: { findUnique: () => Promise<unknown> } }).employee.findUnique =
+      async () => ({
+        id: EMPLOYEE_ID, name: 'Ravi', status: 'ACTIVE', branchId: 'b1',
+        reportingManagerId: null, faceTemplateId: null, shift,
+        branch: { id: 'b1', name: 'Bhavani', strictMode: false, geofenceLat: 0, geofenceLng: 0, geofenceRadius: 100 },
+      });
+    return markManualPunch(p, {
+      employeeId: EMPLOYEE_ID, mode: 'MANUAL', checkOut,
+      reason: 'forgot to check out', date: dayAt(1, null),
+      ...extra,
+    });
+  };
+
+  it('refuses a check-out after the cut-off', async () => {
+    const err = await thrownBy(() => settle('23:00'));
+    expect(err.statusCode).toBe(400);
+    expect(err.message).toContain('20:00');
+  });
+
+  it('names the way out rather than only refusing', async () => {
+    const err = await thrownBy(() => settle('22:30'));
+    expect(err.message).toContain('ask HR');
+  });
+
+  it('accepts the cut-off itself', async () => {
+    await expect(settle('20:00')).resolves.toBeTruthy();
+  });
+
+  it('accepts an ordinary evening', async () => {
+    await expect(settle('18:30')).resolves.toBeTruthy();
+  });
+
+  it('does not cap HR recording it on the employee’s behalf', async () => {
+    // Someone accountable is asserting the time, and the correction is audited.
+    await expect(settle('23:00', { raisedByAdminId: 'admin-1' })).resolves.toBeTruthy();
+  });
+
+  it('does not cap a night shift, which legitimately closes in the small hours', async () => {
+    const night = { startTime: '22:00', endTime: '06:00', gracePeriod: 15, isNightShift: true };
+    await expect(settle('23:30', {}, night)).resolves.toBeTruthy();
+  });
+});

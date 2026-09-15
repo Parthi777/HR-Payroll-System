@@ -38,6 +38,9 @@ const companySchema = z.object({
   halfDayWindowEnd: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   lateRequiresApproval: z.boolean().optional(),
   openPunchLookbackDays: z.number().int().min(0).max(90).optional(),
+  // The latest check-out an employee may type on a manual punch. Past this hour
+  // a self-reported departure is not taken on trust and HR has to record it.
+  manualPunchLatest: z.string().regex(/^\d{2}:\d{2}$/).optional(),
 
   monthDivisor: z.number().int().min(28).max(31).optional(),
   clPerYear: z.number().int().min(0).max(60).optional(),
@@ -73,6 +76,7 @@ export async function masterRoutes(app: FastifyInstance) {
         halfDayWindowEnd: d.attendance.halfDayWindowEnd,
         lateRequiresApproval: d.attendance.lateRequiresApproval,
         openPunchLookbackDays: d.attendance.openPunchLookbackDays,
+        manualPunchLatest: d.attendance.manualPunchLatest,
         monthDivisor: d.payroll.monthDivisor,
         clPerYear: d.payroll.clPerYear,
         otHoursPerDay: d.payroll.otHoursPerDay,

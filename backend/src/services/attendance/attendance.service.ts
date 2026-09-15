@@ -10,7 +10,7 @@ import { isS3Enabled, tenantKey, uploadImage } from '../storage/storage.service.
 import { notifyAdmins, approverIds } from '../notification.service.js';
 import { pushToEmployee } from '../push.service.js';
 import { resolveAttendanceStatus, isLateArrival } from './attendance-policy.js';
-import { atCompanyTime, startOfDay } from '../../utils/time.js';
+import { atCompanyTime, parseHHMM, startOfDay } from '../../utils/time.js';
 import { requireTenantId } from '../../context/tenant-context.js';
 import { defaultPolicy, getTenantPolicy, type ResourcePolicy } from '../settings/tenant-settings.service.js';
 
@@ -420,6 +420,34 @@ export async function markManualPunch(
   const checkIn = input.checkIn ? atCompanyTime(day, input.checkIn) : (existing?.checkIn ?? null);
   const checkOut = input.checkOut ? atCompanyTime(day, input.checkOut) : (existing?.checkOut ?? null);
   if (!checkIn) throw new AppError('There is no check-in for this day — enter a check-in time too', 400);
+
+  /**
+   * A typed check-out cannot run past the dealer's cut-off (20:00 by default).
+   *
+   * Forgetting to check out is settled the next morning by typing yesterday's
+   * check-out time, and nothing stopped that time being 23:00 — which, now that
+   * overtime is measured properly from the shift's close, is five hours of
+   * overtime for an evening nobody witnessed. The cut-off is the hour past
+   * which a self-reported departure is not taken on trust.
+   *
+   * HR raising the punch is exempt: someone accountable is asserting the time,
+   * and the correction is written to the audit trail with its reason. An
+   * employee who genuinely worked past the cut-off asks HR to record it.
+   *
+   * Night shifts are exempt too — their check-out legitimately belongs to the
+   * small hours, and the rolled-forward date below is what expresses that.
+   */
+  if (input.checkOut && !input.raisedByAdminId && !employee.shift?.isNightShift) {
+    const { attendance: attendancePolicy } = await getTenantPolicy(prisma);
+    const latest = attendancePolicy.manualPunchLatest;
+    if (parseHHMM(input.checkOut) > parseHHMM(latest)) {
+      throw new AppError(
+        `A check-out you enter yourself cannot be later than ${latest}. ` +
+          `If you worked past ${latest}, ask HR to record it for you.`,
+        400,
+      );
+    }
+  }
   if (checkOut && checkOut.getTime() <= checkIn.getTime()) {
     // Night shifts legitimately close the next morning; roll the clock forward.
     if (employee.shift?.isNightShift) checkOut.setDate(checkOut.getDate() + 1);

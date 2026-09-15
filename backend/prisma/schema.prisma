@@ -495,6 +495,11 @@ model TenantSettings {
   employeeCodePrefix    String  @default("EMP")
   halfDayWindowStart    String  @default("12:30")
   halfDayWindowEnd      String  @default("14:00")
+  /// Latest wall-clock time an employee may type as a check-out on a manual
+  /// punch. Forgetting to check out and settling it the next morning would
+  /// otherwise let someone claim the whole evening as overtime. HR raising a
+  /// punch on an employee's behalf is not capped — see attendance.service.
+  manualPunchLatest     String  @default("20:00")
   lateRequiresApproval  Boolean @default(true)
   openPunchLookbackDays Int     @default(7)
 
