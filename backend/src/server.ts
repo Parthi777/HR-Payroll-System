@@ -44,11 +44,15 @@ function corsOrigin(): true | ((origin: string | undefined, cb: (err: Error | nu
 }
 
 async function buildServer() {
+  // `loggerInstance`, not `logger`: Fastify 5 takes only a configuration object
+  // under `logger` and rejects a constructed pino instance outright — which is
+  // a boot-time throw, so it fails loudly rather than quietly logging nowhere.
+  //
   // Cast to the default FastifyInstance: passing a custom pino instance otherwise
   // leaks a narrower logger generic that conflicts with our route registrars.
   // trustProxy: behind Railway's edge proxy the client IP arrives in X-Forwarded-For;
   // without this, per-IP rate limits would lump every user into one shared bucket.
-  const app = Fastify({ logger, trustProxy: true }) as unknown as FastifyInstance;
+  const app = Fastify({ loggerInstance: logger, trustProxy: true }) as unknown as FastifyInstance;
 
   // Once tenants live under a real apex, only that apex and its subdomains may
   // call the API. `origin: true` reflects whatever Origin the caller sends,
