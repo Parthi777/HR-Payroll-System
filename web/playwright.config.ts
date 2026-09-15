@@ -66,13 +66,19 @@ export default defineConfig({
       },
     },
     {
-      command: `npx next dev -p ${WEB_PORT}`,
+      // The production build, not `next dev`, and deliberately so: this is the
+      // bundle that gets deployed, so it is the one worth driving a browser
+      // through. It also sidesteps the dev server's HMR WebSocket, which fails
+      // to handshake on Node 25 (`ERR_INVALID_HTTP_RESPONSE`) under both
+      // Turbopack and Webpack and leaves the page unhydrated — a blank screen
+      // with nothing in the console. `next start` on the same code is fine.
+      command: `npx next build && npx next start -p ${WEB_PORT}`,
       cwd: '.',
       port: WEB_PORT,
       reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 120_000,
+      timeout: 180_000,
       env: { NEXT_PUBLIC_API_URL: API_URL },
     },
   ],
