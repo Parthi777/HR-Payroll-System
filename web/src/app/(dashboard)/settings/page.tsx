@@ -13,6 +13,44 @@ interface Company {
   name: string; address: string; phone: string; email: string; gstin: string;
   /** What a new employee is paid on unless their own record says otherwise. */
   defaultPayrollBasis?: 'MONTHLY' | 'PRESENT_DAYS';
+  // Attendance policy
+  employeeCodePrefix?: string;
+  halfDayWindowStart?: string;
+  halfDayWindowEnd?: string;
+  lateRequiresApproval?: boolean;
+  openPunchLookbackDays?: number;
+  manualPunchLatest?: string;
+  // Payroll policy
+  monthDivisor?: number;
+  clPerYear?: number;
+  otHoursPerDay?: number;
+  payrollLateShiftAt?: number;
+  payrollPayDay?: number;
+  payrollPayDayLate?: number;
+  // Security
+  faceMatchThreshold?: number;
+}
+
+/**
+ * One policy control.
+ *
+ * Every one of these carries a description rather than only a label. They are
+ * bare numbers with consequences that are not guessable from their names —
+ * `monthDivisor` sets everyone's per-day rate, `payrollLateShiftAt` moves the
+ * salary date — and a number box with no explanation is a trap rather than a
+ * setting. `min`/`max` mirror the server's Zod bounds so the browser refuses
+ * what the API would refuse, instead of handing back a 400 after the fact.
+ */
+function Field({
+  label, hint, warn, children,
+}: { label: string; hint: string; warn?: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>
+      {children}
+      <p className={`mt-1 text-xs ${warn ? 'font-medium text-amber-700' : 'text-muted-foreground'}`}>{hint}</p>
+    </div>
+  );
 }
 
 export default function SettingsPage() {
@@ -227,7 +265,9 @@ function CompanyCard() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const c = f ?? data?.company ?? { name: '', address: '', phone: '', email: '', gstin: '' };
-  const set = (k: keyof Company, v: string) => { setSaved(false); setF({ ...c, [k]: v }); };
+  const set = (k: keyof Company, v: string | number | boolean) => { setSaved(false); setF({ ...c, [k]: v }); };
+  /** Empty stays undefined rather than becoming 0 — the server would take a 0. */
+  const num = (k: keyof Company, v: string) => set(k, v === '' ? (undefined as never) : Number(v));
   const input = 'h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40';
 
   async function save() {
@@ -265,7 +305,80 @@ function CompanyCard() {
             <option value="PRESENT_DAYS">Present days — paid only for days worked</option>
           </select>
         </div>
-        <div className="flex items-center gap-3 sm:col-span-2">
+
+        <div className="border-t border-border/60 pt-4 sm:col-span-2">
+          <h3 className="mb-3 text-sm font-semibold">Attendance policy</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Late punches need approval" hint="On: a late arrival is held for sign-off and the day is unpaid until approved. Off: it is recorded as late and paid normally.">
+              <select className={input} value={String(c.lateRequiresApproval ?? true)} onChange={(e) => set('lateRequiresApproval', e.target.value === 'true')}>
+                <option value="true">Yes — hold for approval</option>
+                <option value="false">No — record and pay</option>
+              </select>
+            </Field>
+            <Field label="Employee code prefix" hint="Leading text on new employee codes, e.g. EMP → EMP001. Existing codes are untouched.">
+              <input className={input} maxLength={12} value={c.employeeCodePrefix ?? ''} onChange={(e) => set('employeeCodePrefix', e.target.value)} placeholder="EMP" />
+            </Field>
+            <Field label="Half-day window opens" hint="A punch in or out inside this window marks the day a half day. Default 12:30.">
+              <input type="time" className={input} value={c.halfDayWindowStart ?? ''} onChange={(e) => set('halfDayWindowStart', e.target.value)} />
+            </Field>
+            <Field label="Half-day window closes" hint="The other end of that window. Default 14:00.">
+              <input type="time" className={input} value={c.halfDayWindowEnd ?? ''} onChange={(e) => set('halfDayWindowEnd', e.target.value)} />
+            </Field>
+            <Field label="Latest self-entered check-out" hint="The latest time an employee may type when settling a forgotten check-out. Past this, HR has to record it. Default 20:00.">
+              <input type="time" className={input} value={c.manualPunchLatest ?? ''} onChange={(e) => set('manualPunchLatest', e.target.value)} />
+            </Field>
+            <Field label="Forgotten check-out lookback (days)" hint="How far back an unclosed day still blocks the next check-in. 0–90, default 7.">
+              <input type="number" min={0} max={90} className={input} value={c.openPunchLookbackDays ?? ''} onChange={(e) => num('openPunchLookbackDays', e.target.value)} />
+            </Field>
+          </div>
+        </div>
+
+        <div className="border-t border-border/60 pt-4 sm:col-span-2">
+          <h3 className="mb-3 text-sm font-semibold">Payroll policy</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Days a month is divided by"
+              warn
+              hint="Per-day salary = monthly salary ÷ this, whatever the month's real length. Changing it changes every employee's daily rate on the next run. 28–31, default 30."
+            >
+              <input type="number" min={28} max={31} className={input} value={c.monthDivisor ?? ''} onChange={(e) => num('monthDivisor', e.target.value)} />
+            </Field>
+            <Field label="Casual leave per year" hint="Paid CL days per calendar year. Beyond this, CL becomes unpaid LOP. 0–60, default 12.">
+              <input type="number" min={0} max={60} className={input} value={c.clPerYear ?? ''} onChange={(e) => num('clPerYear', e.target.value)} />
+            </Field>
+            <Field label="Overtime hours to a day's pay" hint="This many OT hours earns one extra day's salary, pro-rated. 1–24, default 10.">
+              <input type="number" min={1} max={24} className={input} value={c.otHoursPerDay ?? ''} onChange={(e) => num('otHoursPerDay', e.target.value)} />
+            </Field>
+            <Field label="Late punches that move the pay date" hint="At this many late punches in a month, salary shifts to the later pay day. Nothing is withheld. 0–31, default 5.">
+              <input type="number" min={0} max={31} className={input} value={c.payrollLateShiftAt ?? ''} onChange={(e) => num('payrollLateShiftAt', e.target.value)} />
+            </Field>
+            <Field label="Salary pay day" hint="Day of the following month salary is dated. 1–28, default 5.">
+              <input type="number" min={1} max={28} className={input} value={c.payrollPayDay ?? ''} onChange={(e) => num('payrollPayDay', e.target.value)} />
+            </Field>
+            <Field label="Pay day after too many lates" hint="The later date used once the late threshold above is hit. 1–28, default 8.">
+              <input type="number" min={1} max={28} className={input} value={c.payrollPayDayLate ?? ''} onChange={(e) => num('payrollPayDayLate', e.target.value)} />
+            </Field>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Payroll settings apply the next time a month is run. Months already finalised keep the figures
+            they were run with — preview a month before re-running it.
+          </p>
+        </div>
+
+        <div className="border-t border-border/60 pt-4 sm:col-span-2">
+          <h3 className="mb-3 text-sm font-semibold">Security</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Face match threshold"
+              warn
+              hint="Confidence a check-in selfie must reach to be accepted as the logged-in employee. Lower means more wrong faces let through — the floor is 70 for that reason. Default 85."
+            >
+              <input type="number" min={70} max={100} className={input} value={c.faceMatchThreshold ?? ''} onChange={(e) => num('faceMatchThreshold', e.target.value)} />
+            </Field>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 border-t border-border/60 pt-4 sm:col-span-2">
           <button onClick={save} disabled={saving} className="flex h-10 items-center gap-2 rounded-xl brand-gradient px-5 text-sm font-semibold text-white disabled:opacity-60">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
           </button>
