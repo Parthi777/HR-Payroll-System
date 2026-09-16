@@ -36,6 +36,14 @@ export interface MusterDay {
   /** Manual/selfie punch marker so HR can spot unverified entries in the grid. */
   manual: boolean;
   punchMode: string | null; // "GEO" | "MANUAL" | "SELFIE"
+  /**
+   * The Attendance row behind this day, or null when there is no punch.
+   *
+   * Carried so a reviewer looking at a month can correct the day they are
+   * looking at. Without it the correction endpoint is unreachable from the one
+   * screen where a wrong day is actually noticed.
+   */
+  attendanceId: string | null;
 }
 
 export interface MusterEmployee {
@@ -227,6 +235,7 @@ export async function buildMusterReport(
         late: day.late,
         manual: !!att && att.punchMode !== 'GEO',
         punchMode: att?.punchMode ?? null,
+        attendanceId: att?.id ?? null,
       });
     }
 

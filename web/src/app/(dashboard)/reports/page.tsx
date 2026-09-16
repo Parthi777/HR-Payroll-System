@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { fetcher, apiDownload } from '@/lib/api';
+import { fetcher, api, apiDownload } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Download, FileSpreadsheet, FileText } from 'lucide-react';
@@ -77,7 +77,7 @@ interface Named { id: string; name: string }
 const TABS = ['Daily', 'Monthly', 'Payroll', 'Performance', 'Employee', 'Late Punches'] as const;
 type Tab = (typeof TABS)[number];
 
-interface EmpDay { day: number; weekday: number; status: string; checkIn: string | null; checkOut: string | null; workedHours: number | null; punchMode: string | null }
+interface EmpDay { day: number; weekday: number; status: string; checkIn: string | null; checkOut: string | null; workedHours: number | null; punchMode: string | null; attendanceId: string | null }
 interface Named2 { id: string; name: string; employeeCode?: string; status?: string }
 
 const today = new Date();
@@ -775,7 +775,8 @@ function EmployeeReport({ month, year }: { month: number; year: number }) {
   // Reports cover active employees only — keep the picker consistent with that.
   const list = (emps?.employees ?? []).filter((e) => e.status !== 'INACTIVE');
   const [empId, setEmpId] = useState('');
-  const { data, isLoading } = useSWR<{
+  const [correcting, setCorrecting] = useState<(EmpDay & { attendanceId: string; date: string }) | null>(null);
+  const { data, isLoading, mutate } = useSWR<{
     employee: { name: string; employeeCode: string; branch: string; department: string; designation: string; shift: string };
     days: EmpDay[];
     summary: { present: number; offDuty: number; late: number; half: number; absent: number; pending: number; leave: number; lop: number; off: number; workedHours: number };
@@ -822,7 +823,7 @@ function EmployeeReport({ month, year }: { month: number; year: number }) {
             data.days.map((d) => [d.day, d.status, d.checkIn, d.checkOut, d.workedHours, d.punchMode]))}
         >
           <thead><tr className="border-b border-border/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <th className={th}>Date</th><th className={th}>Status</th><th className={th}>Check-In</th><th className={th}>Check-Out</th><th className={th}>Hours</th>
+            <th className={th}>Date</th><th className={th}>Status</th><th className={th}>Check-In</th><th className={th}>Check-Out</th><th className={th}>Hours</th><th className={th}></th>
           </tr></thead>
           <tbody>
             {data?.days.map((d) => (
@@ -835,11 +836,126 @@ function EmployeeReport({ month, year }: { month: number; year: number }) {
                 <td className={td}>{d.checkIn ?? '—'}</td>
                 <td className={td}>{d.checkOut ?? '—'}</td>
                 <td className={td}>{d.workedHours != null ? `${d.workedHours}h` : '—'}</td>
+                <td className={td}>
+                  {/* Only a day with a punch can be corrected. Creating one from
+                      nothing is a manual punch, which is a different action with
+                      its own approval path — the empty cell says so on hover. */}
+                  {d.attendanceId ? (
+                    <button
+                      onClick={() => setCorrecting({ ...d, attendanceId: d.attendanceId as string, date: `${tag}-${String(d.day).padStart(2, '0')}` })}
+                      className="rounded-lg border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      Correct
+                    </button>
+                  ) : (
+                    <span title="No punch on this day — raise a manual punch from Live Attendance instead" className="text-xs text-muted-foreground/50">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </TableCard>
       )}
+
+      {correcting && (
+        <CorrectDayDialog
+          day={correcting}
+          employeeName={data?.employee.name ?? ''}
+          onClose={() => setCorrecting(null)}
+          onSaved={async () => { setCorrecting(null); await mutate(); }}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Correct one attendance day by hand.
+ *
+ * The punch statuses are deliberately missing from the status control. PRESENT,
+ * LATE and HALF_DAY are re-derived from the times on every read, so offering
+ * them would promise a change the next query undoes — the backend refuses them
+ * for the same reason. To move a day to present or half day you change the
+ * times and let the classifier decide, which is what the note under the field
+ * says.
+ */
+function CorrectDayDialog({
+  day, employeeName, onClose, onSaved,
+}: {
+  day: EmpDay & { attendanceId: string; date: string };
+  employeeName: string;
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [checkIn, setCheckIn] = useState(day.checkIn ?? '');
+  const [checkOut, setCheckOut] = useState(day.checkOut ?? '');
+  const [status, setStatus] = useState<'' | 'ABSENT' | 'ON_LEAVE'>('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const input = 'h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40';
+
+  async function save() {
+    if (!reason.trim()) { setErr('A reason is required — it goes on the audit trail.'); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      // Send only what the reviewer actually touched. An empty time field means
+      // "clear it" (null), which is distinct from not sending the key at all.
+      const body: Record<string, unknown> = { reason: reason.trim() };
+      if (checkIn !== (day.checkIn ?? '')) body.checkIn = checkIn === '' ? null : checkIn;
+      if (checkOut !== (day.checkOut ?? '')) body.checkOut = checkOut === '' ? null : checkOut;
+      if (status) body.status = status;
+      if (Object.keys(body).length === 1) { setErr('Nothing changed yet.'); setBusy(false); return; }
+      await api(`/admin/attendance/${day.attendanceId}/override`, { method: 'PATCH', body: JSON.stringify(body) });
+      await onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save the correction');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <Card className="w-full max-w-md" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+        <CardHeader><CardTitle className="text-base">Correct {day.date} — {employeeName}</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Check-in</label>
+              <input type="time" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} className={input} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Check-out</label>
+              <input type="time" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} className={input} />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Mark the day as</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value as '' | 'ABSENT' | 'ON_LEAVE')} className={input}>
+              <option value="">Leave it to the times</option>
+              <option value="ABSENT">Absent</option>
+              <option value="ON_LEAVE">On leave</option>
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Present, late and half day are worked out from the times, so they cannot be set here —
+              change the times instead. Marking absent or on leave also settles a punch still awaiting approval.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Reason (required)</label>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why this day is being corrected" className={input} />
+          </div>
+          {err && <p className="text-sm text-destructive">{err}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={onClose} className="h-10 rounded-xl border border-border px-4 text-sm font-medium">Cancel</button>
+            <button onClick={save} disabled={busy} className="flex h-10 items-center gap-2 rounded-xl brand-gradient px-5 text-sm font-semibold text-white disabled:opacity-60">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save correction
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

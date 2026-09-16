@@ -421,6 +421,7 @@ export async function reportsRoutes(app: FastifyInstance) {
       checkOut: d.outTime === '--:--' ? null : d.outTime,
       workedHours: d.workMinutes ? Math.round((d.workMinutes / 60) * 10) / 10 : null,
       punchMode: d.punchMode,
+      attendanceId: d.attendanceId,
     }));
     const summary = {
       present: me.present,
