@@ -14,6 +14,7 @@ import {
   overrideAttendance,
 } from '../services/attendance/attendance.service.js';
 import { classifyDay, type DayCode } from '../services/attendance/day-classify.js';
+import { minutesLate } from '../services/attendance/attendance-policy.js';
 import { getObjectBytes } from '../services/storage/storage.service.js';
 import { dayKey } from '../utils/time.js';
 import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
@@ -573,7 +574,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const rows = await app.prisma.attendance.findMany({
       where,
       orderBy: { checkIn: 'desc' },
-      include: { employee: { include: { branch: true } } },
+      include: { employee: { include: { branch: true, shift: true } } },
     });
     return {
       approvals: rows.map((r) => ({
@@ -589,8 +590,59 @@ export async function attendanceRoutes(app: FastifyInstance) {
         punchReason: r.punchReason,
         raisedByHr: !!r.raisedBy,
         hasSelfie: !!r.checkInSelfie,
+        // How late, in minutes past the shift start + its grace. Computed here
+        // because this is where the shift is known; the approvals screen would
+        // otherwise be asking a person to do the arithmetic against a roster
+        // they cannot see, 27 times.
+        minutesLate: r.checkIn && r.employee.shift ? minutesLate(r.checkIn, r.employee.shift) : null,
+        shiftStart: r.employee.shift?.startTime ?? null,
       })),
     };
+  });
+
+  /**
+   * Decide a whole queue in one request.
+   *
+   * Every id still goes through `decideAttendanceApproval`, so the branch-manager
+   * scoping, the still-PENDING check and the employee notification all apply
+   * exactly as they do to a single decision — a bulk route must not become the
+   * way around any of them.
+   *
+   * Partial success is the normal outcome, not an error: someone else may have
+   * just decided one of these, and a row that is no longer PENDING should not
+   * roll back the twenty-six that worked. Each id comes back under `decided` or
+   * `failed` with its reason, and the screen reports both.
+   */
+  app.patch('/admin/attendance/bulk-decide', { preHandler: approvalGuard }, async (req) => {
+    const { ids, approve } = z
+      .object({ ids: z.array(z.string().min(1)).min(1).max(200), approve: z.boolean() })
+      .parse(req.body);
+
+    const decided: string[] = [];
+    const failed: { id: string; reason: string }[] = [];
+
+    for (const id of ids) {
+      try {
+        const attendance = await decideAttendanceApproval(app.prisma, req.user, id, approve);
+        await recordAudit(req, approve ? 'ATTENDANCE_APPROVED' : 'ATTENDANCE_REJECTED', 'Attendance', {
+          entityId: attendance.id,
+          metadata: {
+            ...(await employeeLabel(attendance.employeeId)),
+            date: fmtDate(attendance.date),
+            punchMode: attendance.punchMode,
+            status: attendance.status,
+            // Marks the row as part of a sweep rather than an individual look,
+            // which is worth knowing when reading the trail a year later.
+            bulk: true,
+          },
+        });
+        decided.push(id);
+      } catch (err) {
+        failed.push({ id, reason: err instanceof AppError ? err.message : 'Could not be decided' });
+      }
+    }
+
+    return { decided: decided.length, failed, approve };
   });
 
   app.patch('/admin/attendance/:id/approve', { preHandler: approvalGuard }, async (req) => {

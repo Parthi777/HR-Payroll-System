@@ -33,6 +33,9 @@ interface PendingApproval {
   punchReason: string | null;
   raisedByHr: boolean;
   hasSelfie: boolean;
+  /** Minutes past shift start + grace, or null when the punch was not late. */
+  minutesLate: number | null;
+  shiftStart: string | null;
 }
 
 interface EmployeeOption { id: string; name: string; employeeCode?: string; status?: string }
@@ -199,17 +202,76 @@ function ApprovalsCard() {
   );
   const approvals = data?.approvals ?? [];
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Nothing is selected on arrival, and nothing is ever selected for you:
+  // approving pays the day, so the decision stays an act rather than a default.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const visibleIds = approvals.map((a) => a.id);
+  const selectedHere = visibleIds.filter((id) => selected.has(id));
+  const allSelected = visibleIds.length > 0 && selectedHere.length === visibleIds.length;
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(visibleIds));
+  }
 
   async function decide(id: string, action: 'approve' | 'reject') {
     if (action === 'reject' && !confirm('Reject this punch? The day will not be paid.')) return;
     setBusyId(id);
     try {
       await api(`/admin/attendance/${id}/${action}`, { method: 'PATCH' });
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       await mutate();
     } catch (e) {
       alert(e instanceof Error ? e.message : `Failed to ${action}`);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function decideSelected(action: 'approve' | 'reject') {
+    const ids = selectedHere;
+    if (ids.length === 0) return;
+    const verb = action === 'approve' ? 'Approve' : 'Reject';
+    const consequence = action === 'approve'
+      ? `${ids.length} day(s) will be paid.`
+      : `${ids.length} day(s) will NOT be paid.`;
+    if (!confirm(`${verb} ${ids.length} punch(es)? ${consequence}`)) return;
+
+    setBulkBusy(true);
+    try {
+      // Partial success is normal — someone else may have just decided one of
+      // these — so the server reports each failure rather than rolling back the
+      // rest, and we say plainly how many landed.
+      const res = await api<{ decided: number; failed: { id: string; reason: string }[] }>(
+        '/admin/attendance/bulk-decide',
+        { method: 'PATCH', body: JSON.stringify({ ids, approve: action === 'approve' }) },
+      );
+      setSelected(new Set());
+      await mutate();
+      if (res.failed.length > 0) {
+        const names = res.failed
+          .map((f) => `${approvals.find((a) => a.id === f.id)?.name ?? f.id}: ${f.reason}`)
+          .join('\n');
+        alert(`${res.decided} done, ${res.failed.length} could not be:\n\n${names}`);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : `Failed to ${action} selected`);
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -225,17 +287,73 @@ function ApprovalsCard() {
 
   return (
     <Card className="border-amber-300/60">
-      <CardHeader>
+      <CardHeader className="space-y-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <MapPinOff className="h-4 w-4 text-amber-600" />
           Punches awaiting approval ({approvals.length})
         </CardTitle>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              className="h-4 w-4 cursor-pointer rounded border-border accent-emerald-600"
+            />
+            Select all
+          </label>
+          <span className="text-sm text-muted-foreground">
+            {selectedHere.length > 0 ? `${selectedHere.length} selected` : 'none selected'}
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={() => decideSelected('approve')}
+            disabled={selectedHere.length === 0 || bulkBusy}
+            className="flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+          >
+            {bulkBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            Approve selected{selectedHere.length > 0 ? ` (${selectedHere.length})` : ''}
+          </button>
+          <button
+            onClick={() => decideSelected('reject')}
+            disabled={selectedHere.length === 0 || bulkBusy}
+            className="flex h-9 items-center gap-1.5 rounded-lg bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-40"
+          >
+            <X className="h-4 w-4" />
+            Reject selected{selectedHere.length > 0 ? ` (${selectedHere.length})` : ''}
+          </button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {approvals.map((a) => (
-          <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+          <div
+            key={a.id}
+            className={`flex flex-wrap items-center gap-3 rounded-xl border p-4 ${
+              selected.has(a.id) ? 'border-emerald-400 bg-emerald-50/60' : 'border-border/60 bg-muted/30'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={selected.has(a.id)}
+              onChange={() => toggle(a.id)}
+              aria-label={`Select ${a.name}`}
+              className="h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-emerald-600"
+            />
             <div className="min-w-0 flex-1">
-              <div className="font-semibold">{a.name} <span className="text-xs text-muted-foreground">({a.employeeCode}) · {a.branch}</span></div>
+              <div className="font-semibold">
+                {a.name} <span className="text-xs text-muted-foreground">({a.employeeCode}) · {a.branch}</span>
+                {/* How late, spelled out — the roster this is measured against
+                    is not on this screen, so the raw clock time alone asks the
+                    reader to do arithmetic they have no inputs for. */}
+                {a.minutesLate != null && (
+                  <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                    {a.minutesLate >= 60
+                      ? `${Math.floor(a.minutesLate / 60)}h ${a.minutesLate % 60}m late`
+                      : `${a.minutesLate}m late`}
+                    {a.shiftStart ? ` · shift ${a.shiftStart}` : ''}
+                  </span>
+                )}
+              </div>
               <div className="text-xs text-muted-foreground">
                 {a.date} · In {a.checkIn ?? '—'} · Out {a.checkOut ?? '—'}
                 {a.punchMode !== 'GEO' && (

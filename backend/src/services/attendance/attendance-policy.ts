@@ -102,7 +102,24 @@ export function effectiveStatus(
  * toward the late-punch discipline policy.
  */
 export function isLateArrival(checkIn: Date, shift: ShiftClock): boolean {
-  return minutesSinceMidnight(checkIn) > parseHHMM(shift.startTime) + (shift.gracePeriod ?? 0);
+  return minutesLate(checkIn, shift) !== null;
+}
+
+/**
+ * How late the arrival was, in minutes past the shift start plus its grace, or
+ * null when it was not late at all.
+ *
+ * `isLateArrival` is defined in terms of this so the two can never disagree —
+ * the approvals screen shows this number next to a punch that is being held
+ * *because* that predicate was true, and a screen that says "0m late" about a
+ * punch the server called late would be a bug nobody could explain.
+ *
+ * Read in company time, like every other clock comparison here: production runs
+ * UTC and the business does not.
+ */
+export function minutesLate(checkIn: Date, shift: ShiftClock): number | null {
+  const over = minutesSinceMidnight(checkIn) - (parseHHMM(shift.startTime) + (shift.gracePeriod ?? 0));
+  return over > 0 ? over : null;
 }
 
 /** Day credit toward pay: a half day is worth 0.5, any other punch a full day. */
