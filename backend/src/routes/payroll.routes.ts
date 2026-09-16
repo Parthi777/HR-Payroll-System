@@ -2,10 +2,18 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
-import { runMonthlyPayroll } from '../services/payroll/payroll-run.service.js';
+import {
+  runMonthlyPayroll,
+  computeMonthlyPayroll,
+  monthHolidaySet,
+  loadPayrollMonth,
+} from '../services/payroll/payroll-run.service.js';
+import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
 import { generatePayslipPdf } from '../services/payroll/payslip-pdf.service.js';
 import { generateSalaryRegisterPdf } from '../services/payroll/salary-register-pdf.service.js';
 import { getCompanyProfile } from '../services/settings/tenant-settings.service.js';
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 import { recordAudit } from '../services/audit/audit.service.js';
 
 /** Company profile for PDF headers (empty object when unset). */
@@ -93,12 +101,112 @@ export async function payrollRoutes(app: FastifyInstance) {
     return reply.send(pdf);
   });
 
+  /**
+   * What a payroll run would write, next to what is stored today.
+   *
+   * This endpoint used to read the stored payslips back and return them under
+   * the name `preview`, which is the opposite of a preview: it showed the
+   * figures a previous run produced, so an administrator checking before
+   * re-running a month saw exactly what they already had and learned nothing.
+   *
+   * It now computes the month with `computeMonthlyPayroll` — the same function
+   * the run itself persists and the payroll report renders — and diffs it
+   * against the stored rows. Nothing is written.
+   *
+   * This matters most when re-running a month that has already been paid out.
+   * A payroll run upserts in place and there is no history table, so the stored
+   * row is the only record of what an employee was actually paid; once it is
+   * overwritten, the previous figure is gone. Seeing the deltas first is the
+   * difference between a correction and a surprise.
+   */
   app.get('/admin/payroll/preview/:month/:year', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN') }, async (req) => {
-    const { month, year } = req.params as { month: string; year: string };
-    const payslips = await app.prisma.payslip.findMany({
-      where: { month: Number(month), year: Number(year), employee: { status: 'ACTIVE' } },
+    const month = Number((req.params as { month: string }).month);
+    const year = Number((req.params as { year: string }).year);
+
+    const { payroll: policy, attendance } = await getTenantPolicy(app.prisma);
+    const halfDayWindow = { start: attendance.halfDayWindowStart, end: attendance.halfDayWindowEnd };
+    // Exactly the population the run covers — ACTIVE only. Anyone since
+    // deactivated is reported separately below rather than silently omitted.
+    const employees = await app.prisma.employee.findMany({
+      where: { status: 'ACTIVE' },
+      include: { shift: true },
     });
-    return { month: Number(month), year: Number(year), preview: payslips };
+    const holidaySet = await monthHolidaySet(app.prisma, month, year);
+    const preloaded = await loadPayrollMonth(app.prisma, employees.map((e) => e.id), month, year);
+
+    const stored = await app.prisma.payslip.findMany({
+      where: { month, year },
+      include: { employee: { select: { name: true, employeeCode: true, status: true } } },
+    });
+    const storedByEmployee = new Map(stored.map((p) => [p.employeeId, p]));
+
+    const rows = [];
+    for (const emp of employees) {
+      const r = await computeMonthlyPayroll(app.prisma, emp, month, year, holidaySet, policy, halfDayWindow, preloaded.get(emp.id));
+      const was = storedByEmployee.get(emp.id);
+      storedByEmployee.delete(emp.id);
+      rows.push({
+        employeeId: emp.id,
+        name: emp.name,
+        employeeCode: emp.employeeCode,
+        // Absent when this employee has no slip for the month yet — the run
+        // would create one rather than change anything.
+        isNew: !was,
+        storedNet: was?.netSalary ?? null,
+        storedOtHours: was?.otHours ?? null,
+        storedOtPay: was ? (was.otPay ?? 0) + (was.sundayPay ?? 0) : null,
+        storedPresentDays: was?.presentDays ?? null,
+        storedAbsentDays: was?.absentDays ?? null,
+        storedPayDate: was?.payDate ?? null,
+        net: r.netSalary,
+        otHours: r.otHours,
+        otPay: round2(r.otPay + r.sundayPay),
+        presentDays: r.presentDays,
+        absentDays: r.absentDays,
+        pendingDays: r.pendingDays,
+        payDate: r.payDate,
+        delta: was ? round2(r.netSalary - was.netSalary) : null,
+      });
+    }
+
+    /**
+     * Stored slips with no ACTIVE employee behind them.
+     *
+     * A run only covers ACTIVE staff, so these rows are left exactly as they
+     * are — including any error they already carry. Silently omitting them
+     * would make the preview's totals look like the whole month when they are
+     * not, so they are named.
+     */
+    const skipped = [...storedByEmployee.values()].map((p) => ({
+      employeeId: p.employeeId,
+      name: p.employee.name,
+      employeeCode: p.employee.employeeCode,
+      status: p.employee.status,
+      storedNet: p.netSalary,
+      storedOtHours: p.otHours,
+    }));
+
+    const changed = rows.filter((r) => r.delta !== null && Math.abs(r.delta) >= 0.01);
+    return {
+      month,
+      year,
+      rows,
+      skipped,
+      summary: {
+        employees: rows.length,
+        newSlips: rows.filter((r) => r.isNew).length,
+        changedSlips: changed.length,
+        skippedSlips: skipped.length,
+        storedNetTotal: round2(rows.reduce((s, r) => s + (r.storedNet ?? 0), 0)),
+        netTotal: round2(rows.reduce((s, r) => s + r.net, 0)),
+        netDelta: round2(changed.reduce((s, r) => s + (r.delta ?? 0), 0)),
+        storedOtPayTotal: round2(rows.reduce((s, r) => s + (r.storedOtPay ?? 0), 0)),
+        otPayTotal: round2(rows.reduce((s, r) => s + r.otPay, 0)),
+        payDateMoves: rows.filter(
+          (r) => r.storedPayDate && r.payDate && new Date(r.storedPayDate).getTime() !== r.payDate.getTime(),
+        ).length,
+      },
+    };
   });
 
   app.get('/payroll/my-payslips', { preHandler: authenticate }, async (req) => {

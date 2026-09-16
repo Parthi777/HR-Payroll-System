@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { fetcher, api, apiDownload } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Play, Loader2, FileDown } from 'lucide-react';
+import { Play, Loader2, FileDown, Eye, AlertTriangle, X } from 'lucide-react';
 
 interface Payslip {
   id: string;
@@ -34,6 +34,44 @@ interface Payslip {
   employee?: { name: string; employeeCode: string } | null;
 }
 
+interface PreviewRow {
+  employeeId: string;
+  name: string;
+  employeeCode: string;
+  isNew: boolean;
+  storedNet: number | null;
+  storedOtHours: number | null;
+  storedOtPay: number | null;
+  storedPresentDays: number | null;
+  storedAbsentDays: number | null;
+  net: number;
+  otHours: number;
+  otPay: number;
+  presentDays: number;
+  absentDays: number;
+  pendingDays: number;
+  delta: number | null;
+}
+
+interface PreviewResult {
+  month: number;
+  year: number;
+  rows: PreviewRow[];
+  skipped: { employeeId: string; name: string; employeeCode: string; status: string; storedNet: number; storedOtHours: number }[];
+  summary: {
+    employees: number;
+    newSlips: number;
+    changedSlips: number;
+    skippedSlips: number;
+    storedNetTotal: number;
+    netTotal: number;
+    netDelta: number;
+    storedOtPayTotal: number;
+    otPayTotal: number;
+    payDateMoves: number;
+  };
+}
+
 const now = new Date();
 const inr = (n: number) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
@@ -53,6 +91,8 @@ export default function PayrollPage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [running, setRunning] = useState(false);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const { data, error, isLoading, mutate } = useSWR<{ payslips: Payslip[] }>(
     `/admin/payroll/payslips/${month}/${year}`,
@@ -67,13 +107,37 @@ export default function PayrollPage() {
   const totalOtHours = payslips.reduce((s, p) => s + (p.otHours ?? 0), 0);
   const totalOtPay = payslips.reduce((s, p) => s + (p.otPay ?? 0) + (p.sundayPay ?? 0), 0);
 
+  async function loadPreview() {
+    setPreviewing(true);
+    try {
+      setPreview(await api<PreviewResult>(`/admin/payroll/preview/${month}/${year}`));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not build preview');
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
   async function run() {
+    // A run upserts in place and there is no history table, so the stored row
+    // is the only record of what someone was actually paid. Re-running a month
+    // that already has payslips overwrites that, which is worth stopping for.
+    const existing = payslips.length;
+    if (existing > 0) {
+      const warning =
+        `Re-run ${monthName}?\n\n` +
+        `${existing} payslip(s) already exist and will be OVERWRITTEN with freshly ` +
+        `computed figures. There is no undo and no history — if these were already ` +
+        `paid out, export the register first so you keep a record of what was paid.`;
+      if (!confirm(warning)) return;
+    }
     setRunning(true);
     try {
       await api('/admin/payroll/run', { method: 'POST', body: JSON.stringify({ month, year }) });
+      setPreview(null);
       await mutate();
-    } catch {
-      alert('Payroll run failed');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Payroll run failed');
     } finally {
       setRunning(false);
     }
@@ -110,6 +174,14 @@ export default function PayrollPage() {
           ))}
         </select>
         <button
+          onClick={loadPreview}
+          disabled={previewing}
+          title="Show what a run would change, without writing anything"
+          className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 hover:bg-white/25 disabled:opacity-60"
+        >
+          {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />} Preview
+        </button>
+        <button
           onClick={run}
           disabled={running}
           className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90 disabled:opacity-60"
@@ -133,6 +205,8 @@ export default function PayrollPage() {
           <FileDown className="h-4 w-4" /> PDF
         </button>
       </PageHero>
+
+      {preview && <PreviewPanel preview={preview} monthName={monthName} onClose={() => setPreview(null)} />}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <Card><CardContent className="p-5"><div className="text-2xl font-bold">{inr(totalGross)}</div><div className="text-xs text-muted-foreground">Gross Payout</div></CardContent></Card>
@@ -221,5 +295,134 @@ export default function PayrollPage() {
         computed; employee sees &quot;contact HR&quot;).
       </p>
     </div>
+  );
+}
+
+
+/**
+ * What a run would change, before it changes it.
+ *
+ * A payroll run upserts in place and there is no history table, so the stored
+ * payslip is the only record of what an employee was actually paid. For a month
+ * that has already been disbursed, that makes a re-run irreversible in the one
+ * way that matters — which is why this shows the per-person deltas rather than
+ * a total, and why it names the rows a run would not touch at all.
+ */
+function PreviewPanel({ preview, monthName, onClose }: { preview: PreviewResult; monthName: string; onClose: () => void }) {
+  const { summary, rows, skipped } = preview;
+  // Biggest reductions first: a re-run that lowers someone's pay is the case
+  // that needs a human decision, so it should not be below the fold.
+  const changed = rows
+    .filter((r) => r.delta !== null && Math.abs(r.delta) >= 0.01)
+    .sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0));
+  const money = (n: number) => (n > 0 ? '+' : '') + inr(n);
+
+  return (
+    <Card className="border-amber-300/60">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Eye className="h-4 w-4 text-amber-600" /> Preview — {monthName}
+          </CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Computed live. Nothing has been written.
+          </p>
+        </div>
+        <button onClick={onClose} title="Close preview" className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground">
+          <X className="h-4 w-4" />
+        </button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
+            <div className="text-lg font-bold">{summary.changedSlips}</div>
+            <div className="text-xs text-muted-foreground">payslips would change</div>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
+            <div className={`text-lg font-bold ${summary.netDelta < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+              {money(summary.netDelta)}
+            </div>
+            <div className="text-xs text-muted-foreground">net change across all</div>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
+            <div className="text-lg font-bold">
+              {inr(summary.storedOtPayTotal)} → {inr(summary.otPayTotal)}
+            </div>
+            <div className="text-xs text-muted-foreground">OT &amp; Sunday pay</div>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
+            <div className="text-lg font-bold">{summary.newSlips}</div>
+            <div className="text-xs text-muted-foreground">new payslips created</div>
+          </div>
+        </div>
+
+        {skipped.length > 0 && (
+          <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <div className="font-semibold">
+                {skipped.length} payslip(s) will NOT be touched — the employee is no longer active.
+              </div>
+              A run only covers active staff, so these keep whatever figures they already have:{' '}
+              {skipped.map((k) => `${k.name} (${k.employeeCode}, ${inr(k.storedNet)})`).join(', ')}.
+            </div>
+          </div>
+        )}
+
+        {changed.length === 0 ? (
+          <div className="rounded-xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
+            Nothing would change. Every stored payslip already matches what the engine computes today.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium">Employee</th>
+                  <th className="py-2 pr-3 text-right font-medium">Stored net</th>
+                  <th className="py-2 pr-3 text-right font-medium">New net</th>
+                  <th className="py-2 pr-3 text-right font-medium">Change</th>
+                  <th className="py-2 pr-3 text-right font-medium">OT hours</th>
+                  <th className="py-2 pr-3 text-right font-medium">Present</th>
+                </tr>
+              </thead>
+              <tbody>
+                {changed.map((r) => (
+                  <tr key={r.employeeId} className="border-b border-border/40">
+                    <td className="py-2 pr-3">
+                      <span className="font-medium">{r.name}</span>{' '}
+                      <span className="text-xs text-muted-foreground">({r.employeeCode})</span>
+                      {r.pendingDays > 0 && (
+                        <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                          {r.pendingDays} unapproved
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">{inr(r.storedNet ?? 0)}</td>
+                    <td className="py-2 pr-3 text-right font-semibold tabular-nums">{inr(r.net)}</td>
+                    <td className={`py-2 pr-3 text-right font-semibold tabular-nums ${(r.delta ?? 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {money(r.delta ?? 0)}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
+                      {(r.storedOtHours ?? 0).toFixed(1)} → {r.otHours.toFixed(1)}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
+                      {r.storedPresentDays ?? 0} → {r.presentDays}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          A run overwrites these rows in place. There is no history, so for a month already paid out,
+          export the register first — that spreadsheet becomes your only record of what was actually
+          disbursed. Days still awaiting approval are unpaid here; approve them first if they should count.
+          {summary.payDateMoves > 0 && ` ${summary.payDateMoves} salary pay-date(s) would also move.`}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
