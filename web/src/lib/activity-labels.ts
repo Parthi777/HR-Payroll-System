@@ -275,6 +275,12 @@ const SHAPES: Record<string, Shape> = {
     detail: (m) => (m.renamedFrom ? `${text(m.renamedFrom)} → ${text(m.name)}` : text(m.name)),
   },
   DESIGNATION_DELETED: { title: 'Designation deleted', kind: 'config', tone: 'revoke', detail: (m) => text(m.name) },
+  BANK_FILE_DOWNLOADED: {
+    title: 'Salary transfer file downloaded',
+    kind: 'money',
+    tone: 'neutral',
+    detail: (m) => `${text(m.month)}/${text(m.year)} — ${text(m.payable)} payable${m.excluded ? `, ${text(m.excluded)} excluded` : ''}`,
+  },
   HOLIDAY_CREATED: {
     title: 'Holiday added',
     kind: 'config',

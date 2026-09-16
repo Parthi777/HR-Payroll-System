@@ -64,6 +64,12 @@ model Employee {
   payrollBasis       String?
   pfEnabled          Boolean  @default(false) // PF deduction applies to this employee
   esiEnabled         Boolean  @default(false) // ESI deduction applies to this employee
+  /// Where salary is actually sent. Optional: an employee paid in cash, or one
+  /// not yet onboarded to the bank, simply has none — the bank file names them
+  /// as excluded rather than exporting a row the bank would reject.
+  bankAccountName    String?
+  bankAccountNo      String?
+  bankIfsc           String?
   fcmToken           String? // FCM device token for push notifications
   status             String   @default("ACTIVE") // EmployeeStatus
   joiningDate        DateTime

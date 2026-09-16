@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { fetcher, api, apiDownload } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Play, Loader2, FileDown, Eye, AlertTriangle, X } from 'lucide-react';
+import { Play, Loader2, FileDown, Eye, AlertTriangle, X, Banknote } from 'lucide-react';
 
 interface Payslip {
   id: string;
@@ -93,6 +93,42 @@ export default function PayrollPage() {
   const [running, setRunning] = useState(false);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [bankBusy, setBankBusy] = useState(false);
+
+  /**
+   * Check who is payable before handing over a file.
+   *
+   * A bank portal rejects a whole upload over one bad line, so anyone without
+   * valid details is held back — and that is worth saying out loud before the
+   * download rather than leaving someone quietly unpaid.
+   */
+  async function bankFile() {
+    setBankBusy(true);
+    try {
+      const chk = await api<{ payable: number; total: number; excluded: { name: string; employeeCode: string; reason: string }[] }>(
+        `/admin/payroll/bank-file/${month}/${year}?preview=1`,
+      );
+      if (chk.payable === 0) {
+        alert(`Nobody can be paid by transfer for ${monthName}.\n\n` +
+          chk.excluded.map((e) => `${e.name} (${e.employeeCode}) — ${e.reason}`).join('\n'));
+        return;
+      }
+      if (chk.excluded.length > 0) {
+        const ok = confirm(
+          `${chk.payable} employee(s), ${inr(chk.total)} total.\n\n` +
+          `${chk.excluded.length} will NOT be in the file and will need paying another way:\n` +
+          chk.excluded.map((e) => `  ${e.name} (${e.employeeCode}) — ${e.reason}`).join('\n') +
+          `\n\nDownload anyway?`,
+        );
+        if (!ok) return;
+      }
+      await apiDownload(`/admin/payroll/bank-file/${month}/${year}`, `salary-transfer-${tag}.csv`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not build the transfer file');
+    } finally {
+      setBankBusy(false);
+    }
+  }
 
   const { data, error, isLoading, mutate } = useSWR<{ payslips: Payslip[] }>(
     `/admin/payroll/payslips/${month}/${year}`,
@@ -195,6 +231,14 @@ export default function PayrollPage() {
           className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 hover:bg-white/25 disabled:opacity-50"
         >
           <FileDown className="h-4 w-4" /> Excel
+        </button>
+        <button
+          onClick={bankFile}
+          disabled={payslips.length === 0 || bankBusy}
+          title="Bulk salary transfer file for your bank (NEFT/RTGS)"
+          className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 hover:bg-white/25 disabled:opacity-50"
+        >
+          {bankBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Banknote className="h-4 w-4" />} Bank file
         </button>
         <button
           onClick={() => apiDownload(`/admin/payroll/register/${month}/${year}/pdf`, `salary-register-${tag}.pdf`).catch((e) => alert(e instanceof Error ? e.message : 'Download failed'))}

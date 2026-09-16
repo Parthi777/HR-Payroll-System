@@ -36,6 +36,10 @@ interface EmployeeRow {
   payrollBasis?: string | null;
   pfEnabled?: boolean;
   esiEnabled?: boolean;
+  bankAccountName?: string | null;
+  /** Masked by the API (••••1234) — never the real number. */
+  bankAccountNo?: string | null;
+  bankIfsc?: string | null;
   branch?: { name: string } | null;
 }
 interface Named { id: string; name: string }
@@ -237,6 +241,11 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
     payrollBasis: employee?.payrollBasis ?? '',
     pfEnabled: employee?.pfEnabled ?? false,
     esiEnabled: employee?.esiEnabled ?? false,
+    bankAccountName: employee?.bankAccountName ?? '',
+    // Prefilled with the API's mask. Sent back only if someone types over it —
+    // see the save below — so a mask can never be stored as an account number.
+    bankAccountNo: employee?.bankAccountNo ?? '',
+    bankIfsc: employee?.bankIfsc ?? '',
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -268,6 +277,15 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
         reportingManagerId: f.reportingManagerId || null,
         // Blank → null, so the employee follows the dealer's default.
         payrollBasis: f.payrollBasis || null,
+        bankAccountName: f.bankAccountName.trim() || null,
+        bankIfsc: f.bankIfsc.trim() || null,
+        // The form was prefilled with a mask, not the real number. Sending it
+        // back unchanged would overwrite a valid account with bullet
+        // characters, so an untouched field is omitted entirely and the stored
+        // value is left alone. An emptied field still clears it.
+        ...(f.bankAccountNo === (employee?.bankAccountNo ?? '')
+          ? {}
+          : { bankAccountNo: f.bankAccountNo.trim() || null }),
       });
       if (editing) await api(`/admin/employees/${employee!.id}`, { method: 'PUT', body });
       else await api('/admin/employees', { method: 'POST', body });
@@ -329,6 +347,19 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
             <input type="checkbox" checked={f.esiEnabled} onChange={(e) => setF((p) => ({ ...p, esiEnabled: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
             ESI deduction applies
           </label>
+
+          <div className="col-span-2 border-t border-border/60 pt-3">
+            <h4 className="mb-2 text-sm font-semibold">Bank account <span className="font-normal text-muted-foreground">(for the salary transfer file)</span></h4>
+            <div className="grid grid-cols-2 gap-3">
+              <input className={`${input} col-span-2`} placeholder="Account holder name (blank = same as employee)" value={f.bankAccountName} onChange={(e) => set('bankAccountName', e.target.value)} />
+              <input className={input} placeholder="Account number" value={f.bankAccountNo} onChange={(e) => set('bankAccountNo', e.target.value)} />
+              <input className={input} placeholder="IFSC (e.g. HDFC0001234)" maxLength={11} value={f.bankIfsc} onChange={(e) => set('bankIfsc', e.target.value.toUpperCase())} />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Stored account numbers are shown masked. Type a full number to replace one, or clear the box to remove it.
+              Anyone without valid details is listed as unpaid on the transfer file rather than exported as a bad row.
+            </p>
+          </div>
         </div>
         {err && <p className="mt-3 text-sm text-destructive">{err}</p>}
         <div className="mt-5 flex justify-end gap-2">

@@ -12,6 +12,7 @@ import { getTenantPolicy } from '../services/settings/tenant-settings.service.js
 import { generatePayslipPdf } from '../services/payroll/payslip-pdf.service.js';
 import { generateSalaryRegisterPdf } from '../services/payroll/salary-register-pdf.service.js';
 import { getCompanyProfile } from '../services/settings/tenant-settings.service.js';
+import { buildBankFile, bankFileCsv } from '../services/payroll/bank-file.service.js';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 import { recordAudit } from '../services/audit/audit.service.js';
@@ -227,6 +228,66 @@ export async function payrollRoutes(app: FastifyInstance) {
   app.get('/admin/payroll/payslips/:id/pdf', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN', 'HR_MANAGER') }, async (req, reply) => {
     const { id } = req.params as { id: string };
     return streamPayslipPdf(app, reply, id);
+  });
+
+  /**
+   * The bulk transfer file for a month's salaries.
+   *
+   * SUPER_ADMIN / PAYROLL_ADMIN only, and audited: this is the one response in
+   * the system that carries every employee's bank account number in clear, and
+   * downloading it is worth a line in the trail.
+   *
+   * `preview=1` returns the same split as JSON without the file, so the screen
+   * can show what will and will not be paid before anything is downloaded.
+   */
+  app.get('/admin/payroll/bank-file/:month/:year', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN') }, async (req, reply) => {
+    const month = Number((req.params as { month: string }).month);
+    const year = Number((req.params as { year: string }).year);
+    const preview = (req.query as { preview?: string }).preview === '1';
+
+    const payslips = await app.prisma.payslip.findMany({
+      where: { month, year, employee: { status: 'ACTIVE' } },
+      include: {
+        employee: {
+          select: { name: true, employeeCode: true, bankAccountName: true, bankAccountNo: true, bankIfsc: true },
+        },
+      },
+      orderBy: { employee: { employeeCode: 'asc' } },
+    });
+    if (payslips.length === 0) throw AppError.notFound('No payslips for that month — run payroll first');
+
+    const result = buildBankFile(
+      payslips.map((p) => ({
+        employeeCode: p.employee.employeeCode,
+        name: p.employee.name,
+        bankAccountName: p.employee.bankAccountName,
+        bankAccountNo: p.employee.bankAccountNo,
+        bankIfsc: p.employee.bankIfsc,
+        netSalary: p.netSalary,
+      })),
+    );
+
+    if (preview) {
+      // Account numbers are not needed to decide whether to download, so the
+      // preview does not carry them — only the count, the total and who is
+      // being left out and why.
+      return {
+        month,
+        year,
+        payable: result.rows.length,
+        total: result.total,
+        excluded: result.excluded,
+      };
+    }
+
+    await recordAudit(req, 'BANK_FILE_DOWNLOADED', 'Payroll', {
+      metadata: { month, year, payable: result.rows.length, total: result.total, excluded: result.excluded.length },
+    });
+
+    const csv = bankFileCsv(result, month, year);
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="salary-transfer-${year}-${String(month).padStart(2, '0')}.csv"`);
+    return reply.send(csv);
   });
 
   app.post('/admin/payroll/send-slips', { preHandler: requireRole('SUPER_ADMIN', 'PAYROLL_ADMIN') }, async () => {

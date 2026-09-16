@@ -58,14 +58,37 @@ const createEmployeeSchema = z.object({
   payrollBasis: z.enum(['MONTHLY', 'PRESENT_DAYS']).nullable().optional(),
   pfEnabled: z.boolean().optional(), // PF deduction applies (only some employees)
   esiEnabled: z.boolean().optional(),
+  // Where salary is sent. Empty string clears the field rather than storing "",
+  // so a mistyped account can be removed and the bank file excludes the person
+  // instead of failing the bank's whole upload on a malformed line.
+  bankAccountName: z.string().max(120).nullish().transform((v) => v?.trim() || null),
+  bankAccountNo: z.string().max(24).nullish().transform((v) => v?.replace(/[\s-]/g, '') || null),
+  bankIfsc: z.string().max(11).nullish().transform((v) => v?.toUpperCase().replace(/\s/g, '') || null),
   password: z.string().min(4).optional(), // employee's app login password (phone + password)
   status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(), // app-access control
 });
 
 /** Never return the password hash or plaintext to normal list clients. */
-function safeEmployee<T extends { passwordHash?: string | null }>(e: T) {
+/**
+ * The employee shape that leaves the API.
+ *
+ * Strips the password hash, and masks the bank account to its last four digits.
+ * This list is read by every admin role including BRANCH_MANAGER, and is
+ * fetched by half a dozen screens that only want names — there is no reason for
+ * a full account number to travel to any of them. The one place the real
+ * numbers are needed is the bank transfer file, which is PAYROLL_ADMIN-gated
+ * and audited on every download.
+ *
+ * The mask is what the edit form prefills, and the form sends the field back
+ * only when someone actually types over it, so a masked value can never be
+ * saved as if it were an account number.
+ */
+export const maskAccount = (n: string | null | undefined): string | null =>
+  !n ? null : n.length <= 4 ? '•'.repeat(n.length) : '•'.repeat(Math.min(n.length - 4, 8)) + n.slice(-4);
+
+function safeEmployee<T extends { passwordHash?: string | null; bankAccountNo?: string | null }>(e: T) {
   const { passwordHash: _h, ...rest } = e;
-  return rest;
+  return { ...rest, bankAccountNo: maskAccount(e.bankAccountNo) };
 }
 
 /** Minimal CSV parser (handles quoted fields with commas). Returns rows of cells. */
