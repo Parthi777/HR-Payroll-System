@@ -125,6 +125,61 @@ describe('the CSV itself', () => {
 });
 
 /**
+ * What only the owner may change about an employee.
+ *
+ * The route file admits HR_MANAGER and BRANCH_MANAGER so they can keep records
+ * tidy. By the owner's instruction, everything that decides what someone is
+ * paid — or whether they have an account at all — is SUPER_ADMIN only.
+ *
+ * payrollBasis, pfEnabled and esiEnabled are covered too. Each changes take-home
+ * pay as surely as the salary figure: moving someone to PRESENT_DAYS stops
+ * paying their weekly offs and approved leave, a cut that never touches
+ * `salary`. Without them the restriction would have a hole in the shape of its
+ * own intent.
+ */
+describe('owner-only employee fields', () => {
+  // Mirrors stripOwnerOnly in employee.routes.ts.
+  const OWNER_ONLY = ['salary', 'bankAccountName', 'bankAccountNo', 'bankIfsc', 'status', 'payrollBasis', 'pfEnabled', 'esiEnabled'] as const;
+  const strip = <T extends Record<string, unknown>>(data: T, role: string): T => {
+    if (role === 'SUPER_ADMIN') return data;
+    const out = { ...data };
+    for (const f of OWNER_ONLY) delete out[f];
+    return out;
+  };
+
+  const payload = {
+    name: 'Ravi', phone: '+919000000001', departmentId: 'd1', shiftId: 's1',
+    salary: 20000, bankAccountName: 'R K', bankAccountNo: '123456789012', bankIfsc: 'HDFC0001234',
+    status: 'INACTIVE', payrollBasis: 'PRESENT_DAYS', pfEnabled: true, esiEnabled: true,
+  };
+
+  it('SUPER_ADMIN may set all of them', () => {
+    expect(strip(payload, 'SUPER_ADMIN')).toEqual(payload);
+  });
+
+  it.each(['HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER'])('%s may set none of them', (role) => {
+    const out = strip(payload, role) as Record<string, unknown>;
+    for (const f of OWNER_ONLY) expect(out).not.toHaveProperty(f);
+  });
+
+  it('still saves what a manager IS allowed to change', () => {
+    expect(strip(payload, 'BRANCH_MANAGER')).toEqual({
+      name: 'Ravi', phone: '+919000000001', departmentId: 'd1', shiftId: 's1',
+    });
+  });
+
+  it('covers the pay-affecting fields that are not called salary', () => {
+    // The hole this closes: a pay cut delivered through the basis instead.
+    const out = strip({ payrollBasis: 'PRESENT_DAYS' }, 'HR_MANAGER');
+    expect(out).not.toHaveProperty('payrollBasis');
+  });
+
+  it('deactivation cannot be smuggled through the edit form', () => {
+    expect(strip({ status: 'INACTIVE' }, 'BRANCH_MANAGER')).not.toHaveProperty('status');
+  });
+});
+
+/**
  * Who may point a salary at a different account.
  *
  * This route file admits BRANCH_MANAGER, so without a narrower rule the person

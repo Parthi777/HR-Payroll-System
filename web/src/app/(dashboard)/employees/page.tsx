@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher, api, apiUpload } from '@/lib/api';
+import { can, OWNER_ONLY_ROLES } from '@/lib/permissions';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent } from '@/components/ui/card';
 import { PasswordInput } from '@/components/password-input';
@@ -51,6 +52,7 @@ const chipClass: Record<string, string> = {
 };
 
 export default function EmployeesPage() {
+  const isOwner = can(OWNER_ONLY_ROLES);
   const { data, error, isLoading, mutate } = useSWR<{ employees: EmployeeRow[] }>('/admin/employees', fetcher, { shouldRetryOnError: false });
   const employees = data?.employees ?? [];
   const [modal, setModal] = useState<{ mode: 'add' } | { mode: 'edit'; employee: EmployeeRow } | null>(null);
@@ -131,12 +133,12 @@ export default function EmployeesPage() {
       )}
 
       <PageHero title="Employees" subtitle={`${employees.length} staff · live from database`}>
-        <button onClick={() => setShowBulk(true)} className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium text-white ring-1 ring-white/25 hover:bg-white/25">
+        {isOwner && <button onClick={() => setShowBulk(true)} className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium text-white ring-1 ring-white/25 hover:bg-white/25">
           <Upload className="h-4 w-4" /> Bulk Upload
-        </button>
-        <button onClick={() => setModal({ mode: 'add' })} className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90">
+        </button>}
+        {isOwner && <button onClick={() => setModal({ mode: 'add' })} className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90">
           <UserPlus className="h-4 w-4" /> Add Employee
-        </button>
+        </button>}
       </PageHero>
 
       {showBulk && <BulkUploadModal onClose={() => setShowBulk(false)} onDone={() => mutate()} />}
@@ -186,15 +188,15 @@ export default function EmployeesPage() {
                   <span className={`chip ${chipClass[e.status] ?? 'chip-leave'}`}>{e.status}</span>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => resetPassword(e)} disabled={resetting === e.id} title="Issue a new app password" className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:opacity-50">
+                  {isOwner && <button onClick={() => resetPassword(e)} disabled={resetting === e.id} title="Issue a new app password" className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:opacity-50">
                     {resetting === e.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />} Password
-                  </button>
+                  </button>}
                   <button onClick={() => setModal({ mode: 'edit', employee: e })} className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground">
                     <Pencil className="h-3.5 w-3.5" /> Edit
                   </button>
-                  <button onClick={() => deactivate(e)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100" title="Deactivate">
+                  {isOwner && <button onClick={() => deactivate(e)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100" title="Deactivate">
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </button>}
                 </div>
                 <EnrollFaceButton employee={e} onEnrolled={() => mutate()} onDeleted={() => mutate()} />
               </CardContent>
@@ -215,6 +217,10 @@ export default function EmployeesPage() {
 }
 
 function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow | null; onClose: () => void; onSaved: () => void }) {
+  // Pay and account-lifecycle fields are the owner's. The server drops them
+  // whatever the browser sends; hiding them here just avoids showing a manager
+  // inputs that would silently fail to save.
+  const isOwner = can(OWNER_ONLY_ROLES);
   const { data: br } = useSWR<{ branches: Named[] }>('/admin/branches', fetcher, { shouldRetryOnError: false });
   const { data: dp } = useSWR<{ departments: Named[] }>('/admin/departments', fetcher, { shouldRetryOnError: false });
   const { data: dg } = useSWR<{ designations: Named[] }>('/admin/designations', fetcher, { shouldRetryOnError: false });
@@ -311,13 +317,13 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
           <input className={input} placeholder={editing ? 'Employee code' : `Auto: ${nc?.nextCode ?? '…'} (or type one)`} value={f.employeeCode} onChange={(e) => set('employeeCode', e.target.value)} disabled={editing} />
           <input className={input} placeholder="Phone * (+91…)" value={f.phone} onChange={(e) => set('phone', e.target.value)} />
           <input className={input} placeholder="Email" value={f.email} onChange={(e) => set('email', e.target.value)} />
-          <PasswordInput className={input} placeholder={editing ? 'New password (blank = keep)' : 'App login password *'} value={f.password} onChange={(v) => set('password', v)} />
-          <input className={input} type="number" placeholder="Salary (₹/mo) *" value={f.salary} onChange={(e) => set('salary', e.target.value)} />
-          <select className={input} value={f.payrollBasis} onChange={(e) => set('payrollBasis', e.target.value)}>
+          {isOwner && <PasswordInput className={input} placeholder={editing ? 'New password (blank = keep)' : 'App login password *'} value={f.password} onChange={(v) => set('password', v)} />}
+          {isOwner && <input className={input} type="number" placeholder="Salary (₹/mo) *" value={f.salary} onChange={(e) => set('salary', e.target.value)} />}
+          {isOwner && <select className={input} value={f.payrollBasis} onChange={(e) => set('payrollBasis', e.target.value)}>
             <option value="">Pay basis — dealer default</option>
             <option value="MONTHLY">Monthly — weekly offs and leave paid</option>
             <option value="PRESENT_DAYS">Present days — paid only for days worked</option>
-          </select>
+          </select>}
           <input className={input} type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} />
           <select className={input} value={f.branchId} onChange={(e) => set('branchId', e.target.value)}>
             <option value="">Branch *</option>
@@ -339,16 +345,16 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
             <option value="">Reporting manager (approvals) — none</option>
             {mg?.managers.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.role.replace('_', ' ')}</option>)}
           </select>
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
+          {isOwner && <label className="flex cursor-pointer items-center gap-2 text-sm">
             <input type="checkbox" checked={f.pfEnabled} onChange={(e) => setF((p) => ({ ...p, pfEnabled: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
             PF deduction applies
-          </label>
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
+          </label>}
+          {isOwner && <label className="flex cursor-pointer items-center gap-2 text-sm">
             <input type="checkbox" checked={f.esiEnabled} onChange={(e) => setF((p) => ({ ...p, esiEnabled: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
             ESI deduction applies
-          </label>
+          </label>}
 
-          <div className="col-span-2 border-t border-border/60 pt-3">
+          {isOwner && <div className="col-span-2 border-t border-border/60 pt-3">
             <h4 className="mb-2 text-sm font-semibold">Bank account <span className="font-normal text-muted-foreground">(for the salary transfer file)</span></h4>
             <div className="grid grid-cols-2 gap-3">
               <input className={`${input} col-span-2`} placeholder="Account holder name (blank = same as employee)" value={f.bankAccountName} onChange={(e) => set('bankAccountName', e.target.value)} />
@@ -359,7 +365,12 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
               Stored account numbers are shown masked. Type a full number to replace one, or clear the box to remove it.
               Anyone without valid details is listed as unpaid on the transfer file rather than exported as a bad row.
             </p>
-          </div>
+          </div>}
+          {!isOwner && (
+            <p className="col-span-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+              Salary, bank details, pay basis, PF/ESI and app access are changed by the owner (Super Admin) only.
+            </p>
+          )}
         </div>
         {err && <p className="mt-3 text-sm text-destructive">{err}</p>}
         <div className="mt-5 flex justify-end gap-2">

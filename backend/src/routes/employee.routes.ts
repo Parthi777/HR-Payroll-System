@@ -92,24 +92,45 @@ function safeEmployee<T extends { passwordHash?: string | null; bankAccountNo?: 
 }
 
 /**
- * Bank details decide where a salary lands, so they are not editable by
- * everyone who can edit an employee.
+ * What only the owner may change about an employee.
  *
- * This file's role hook admits BRANCH_MANAGER, which means the same person who
- * can correct a colleague's phone number could also point that colleague's pay
- * at an account of their choosing. Salary has had the same exposure since this
- * route was written and is left alone here deliberately — narrowing it is a
- * policy decision for the owner, not a silent change — but the bank fields are
- * new today and start off restricted rather than having to be clawed back.
+ * This file's role hook admits HR_MANAGER and BRANCH_MANAGER so they can keep
+ * records tidy — a phone number, a department, a shift. It used to admit them
+ * to everything, which meant the person who could correct a colleague's phone
+ * number could also raise that colleague's salary, point their pay at another
+ * account, or switch off their app access. By the owner's instruction, the
+ * fields that decide what someone is paid and whether they have an account are
+ * now SUPER_ADMIN only.
  *
- * Returns the payload with the three fields removed for anyone below
- * HR_MANAGER. Dropped quietly rather than refused: a branch manager editing a
- * phone number should not get a 403 over fields their form never showed them.
+ * `payrollBasis`, `pfEnabled` and `esiEnabled` are in this list although they
+ * were not named: each changes take-home pay as surely as the salary figure
+ * does. Moving someone from MONTHLY to PRESENT_DAYS stops paying their weekly
+ * offs and their approved leave — a pay cut that never touches `salary`.
+ * Leaving them open would have re-opened the hole under a different name.
  */
-function stripBankFields<T extends Record<string, unknown>>(data: T, role: string): T {
-  if (role === 'SUPER_ADMIN' || role === 'HR_MANAGER') return data;
-  const { bankAccountName: _n, bankAccountNo: _a, bankIfsc: _i, ...rest } = data;
-  return rest as T;
+const OWNER_ONLY_FIELDS = [
+  'salary',
+  'bankAccountName',
+  'bankAccountNo',
+  'bankIfsc',
+  'status',
+  'payrollBasis',
+  'pfEnabled',
+  'esiEnabled',
+] as const;
+
+/**
+ * Remove the owner-only fields for anyone who is not the owner.
+ *
+ * Dropped quietly rather than refused: a branch manager correcting a phone
+ * number should not meet a 403 over fields their form never offered them. What
+ * they are allowed to change still saves.
+ */
+function stripOwnerOnly<T extends Record<string, unknown>>(data: T, role: string): T {
+  if (role === 'SUPER_ADMIN') return data;
+  const out = { ...data };
+  for (const f of OWNER_ONLY_FIELDS) delete out[f];
+  return out;
 }
 
 /** Minimal CSV parser (handles quoted fields with commas). Returns rows of cells. */
@@ -162,9 +183,10 @@ export async function employeeRoutes(app: FastifyInstance) {
     return { managers };
   });
 
-  app.post('/', async (req) => {
+  // Creating an employee sets a salary, so it is the owner's to do.
+  app.post('/', { preHandler: requireRole('SUPER_ADMIN') }, async (req) => {
     const { password, ...parsed } = createEmployeeSchema.parse(req.body);
-    const rest = stripBankFields(parsed, req.user.role);
+    const rest = stripOwnerOnly(parsed, req.user.role);
     rest.phone = normalizePhone(rest.phone);
 
     // Auto-generate the code when the form leaves it blank.
@@ -212,7 +234,8 @@ export async function employeeRoutes(app: FastifyInstance) {
 
   // Bulk import from CSV: columns name,phone,salary,branch,department,designation,shift[,email][,password].
   // Missing password is auto-generated; branch/dept/desig/shift resolved by name.
-  app.post('/bulk-import', async (req) => {
+  // Bulk import creates employees with salaries and issues their passwords.
+  app.post('/bulk-import', { preHandler: requireRole('SUPER_ADMIN') }, async (req) => {
     const file = await req.file();
     if (!file) throw new AppError('Upload a CSV file', 400);
     const rows = parseCsv((await file.toBuffer()).toString('utf8'));
@@ -292,9 +315,15 @@ export async function employeeRoutes(app: FastifyInstance) {
   app.put('/:id', async (req) => {
     const { id } = req.params as { id: string };
     const { password, ...parsed } = createEmployeeSchema.partial().parse(req.body);
-    const rest = stripBankFields(parsed, req.user.role);
+    const rest = stripOwnerOnly(parsed, req.user.role);
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
-    const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
+    // Setting a password through the edit form is the same authority as the
+    // reset-password route, and is gated the same way.
+    const mayResetPassword = req.user.role === 'SUPER_ADMIN';
+    const data = {
+      ...rest,
+      ...(password && mayResetPassword ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
+    };
     const before = await app.prisma.employee.findUnique({ where: { id } });
     if (!before) throw AppError.notFound('Employee');
     const employee = await app.prisma.employee.update({ where: { id }, data });
@@ -329,7 +358,7 @@ export async function employeeRoutes(app: FastifyInstance) {
    * by looking the old one up — the same job, without a database full of
    * usable credentials.
    */
-  app.post('/:id/reset-password', async (req) => {
+  app.post('/:id/reset-password', { preHandler: requireRole('SUPER_ADMIN') }, async (req) => {
     const { id } = req.params as { id: string };
     const employee = await app.prisma.employee.findUnique({
       where: { id },
@@ -354,7 +383,9 @@ export async function employeeRoutes(app: FastifyInstance) {
     return { employee: { name: employee.name, employeeCode: employee.employeeCode, phone: employee.phone }, password };
   });
 
-  app.delete('/:id', async (req) => {
+  // Deactivation removes someone's app access and drops them from every
+  // report and payslip list — the owner's call, not a branch manager's.
+  app.delete('/:id', { preHandler: requireRole('SUPER_ADMIN') }, async (req) => {
     const { id } = req.params as { id: string };
     const employee = await app.prisma.employee.update({ where: { id }, data: { status: 'INACTIVE' } });
     await recordAudit(req, 'EMPLOYEE_DEACTIVATED', 'Employee', {

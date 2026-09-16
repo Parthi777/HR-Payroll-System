@@ -41,6 +41,16 @@ export const ROUTE_ROLES: Record<string, AdminRole[]> = {
   '/settings': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'],
 };
 
+/**
+ * Changing what someone is paid, or whether they have an account.
+ *
+ * Mirrors `stripOwnerOnly` and the route guards in employee.routes.ts. The
+ * server is the control — these fields are dropped there whatever the browser
+ * sends — and this exists so a manager is not shown inputs that will silently
+ * fail to save.
+ */
+export const OWNER_ONLY_ROLES: AdminRole[] = ['SUPER_ADMIN'];
+
 /** Claims actions, mirroring approveGuard / payGuard on the server. */
 export const APPROVE_ROLES: AdminRole[] = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN'];
 export const PAY_ROLES: AdminRole[] = ['SUPER_ADMIN', 'PAYROLL_ADMIN', 'CASHIER'];
