@@ -500,6 +500,22 @@ POST   /api/admin/shifts/assign            # Assign shift to employee(s)
 GET    /api/shifts/my-schedule             # Employee's schedule (7 days)
 ```
 
+### Holidays
+Paid days off, read by the payroll engine, the muster grid and every report via
+`monthHolidaySet()`. A date NOT on this list is an ordinary working day, so an
+empty calendar marks everyone absent on a public holiday and deducts the day.
+Stored as local midnight so `dayKey()` lines up with the day the payroll loop
+builds; one holiday per date per dealer (`@@unique([tenantId, date])` → 409).
+Sundays are weekly-offs already and do not need adding. Reads follow the master
+role set; writes are SUPER_ADMIN / HR_MANAGER, because adding a day pays
+everyone for not working. Changes apply to a month the next time it is run.
+```
+GET    /api/admin/holidays?year=          # Defaults to every year on record
+POST   /api/admin/holidays                # { name, date: "YYYY-MM-DD" }
+PUT    /api/admin/holidays/:id
+DELETE /api/admin/holidays/:id
+```
+
 ### Payroll
 ```
 POST   /api/admin/payroll/run              # Trigger payroll for month/year
@@ -990,7 +1006,7 @@ When working in this repo, Claude should:
 | Same employee multiple devices | Allowed. Each punch still needs a matching face inside the geofence, which is what stops someone else clocking you in. |
 | WhatsApp delivery failure | Retry 3 times via BullMQ, then the log row is marked FAILED. Without a queue there is one inline attempt, then FAILED. |
 | Payroll run mid-month | System allows partial month calculation (pro-rata) |
-| Public holidays | Holiday calendar configurable; auto-mark as holiday, not absent |
+| Public holidays | Holiday calendar set at Settings → Holiday Calendar; a listed day is a paid day off, not an absence. Unlisted = ordinary working day. |
 | Employee on approved leave | Auto-mark with leave type; don't send absent alert |
 
 ---

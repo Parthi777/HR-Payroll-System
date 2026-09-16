@@ -76,7 +76,10 @@ export type AuditAction =
   | 'DEPARTMENT_DELETED'
   | 'DESIGNATION_CREATED'
   | 'DESIGNATION_UPDATED'
-  | 'DESIGNATION_DELETED';
+  | 'DESIGNATION_DELETED'
+  | 'HOLIDAY_CREATED'
+  | 'HOLIDAY_UPDATED'
+  | 'HOLIDAY_DELETED';
 
 /** The kind of thing acted on. Used to filter the log by area. */
 export type AuditEntity =
@@ -91,6 +94,7 @@ export type AuditEntity =
   | 'Shift'
   | 'Department'
   | 'Designation'
+  | 'Holiday'
   | 'Company';
 
 interface AuditDetail {

@@ -275,6 +275,28 @@ const SHAPES: Record<string, Shape> = {
     detail: (m) => (m.renamedFrom ? `${text(m.renamedFrom)} → ${text(m.name)}` : text(m.name)),
   },
   DESIGNATION_DELETED: { title: 'Designation deleted', kind: 'config', tone: 'revoke', detail: (m) => text(m.name) },
+  HOLIDAY_CREATED: {
+    title: 'Holiday added',
+    kind: 'config',
+    tone: 'grant',
+    detail: (m) => `${text(m.name)} — ${text(m.date)}`,
+  },
+  HOLIDAY_UPDATED: {
+    title: 'Holiday changed',
+    kind: 'config',
+    tone: 'neutral',
+    detail: (m) => {
+      const name = m.renamedFrom ? `${text(m.renamedFrom)} → ${text(m.name)}` : text(m.name);
+      const date = m.movedFrom ? `${text(m.movedFrom)} → ${text(m.date)}` : text(m.date);
+      return `${name} — ${date}`;
+    },
+  },
+  HOLIDAY_DELETED: {
+    title: 'Holiday removed',
+    kind: 'config',
+    tone: 'revoke',
+    detail: (m) => `${text(m.name)} — ${text(m.date)}`,
+  },
 };
 
 /**

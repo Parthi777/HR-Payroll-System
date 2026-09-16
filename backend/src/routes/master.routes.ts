@@ -16,6 +16,43 @@ const branchSchema = z.object({
 });
 
 /**
+ * A public holiday, as a calendar date rather than an instant.
+ *
+ * The date is taken apart and rebuilt as local midnight instead of being
+ * coerced by Zod. `dayKey()` — what the payroll engine, the muster grid and
+ * every report use to line a row up against a day — reads a Date with
+ * getFullYear/getMonth/getDate, i.e. in the server's own timezone. Coercing
+ * "2026-08-15" would give UTC midnight, which is the 14th anywhere behind UTC,
+ * and the holiday would land on the wrong day. Building it the same way the
+ * payroll loop builds its days (`new Date(y, m - 1, d)`) makes the two match by
+ * construction in any timezone.
+ */
+const holidaySchema = z.object({
+  name: z.string().min(1).max(80),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD')
+    .transform((v) => {
+      const [y, m, d] = v.split('-').map(Number);
+      const date = new Date(y, m - 1, d);
+      if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) {
+        throw new AppError(`${v} is not a real date`, 400);
+      }
+      return date;
+    }),
+});
+
+/** "2026-08-15" from a stored holiday — the same calendar day the grid shows. */
+function holidayOut(h: { id: string; name: string; date: Date }) {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return {
+    id: h.id,
+    name: h.name,
+    date: `${h.date.getFullYear()}-${p(h.date.getMonth() + 1)}-${p(h.date.getDate())}`,
+  };
+}
+
+/**
  * A dealer's own settings. The company block is what prints on payslips; the
  * policy block used to be deployment-wide environment variables and is now
  * each dealer's to set — a dealer in another state needs its own timezone and
@@ -208,4 +245,88 @@ export async function masterRoutes(app: FastifyInstance) {
     await recordAudit(req, 'DESIGNATION_DELETED', 'Designation', { entityId: id, metadata: { name: doomed?.name ?? null } });
     return { id, deleted: true };
   });
+
+  // Holidays
+  //
+  // The Holiday table has been read by the payroll engine, the muster grid and
+  // every report since they were written, and until now nothing could write to
+  // it — so the calendar was permanently empty and a declared holiday was
+  // counted as an ordinary working day. Staff who correctly stayed home were
+  // marked ABSENT and docked for it. These four routes are what CLAUDE.md has
+  // described as "Holiday calendar management" from the start.
+  //
+  // Writes are SUPER_ADMIN / HR_MANAGER, not the file-wide role set: adding a
+  // day here pays everyone for not working, and removing one takes that back.
+  // A branch manager can read the calendar but not set it.
+  app.get('/admin/holidays', async (req) => {
+    const { year } = z.object({ year: z.coerce.number().int().min(2000).max(2100).optional() }).parse(req.query);
+    const where = year
+      ? { date: { gte: new Date(year, 0, 1), lt: new Date(year + 1, 0, 1) } }
+      : {};
+    const holidays = await app.prisma.holiday.findMany({ where, orderBy: { date: 'asc' } });
+    return { holidays: holidays.map(holidayOut) };
+  });
+
+  app.post('/admin/holidays', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
+    const data = holidaySchema.parse(req.body);
+    const holiday = await createOrFail(() =>
+      app.prisma.holiday.create({ data: { ...data, tenantId: requireTenantId() } }),
+    );
+    await recordAudit(req, 'HOLIDAY_CREATED', 'Holiday', {
+      entityId: holiday.id,
+      metadata: holidayOut(holiday),
+    });
+    return { holiday: holidayOut(holiday) };
+  });
+
+  app.put('/admin/holidays/:id', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
+    const { id } = req.params as { id: string };
+    const data = holidaySchema.partial().parse(req.body);
+    const before = await app.prisma.holiday.findUnique({ where: { id } });
+    if (!before) throw AppError.notFound('Holiday');
+    const holiday = await createOrFail(() => app.prisma.holiday.update({ where: { id }, data }));
+    // `renamedFrom` / `movedFrom` rather than `changed()` here: the flat `name`
+    // and `date` are what the activity reader prints, and a {from,to} object
+    // under those same keys would overwrite them with something it renders as
+    // blank. Departments use the same shape for the same reason.
+    const was = holidayOut(before);
+    const now = holidayOut(holiday);
+    await recordAudit(req, 'HOLIDAY_UPDATED', 'Holiday', {
+      entityId: holiday.id,
+      metadata: {
+        ...now,
+        ...(was.name !== now.name ? { renamedFrom: was.name } : {}),
+        ...(was.date !== now.date ? { movedFrom: was.date } : {}),
+      },
+    });
+    return { holiday: holidayOut(holiday) };
+  });
+
+  app.delete('/admin/holidays/:id', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
+    const { id } = req.params as { id: string };
+    // Named before it is gone, so the trail still says which day was removed.
+    const doomed = await app.prisma.holiday.findUnique({ where: { id } });
+    if (!doomed) throw AppError.notFound('Holiday');
+    await app.prisma.holiday.delete({ where: { id } });
+    await recordAudit(req, 'HOLIDAY_DELETED', 'Holiday', { entityId: id, metadata: holidayOut(doomed) });
+    return { id, deleted: true };
+  });
+}
+
+/**
+ * Turn the unique-constraint violation into the sentence that explains it.
+ *
+ * `@@unique([tenantId, date])` means one holiday per calendar day per dealer.
+ * Raw, that surfaces as Prisma's P2002 and a 500; the person adding Independence
+ * Day twice should be told it is already there.
+ */
+async function createOrFail<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2002') {
+      throw new AppError('A holiday is already set for that date.', 409);
+    }
+    throw err;
+  }
 }
