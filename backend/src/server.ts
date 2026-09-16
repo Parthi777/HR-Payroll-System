@@ -59,7 +59,18 @@ async function buildServer() {
   // which is the right default while there is no domain to key on but far too
   // open once there is one. Unset APP_BASE_DOMAIN keeps the old behaviour, so
   // this tightens by itself the moment the domain is configured.
-  await app.register(cors, { origin: corsOrigin(), credentials: true });
+  // `methods` is stated rather than left to the plugin's default. @fastify/cors
+  // 9 defaulted to GET,HEAD,PUT,PATCH,POST,DELETE; 11 narrowed that default to
+  // GET,HEAD,POST, so the Fastify 5 upgrade silently stopped the browser from
+  // sending every PUT, PATCH and DELETE the admin web app makes — approvals,
+  // edits and deletions all failed the preflight and surfaced as "Failed to
+  // fetch". Nothing reached the server, so there was no error to find in a log.
+  // Naming the verbs here means a future bump cannot move them again.
+  await app.register(cors, {
+    origin: corsOrigin(),
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  });
   await app.register(jwt, { secret: env.JWT_SECRET });
   // Refresh tokens get their own secret, reachable as `app.jwt.refresh`.
   // JWT_REFRESH_SECRET has been required by config/env.ts since the beginning
