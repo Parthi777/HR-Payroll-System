@@ -91,6 +91,27 @@ function safeEmployee<T extends { passwordHash?: string | null; bankAccountNo?: 
   return { ...rest, bankAccountNo: maskAccount(e.bankAccountNo) };
 }
 
+/**
+ * Bank details decide where a salary lands, so they are not editable by
+ * everyone who can edit an employee.
+ *
+ * This file's role hook admits BRANCH_MANAGER, which means the same person who
+ * can correct a colleague's phone number could also point that colleague's pay
+ * at an account of their choosing. Salary has had the same exposure since this
+ * route was written and is left alone here deliberately — narrowing it is a
+ * policy decision for the owner, not a silent change — but the bank fields are
+ * new today and start off restricted rather than having to be clawed back.
+ *
+ * Returns the payload with the three fields removed for anyone below
+ * HR_MANAGER. Dropped quietly rather than refused: a branch manager editing a
+ * phone number should not get a 403 over fields their form never showed them.
+ */
+function stripBankFields<T extends Record<string, unknown>>(data: T, role: string): T {
+  if (role === 'SUPER_ADMIN' || role === 'HR_MANAGER') return data;
+  const { bankAccountName: _n, bankAccountNo: _a, bankIfsc: _i, ...rest } = data;
+  return rest as T;
+}
+
 /** Minimal CSV parser (handles quoted fields with commas). Returns rows of cells. */
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -142,7 +163,8 @@ export async function employeeRoutes(app: FastifyInstance) {
   });
 
   app.post('/', async (req) => {
-    const { password, ...rest } = createEmployeeSchema.parse(req.body);
+    const { password, ...parsed } = createEmployeeSchema.parse(req.body);
+    const rest = stripBankFields(parsed, req.user.role);
     rest.phone = normalizePhone(rest.phone);
 
     // Auto-generate the code when the form leaves it blank.
@@ -269,7 +291,8 @@ export async function employeeRoutes(app: FastifyInstance) {
 
   app.put('/:id', async (req) => {
     const { id } = req.params as { id: string };
-    const { password, ...rest } = createEmployeeSchema.partial().parse(req.body);
+    const { password, ...parsed } = createEmployeeSchema.partial().parse(req.body);
+    const rest = stripBankFields(parsed, req.user.role);
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
     const data = { ...rest, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) };
     const before = await app.prisma.employee.findUnique({ where: { id } });

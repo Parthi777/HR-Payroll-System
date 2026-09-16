@@ -123,3 +123,33 @@ describe('the CSV itself', () => {
     expect(lines[1]).toContain('"18500.00"');
   });
 });
+
+/**
+ * Who may point a salary at a different account.
+ *
+ * This route file admits BRANCH_MANAGER, so without a narrower rule the person
+ * who can fix a colleague's phone number could also redirect their pay. These
+ * pin the filter itself; the route applies it to both create and update.
+ */
+describe('bank details are not editable by every admin', () => {
+  // Mirrors stripBankFields in employee.routes.ts.
+  const strip = <T extends Record<string, unknown>>(data: T, role: string): T => {
+    if (role === 'SUPER_ADMIN' || role === 'HR_MANAGER') return data;
+    const { bankAccountName: _n, bankAccountNo: _a, bankIfsc: _i, ...rest } = data;
+    return rest as T;
+  };
+  const payload = { name: 'Ravi', salary: 20000, bankAccountName: 'R K', bankAccountNo: '123456789012', bankIfsc: 'HDFC0001234' };
+
+  it.each(['SUPER_ADMIN', 'HR_MANAGER'])('%s may set them', (role) => {
+    expect(strip(payload, role)).toHaveProperty('bankAccountNo');
+  });
+
+  it.each(['BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER'])('%s may not', (role) => {
+    const out = strip(payload, role);
+    expect(out).not.toHaveProperty('bankAccountNo');
+    expect(out).not.toHaveProperty('bankIfsc');
+    expect(out).not.toHaveProperty('bankAccountName');
+    // The rest of their edit still goes through — this drops fields, not requests.
+    expect(out).toMatchObject({ name: 'Ravi', salary: 20000 });
+  });
+});
