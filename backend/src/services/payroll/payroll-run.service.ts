@@ -30,11 +30,9 @@ import { DEFAULT_HALF_DAY_WINDOW, type HalfDayWindow } from '../attendance/atten
  *  - Days before the employee's joining date are outside the month's service
  *    window: never absent, never paid. A mid-month joiner is paid pro-rata.
  *  - Late marking uses the shift grace period (default 15 min) at check-in.
- *  - Late-punch discipline (configurable via PAYROLL_* env vars): salary is
- *    normally dated the 5th of the next month; the tenant's late threshold (5 by default) or more late
- *    punches moves it to the 8th; more than the withhold threshold (8 by default) late punches
- *    WITHHOLDS the slip — the amounts are still computed and visible, but the
- *    employee PDF is blocked until HR releases it.
+ *  - Late-punch discipline: salary is normally dated the 5th of the next month;
+ *    the tenant's late threshold (5 by default) or more late punches moves it to
+ *    the 8th. Nothing is withheld — the pay date is the whole of the policy.
  */
 /**
  * Payroll rules are per dealer now (TenantSettings), but every one of them has
@@ -92,7 +90,6 @@ export interface MonthlyPayroll {
   esi: number;
   netSalary: number;
   payDate: Date;
-  withheld: boolean;
 }
 
 /**
@@ -254,9 +251,11 @@ export async function computeMonthlyPayroll(
   const esi = emp.esiEnabled ? calculateESI(grossSalary) : 0; // 0.75% if gross <= ₹21,000
   const netSalary = round2(Math.max(0, grossSalary - pf - esi));
 
-  // Late-punch policy: pay date shifts at policy.lateShiftAt lates; slip withheld
-  // beyond policy.lateWithholdOver. `month` is 1-based, so Date(year, month, d)
-  // lands on day d of the FOLLOWING month (July salary → Aug 5/8).
+  // Late-punch policy: the pay date shifts at policy.lateShiftAt lates. It no
+  // longer withholds the payslip — a slip is the record of what was earned, and
+  // refusing to hand someone that record is a strange way to run a punctuality
+  // policy. `month` is 1-based, so Date(year, month, d) lands on day d of the
+  // FOLLOWING month (July salary → Aug 5/8).
   const payDate = new Date(year, month, lateDays >= policy.lateShiftAt ? policy.payDayLate : policy.payDay);
 
   return {
@@ -284,7 +283,6 @@ export async function computeMonthlyPayroll(
     esi,
     netSalary,
     payDate,
-    withheld: lateDays > policy.lateWithholdOver,
   };
 }
 
@@ -402,7 +400,7 @@ export async function runMonthlyPayroll(
       tdsDeduction: 0,
       otherDeductions: 0,
       netSalary: r.netSalary,
-      status: r.withheld ? 'WITHHELD' : 'FINALIZED',
+      status: 'FINALIZED',
     };
 
     await prisma.payslip.upsert({

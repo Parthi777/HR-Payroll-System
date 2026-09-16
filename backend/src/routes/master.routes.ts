@@ -46,7 +46,6 @@ const companySchema = z.object({
   clPerYear: z.number().int().min(0).max(60).optional(),
   otHoursPerDay: z.number().int().min(1).max(24).optional(),
   payrollLateShiftAt: z.number().int().min(0).max(31).optional(),
-  payrollLateWithholdOver: z.number().int().min(0).max(31).optional(),
   payrollPayDay: z.number().int().min(1).max(28).optional(),
   payrollPayDayLate: z.number().int().min(1).max(28).optional(),
 
@@ -81,7 +80,6 @@ export async function masterRoutes(app: FastifyInstance) {
         clPerYear: d.payroll.clPerYear,
         otHoursPerDay: d.payroll.otHoursPerDay,
         payrollLateShiftAt: d.payroll.lateShiftAt,
-        payrollLateWithholdOver: d.payroll.lateWithholdOver,
         payrollPayDay: d.payroll.payDay,
         payrollPayDayLate: d.payroll.payDayLate,
         faceMatchThreshold: d.resources.faceMatchThreshold,

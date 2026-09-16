@@ -173,7 +173,6 @@ export default function PayrollPage() {
                     <tr key={p.id} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
                       <td className="px-6 py-4 font-medium">
                         {p.employee?.name ?? '—'}
-                        {p.status === 'WITHHELD' && <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">WITHHELD</span>}
                       </td>
                       <td className="px-6 py-4">{p.presentDays}d</td>
                       <td className="px-6 py-4">

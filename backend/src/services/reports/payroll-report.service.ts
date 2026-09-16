@@ -34,7 +34,6 @@ export interface PayrollReportRow {
   otSalary: number; // OT pay + Sunday-duty pay
   payable: number; // net salary
   lateDays: number;
-  withheld: boolean;
 }
 
 export interface PayrollReport {
@@ -110,7 +109,6 @@ export async function buildPayrollReport(
       otSalary: round2(r.otPay + r.sundayPay),
       payable: r.netSalary,
       lateDays: r.lateDays,
-      withheld: r.withheld,
     });
   }
 

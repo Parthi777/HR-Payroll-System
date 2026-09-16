@@ -112,14 +112,7 @@ export async function payrollRoutes(app: FastifyInstance) {
     if (!payslip) throw AppError.notFound('Payslip');
     if (req.user.role === 'EMPLOYEE' && payslip.employeeId !== req.user.sub) {
       throw AppError.forbidden('Not your payslip');
-    }
-    if (payslip.status === 'WITHHELD') {
-      throw new AppError(
-        `Salary slip withheld — ${payslip.lateDays} late punches this month. Please contact HR.`,
-        403,
-      );
-    }
-    return streamPayslipPdf(app, reply, id);
+    }    return streamPayslipPdf(app, reply, id);
   });
 
   // Admin: download any employee's payslip PDF.

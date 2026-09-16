@@ -41,7 +41,6 @@ const COLS: Col[] = [
   { key: 'esiDeduction', label: 'ESI', w: 54, align: 'right' },
   { key: 'netSalary', label: 'Net (Rs.)', w: 78, align: 'right' },
   { key: 'payDate', label: 'Pay Date', w: 56 },
-  { key: 'status', label: '', w: 32 },
 ];
 
 /** Landscape A4 salary register: one row per employee + totals, for accounts/bank use. */
@@ -82,7 +81,6 @@ export function generateSalaryRegisterPdf(month: number, year: number, rows: Reg
         case 'emp': return `${r.employeeCode}  ${r.name}`;
         case 'extra': return rs(r.otPay + r.sundayPay);
         case 'payDate': return fmtDate(r.payDate);
-        case 'status': return r.status === 'WITHHELD' ? 'WH*' : '';
         case 'otHours': return r.otHours ? String(r.otHours) : '-';
         case 'lateDays': return r.lateDays ? String(r.lateDays) : '-';
         case 'presentDays': return String(r.presentDays);
@@ -96,7 +94,7 @@ export function generateSalaryRegisterPdf(month: number, year: number, rows: Reg
         y = drawHeader();
       }
       if (i % 2 === 1) doc.rect(left, y, COLS.reduce((s, c) => s + c.w, 0), rowH).fill('#f3f5fb');
-      doc.fillColor(r.status === 'WITHHELD' ? '#b91c1c' : '#1c1b2e').fontSize(7.5);
+      doc.fillColor('#1c1b2e').fontSize(7.5);
       let x = left;
       for (const c of COLS) {
         doc.text(cell(r, c.key), x + 3, y + 4, { width: c.w - 6, align: c.align ?? 'left', lineBreak: false });
@@ -124,8 +122,6 @@ export function generateSalaryRegisterPdf(month: number, year: number, rows: Reg
       x += c.w;
     }
     y += rowH + 12;
-    doc.font('Helvetica').fontSize(7).fillColor('#777')
-      .text('* WH = payslip withheld under the late-punch policy (amounts computed, payment held — contact HR).', left, y);
 
     doc.end();
   });

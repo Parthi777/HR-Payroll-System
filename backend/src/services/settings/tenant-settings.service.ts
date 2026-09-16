@@ -31,7 +31,6 @@ export interface PayrollPolicy {
   clPerYear: number;
   otHoursPerDay: number;
   lateShiftAt: number;
-  lateWithholdOver: number;
   payDay: number;
   payDayLate: number;
 }
@@ -83,7 +82,6 @@ export function defaultPolicy(): TenantPolicy {
       clPerYear: 12,
       otHoursPerDay: 10,
       lateShiftAt: Number(process.env.PAYROLL_LATE_SHIFT_AT ?? 5),
-      lateWithholdOver: Number(process.env.PAYROLL_LATE_WITHHOLD_OVER ?? 8),
       payDay: Number(process.env.PAYROLL_PAY_DAY ?? 5),
       payDayLate: Number(process.env.PAYROLL_PAY_DAY_LATE ?? 8),
     },
@@ -105,7 +103,7 @@ type SettingsRow = {
   lateRequiresApproval: boolean; openPunchLookbackDays: number;
   manualPunchLatest: string;
   monthDivisor: number; clPerYear: number; otHoursPerDay: number;
-  payrollLateShiftAt: number; payrollLateWithholdOver: number;
+  payrollLateShiftAt: number;
   payrollPayDay: number; payrollPayDayLate: number;
   faceMatchThreshold: number; rekognitionCollectionId: string | null; s3Prefix: string;
   driveParentFolderId: string | null; driveShareWith: string | null;
@@ -131,7 +129,6 @@ function toPolicy(row: SettingsRow): TenantPolicy {
       clPerYear: row.clPerYear,
       otHoursPerDay: row.otHoursPerDay,
       lateShiftAt: row.payrollLateShiftAt,
-      lateWithholdOver: row.payrollLateWithholdOver,
       payDay: row.payrollPayDay,
       payDayLate: row.payrollPayDayLate,
     },

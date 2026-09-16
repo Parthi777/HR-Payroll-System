@@ -13,7 +13,7 @@
 //   LeaveStatus     : PENDING | APPROVED | REJECTED | CANCELLED
 //   ClaimType       : expense-head list — see services/claim/claim-types.ts
 //   ClaimStatus     : PENDING | APPROVED | REJECTED | NEEDS_CLARIFICATION | PAID
-//   PayslipStatus   : DRAFT | FINALIZED | WITHHELD | SENT | PAID
+//   PayslipStatus   : DRAFT | FINALIZED | SENT | PAID
 //   WAStatus        : QUEUED | SENT | DELIVERED | READ | FAILED
 //   AdminRole       : SUPER_ADMIN | HR_MANAGER | BRANCH_MANAGER | PAYROLL_ADMIN | CASHIER
 //   TenantStatus    : ACTIVE | SUSPENDED
@@ -508,7 +508,6 @@ model TenantSettings {
   clPerYear               Int @default(12) // paid casual leave before it becomes LOP
   otHoursPerDay           Int @default(10) // OT hours that add up to one day's pay
   payrollLateShiftAt      Int @default(5) // late punches that push the pay date out
-  payrollLateWithholdOver Int @default(8) // late punches that withhold the slip
   payrollPayDay           Int @default(5) // normal pay date, day of the next month
   payrollPayDayLate       Int @default(8) // shifted pay date
 

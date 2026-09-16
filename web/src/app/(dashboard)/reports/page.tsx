@@ -50,7 +50,7 @@ interface PayrollRow {
   absentDays: number; pendingDays: number;
   clDays: number; leaveDeduction: number; otHours: number; sundayDays: number;
   salary: number; perDaySalary: number; otSalary: number; payable: number;
-  lateDays: number; withheld: boolean;
+  lateDays: number;
 }
 interface PayrollReport {
   label: string;
@@ -397,7 +397,6 @@ function MonthlyReport({ month, year, fq }: { month: number; year: number; fq: s
               <td className={td}>{r.otHours ? `${r.otHours}h` : '—'}</td>
               <td className={td}>
                 {money(r.netSalary)}
-                {r.payslipStatus === 'WITHHELD' && <span className="ml-1 rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-700">WH</span>}
               </td>
             </tr>
           ))}
@@ -490,7 +489,6 @@ function PayrollReportTab({ month, year, fq }: { month: number; year: number; fq
             <tr key={r.employeeCode} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
               <td className={`${td} font-medium`}>
                 {r.name} <span className="text-xs text-muted-foreground">{r.employeeCode}</span>
-                {r.withheld && <span className="ml-1 rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-700">WH</span>}
               </td>
               <td className={`${td} text-muted-foreground`}>{r.branch}</td>
               <td className={`${td} text-muted-foreground`}>{r.designation}</td>
@@ -678,7 +676,7 @@ function LateReport({ month, year, fq }: { month: number; year: number; fq: stri
             <td className={`${td} text-muted-foreground`}>{r.designation}</td>
             <td className={td}>
               <span className={r.count > 8 ? 'font-bold text-rose-600' : r.count >= 5 ? 'font-semibold text-amber-600' : ''}>{r.count}</span>
-              {r.count >= 5 && <span className="ml-1 text-[10px] text-muted-foreground">{r.count > 8 ? '(slip withheld)' : '(pay date → 8th)'}</span>}
+              {r.count >= 5 && <span className="ml-1 text-[10px] text-muted-foreground">(pay date → 8th)</span>}
             </td>
             <td className={`${td} text-xs text-muted-foreground`}>
               {r.dates.map((d, i) => `${d.slice(8)}${r.checkIns[i] ? ` (${r.checkIns[i]})` : ''}`).join(', ')}

@@ -288,9 +288,6 @@ export async function handleInbound(
           orderBy: [{ year: 'desc' }, { month: 'desc' }],
         });
         if (!slip) return `${name}: no payslip has been issued yet.`;
-        if (slip.status === 'WITHHELD') {
-          return `${name}: your ${slip.month}/${slip.year} payslip is on hold. Please contact HR.`;
-        }
         // The PDF is served over an authenticated route, so it is not attached
         // to a message that arrives with no sign-in behind it.
         return (

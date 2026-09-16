@@ -214,9 +214,6 @@ export async function payrollReportXlsx(report: PayrollReport): Promise<Buffer> 
       if (col?.numeric) cell.alignment = { horizontal: 'right' };
       cell.border = { bottom: { style: 'hair', color: { argb: 'FFDDDDDD' } } };
     });
-    if (r.withheld) {
-      row.font = { color: { argb: 'FFB91C1C' } };
-    }
   }
 
   const t = report.totals;
@@ -300,7 +297,7 @@ export function payrollReportPdf(report: PayrollReport): Promise<Buffer> {
         y = drawHeader();
       }
       if (i % 2 === 1) doc.rect(left, y, tableW, rowH).fill('#f3f5fb');
-      doc.fillColor(r.withheld ? '#b91c1c' : INK).font('Helvetica').fontSize(7);
+      doc.fillColor(INK).font('Helvetica').fontSize(7);
       let x = left;
       for (const c of cols) {
         doc.text(c.get(r), x + 2, y + 4, { width: c.w - 4, align: c.align ?? 'left', lineBreak: false });
@@ -336,8 +333,7 @@ export function payrollReportPdf(report: PayrollReport): Promise<Buffer> {
       'Served = days of the month the employee was on the rolls (a mid-month joiner is paid pro-rata; days before joining are neither paid nor absent). ' +
         'Absent days include the unworked half of a half day (e.g. 2 absences + 1 half day = 2.5) and Held days. ' +
         'Held = punches awaiting approval — unpaid until signed off, then re-run payroll to pay them. ' +
-        'Sundays are paid weekly-offs; Sunday duty pays one extra full day, included in OT Salary. ' +
-        'Red rows = payslip withheld under the late-punch policy.',
+        'Sundays are paid weekly-offs; Sunday duty pays one extra full day, included in OT Salary.',
       left,
       y,
       { width: tableW },

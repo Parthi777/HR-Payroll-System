@@ -214,7 +214,7 @@ describe('payroll policy is per dealer', () => {
 
     const byDaysInMonth = await computeMonthlyPayroll(
       fakePrisma(fullMonth()), EMPLOYEE, MONTH, YEAR, new Set(),
-      { monthDivisor: 31, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, lateWithholdOver: 8, payDay: 5, payDayLate: 8 },
+      { monthDivisor: 31, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, payDay: 5, payDayLate: 8 },
     );
     // 9000 / 31 — a dealer that pays by the real length of the month.
     // The engine rounds to paise, so compare at 2 decimal places.
@@ -256,7 +256,7 @@ describe('payroll policy is per dealer', () => {
     ];
     const r = await computeMonthlyPayroll(
       fakePrisma(punches), EMPLOYEE, MONTH, YEAR, new Set(),
-      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, lateWithholdOver: 8, payDay: 5, payDayLate: 8 },
+      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, payDay: 5, payDayLate: 8 },
     );
     expect(r.lateDays).toBe(2);
     expect(r.payDate?.getDate()).toBe(5);
@@ -266,11 +266,11 @@ describe('payroll policy is per dealer', () => {
     const lates = fullMonth().map((p, i) => (i < 6 ? { ...p, in: '11:00' } : p));
     const strict = await computeMonthlyPayroll(
       fakePrisma(lates), EMPLOYEE, MONTH, YEAR, new Set(),
-      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, lateWithholdOver: 8, payDay: 5, payDayLate: 8 },
+      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, payDay: 5, payDayLate: 8 },
     );
     const lenient = await computeMonthlyPayroll(
       fakePrisma(lates), EMPLOYEE, MONTH, YEAR, new Set(),
-      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 99, lateWithholdOver: 99, payDay: 5, payDayLate: 8 },
+      { monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 99, payDay: 5, payDayLate: 8 },
     );
     // Same punches, different dealer rules → a different pay date.
     expect(strict.payDate?.getDate()).toBe(8);
