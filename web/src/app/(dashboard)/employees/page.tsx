@@ -33,6 +33,7 @@ interface EmployeeRow {
   shiftId: string;
   joiningDate: string;
   reportingManagerId?: string | null;
+  payrollBasis?: string | null;
   pfEnabled?: boolean;
   esiEnabled?: boolean;
   branch?: { name: string } | null;
@@ -232,6 +233,8 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
     designationId: employee?.designationId ?? '',
     shiftId: employee?.shiftId ?? '',
     reportingManagerId: employee?.reportingManagerId ?? '',
+    // '' means: inherit whatever the dealer's default is.
+    payrollBasis: employee?.payrollBasis ?? '',
     pfEnabled: employee?.pfEnabled ?? false,
     esiEnabled: employee?.esiEnabled ?? false,
   });
@@ -263,6 +266,8 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
         password: f.password || undefined,
         salary: Number(f.salary),
         reportingManagerId: f.reportingManagerId || null,
+        // Blank → null, so the employee follows the dealer's default.
+        payrollBasis: f.payrollBasis || null,
       });
       if (editing) await api(`/admin/employees/${employee!.id}`, { method: 'PUT', body });
       else await api('/admin/employees', { method: 'POST', body });
@@ -290,6 +295,11 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
           <input className={input} placeholder="Email" value={f.email} onChange={(e) => set('email', e.target.value)} />
           <PasswordInput className={input} placeholder={editing ? 'New password (blank = keep)' : 'App login password *'} value={f.password} onChange={(v) => set('password', v)} />
           <input className={input} type="number" placeholder="Salary (₹/mo) *" value={f.salary} onChange={(e) => set('salary', e.target.value)} />
+          <select className={input} value={f.payrollBasis} onChange={(e) => set('payrollBasis', e.target.value)}>
+            <option value="">Pay basis — dealer default</option>
+            <option value="MONTHLY">Monthly — weekly offs and leave paid</option>
+            <option value="PRESENT_DAYS">Present days — paid only for days worked</option>
+          </select>
           <input className={input} type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} />
           <select className={input} value={f.branchId} onChange={(e) => set('branchId', e.target.value)}>
             <option value="">Branch *</option>

@@ -25,8 +25,13 @@ export interface AttendancePolicy {
   manualPunchLatest: string;
 }
 
+/** How pay is arrived at. See CLAUDE.md "Payroll Calculation Engine". */
+export type PayrollBasis = 'MONTHLY' | 'PRESENT_DAYS';
+
 /** Payroll rules. See CLAUDE.md "Payroll Calculation Engine" for the meaning. */
 export interface PayrollPolicy {
+  /** Basis an employee gets when their own is not set. */
+  defaultPayrollBasis: PayrollBasis;
   monthDivisor: number;
   clPerYear: number;
   otHoursPerDay: number;
@@ -78,6 +83,7 @@ export function defaultPolicy(): TenantPolicy {
       manualPunchLatest: process.env.MANUAL_PUNCH_LATEST ?? '20:00',
     },
     payroll: {
+      defaultPayrollBasis: 'MONTHLY',
       monthDivisor: 30,
       clPerYear: 12,
       otHoursPerDay: 10,
@@ -102,6 +108,7 @@ type SettingsRow = {
   timezone: string; halfDayWindowStart: string; halfDayWindowEnd: string;
   lateRequiresApproval: boolean; openPunchLookbackDays: number;
   manualPunchLatest: string;
+  defaultPayrollBasis: string;
   monthDivisor: number; clPerYear: number; otHoursPerDay: number;
   payrollLateShiftAt: number;
   payrollPayDay: number; payrollPayDayLate: number;
@@ -125,6 +132,7 @@ function toPolicy(row: SettingsRow): TenantPolicy {
       manualPunchLatest: row.manualPunchLatest,
     },
     payroll: {
+      defaultPayrollBasis: row.defaultPayrollBasis === 'PRESENT_DAYS' ? 'PRESENT_DAYS' : 'MONTHLY',
       monthDivisor: row.monthDivisor,
       clPerYear: row.clPerYear,
       otHoursPerDay: row.otHoursPerDay,

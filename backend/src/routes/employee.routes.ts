@@ -53,6 +53,9 @@ const createEmployeeSchema = z.object({
   joiningDate: z.coerce.date(),
   salary: z.number().positive(),
   reportingManagerId: z.string().nullable().optional(), // AdminUser id — approvals route to this manager
+  // How this person is paid. Omitted or null inherits the dealer's default, so
+  // existing callers keep working and nobody's basis changes by accident.
+  payrollBasis: z.enum(['MONTHLY', 'PRESENT_DAYS']).nullable().optional(),
   pfEnabled: z.boolean().optional(), // PF deduction applies (only some employees)
   esiEnabled: z.boolean().optional(),
   password: z.string().min(4).optional(), // employee's app login password (phone + password)

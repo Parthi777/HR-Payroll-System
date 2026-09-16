@@ -3,7 +3,7 @@ import { calculatePF, calculateESI } from './payroll.service.js';
 import { classifyDay, overtimeMinutes } from '../attendance/day-classify.js';
 import { dayKey } from '../../utils/time.js';
 import { requireTenantId } from '../../context/tenant-context.js';
-import { defaultPolicy, getTenantPolicy, type PayrollPolicy } from '../settings/tenant-settings.service.js';
+import { defaultPolicy, getTenantPolicy, type PayrollBasis, type PayrollPolicy } from '../settings/tenant-settings.service.js';
 import { DEFAULT_HALF_DAY_WINDOW, type HalfDayWindow } from '../attendance/attendance-policy.js';
 
 /**
@@ -54,17 +54,21 @@ export interface PayrollEmployee {
   pfEnabled: boolean;
   esiEnabled: boolean;
   joiningDate?: Date | null;
+  /** Null inherits the dealer's default — see PayrollBasis. */
+  payrollBasis?: string | null;
   shift?: { startTime: string; endTime: string; gracePeriod?: number | null; otAfterMinutes?: number | null } | null;
 }
 
 /** Everything the payslip and the payroll report need for one employee-month. */
 export interface MonthlyPayroll {
+  /** The basis these figures were computed under. */
+  payrollBasis: PayrollBasis;
   daysInMonth: number;
   /**
    * Days of the month inside the employee's service that have already happened.
    * Equals daysInMonth for a full month; shorter for a mid-month joiner or a
    * month still in progress. The invariant is
-   * paidDays + absentDays + lopDays === servedDays.
+   * paidDays + absentDays + lopDays + unpaidDays === servedDays.
    */
   servedDays: number;
   /** Sundays + configured holidays inside the served window (paid weekly-offs). */
@@ -74,6 +78,13 @@ export interface MonthlyPayroll {
   absentDays: number; // fractional — half days and pending punches included
   pendingDays: number; // the awaiting-sign-off subset of absentDays
   lopDays: number;
+  /**
+   * Days inside service that paid nothing and are neither absent nor LOP:
+   * unworked weekly-offs and unpaid approved leave, under PRESENT_DAYS. Always
+   * 0 on MONTHLY, where the invariant stays paidDays + absentDays + lopDays
+   * === servedDays.
+   */
+  unpaidDays: number;
   clDays: number; // casual leave consumed inside this month
   paidDays: number;
   lateDays: number;
@@ -135,7 +146,19 @@ export async function computeMonthlyPayroll(
       where: { employeeId: emp.id, status: 'APPROVED', fromDate: { lt: end }, toDate: { gte: start } },
     }));
 
+  // The employee's own basis wins whichever it is; only an absent or
+  // unrecognised value inherits the dealer's default. Testing for one of the
+  // two values instead would silently ignore an employee deliberately set to
+  // MONTHLY at a dealer whose default is PRESENT_DAYS.
+  const basis: PayrollBasis =
+    emp.payrollBasis === 'MONTHLY' || emp.payrollBasis === 'PRESENT_DAYS'
+      ? emp.payrollBasis
+      : policy.defaultPayrollBasis;
+  /** Paid for days worked only: weekly-offs and leave pay nothing. */
+  const presentOnly = basis === 'PRESENT_DAYS';
+
   let paidDays = 0; // present + paid leave + paid weekly-offs/holidays
+  let unpaidDays = 0; // unworked offs + unpaid leave, under PRESENT_DAYS only
   let presentDays = 0;
   let halfDays = 0;
   let absentDays = 0;
@@ -186,7 +209,16 @@ export async function computeMonthlyPayroll(
 
     if (day.isOff) {
       offDays += 1;
-      paidDays += 1; // weekly-off / holiday is paid
+      // A monthly salary covers the weekly-off. Paid by the day, it does not:
+      // there is no work on it to pay for. Working it is handled below either
+      // way — the extra day for Sunday duty is the same on both bases.
+      if (presentOnly) {
+        const credit = day.worked ? (day.status === 'HALF_DAY' ? 0.5 : 1) : 0;
+        paidDays += credit;
+        unpaidDays += 1 - credit; // the rest of the day pays nothing
+      } else {
+        paidDays += 1;
+      }
       // Sunday duty = +1 extra day, at full rate even when only a half day was worked.
       if (day.isSunday && day.worked) sundayDays += 1;
       continue;
@@ -215,6 +247,17 @@ export async function computeMonthlyPayroll(
 
     const lv = day.leave;
     if (lv) {
+      // Paid by the day, an approved leave day is still a day not worked. The
+      // casual-leave quota is counted so the balance still reads correctly,
+      // but it buys time off rather than pay.
+      if (presentOnly) {
+        if (lv.type === 'LOP') lopDays += 1;
+        else {
+          if (lv.type === 'CL' && clUsed < policy.clPerYear) { clUsed += 1; clDays += 1; }
+          unpaidDays += 1;
+        }
+        continue;
+      }
       if (lv.type === 'LOP') {
         lopDays += 1;
       } else if (lv.type === 'CL') {
@@ -259,6 +302,7 @@ export async function computeMonthlyPayroll(
   const payDate = new Date(year, month, lateDays >= policy.lateShiftAt ? policy.payDayLate : policy.payDay);
 
   return {
+    payrollBasis: basis,
     daysInMonth,
     servedDays,
     offDays,
@@ -267,6 +311,7 @@ export async function computeMonthlyPayroll(
     absentDays: round2(absentDays),
     pendingDays,
     lopDays: round2(lopDays),
+    unpaidDays: round2(unpaidDays),
     clDays,
     paidDays: round2(paidDays),
     lateDays,
@@ -378,6 +423,8 @@ export async function runMonthlyPayroll(
       absentDays: r.absentDays,
       halfDays: r.halfDays,
       lopDays: r.lopDays,
+      unpaidDays: r.unpaidDays,
+      payrollBasis: r.payrollBasis,
       clDays: r.clDays,
       leaveDeduction: r.leaveDeduction,
       perDaySalary: r.perDaySalary,

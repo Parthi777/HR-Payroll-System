@@ -681,7 +681,19 @@ payroll report renders it live, so a report can never disagree with a payslip.
 
 Owner-specified rules:
 ```
-Per-day salary  = monthly salary / 30 (regardless of the month's length)
+Payroll basis   = per employee (Employee.payrollBasis), falling back to the
+                  dealer's default (TenantSettings.defaultPayrollBasis). One
+                  dealership can run both at once.
+                    MONTHLY      — a monthly salary. Sundays/holidays are paid
+                                   weekly-offs, approved leave is paid, and
+                                   unpaid days are deducted. The original rules.
+                    PRESENT_DAYS — paid for days actually worked. An unworked
+                                   Sunday, holiday or approved leave day pays
+                                   nothing (it is not an absence either — it
+                                   lands in unpaidDays). Working a Sunday still
+                                   earns the extra day.
+Per-day salary  = monthly salary / 30 (regardless of the month's length), on
+                  both bases — the basis decides which days are paid, not the rate
 Service window  = days before joining (and dates still to come) are counted
                   NOWHERE — not present, not absent, not a paid off day. A
                   mid-month joiner is therefore paid pro-rata.
@@ -701,7 +713,8 @@ LOP             = unpaid — never counted as a paid day
 PF              = 12% of earned salary, capped ₹1800 (only when Employee.pfEnabled)
 ESI             = 0.75% of gross if gross <= ₹21,000 (only when Employee.esiEnabled)
 Net (payable)   = earned + OT pay + Sunday pay − PF − ESI
-Invariant       : paidDays + absentDays + lopDays === servedDays
+Invariant       : paidDays + absentDays + lopDays + unpaidDays === servedDays
+                  (unpaidDays is always 0 on MONTHLY)
 ```
 
 ### 3c. Correcting a day by hand (`overrideAttendance`)

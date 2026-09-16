@@ -14,6 +14,14 @@
 //   ClaimType       : expense-head list — see services/claim/claim-types.ts
 //   ClaimStatus     : PENDING | APPROVED | REJECTED | NEEDS_CLARIFICATION | PAID
 //   PayslipStatus   : DRAFT | FINALIZED | SENT | PAID
+//   PayrollBasis    : MONTHLY | PRESENT_DAYS
+//     MONTHLY      — a monthly salary. Sundays and holidays are paid weekly-offs,
+//                    approved leave is paid, and unpaid days are deducted at
+//                    salary/monthDivisor. This is what every employee was on
+//                    before the basis existed.
+//     PRESENT_DAYS — paid for days actually worked. An unworked Sunday, holiday
+//                    or approved leave day pays nothing. Working a Sunday still
+//                    earns its extra day.
 //   WAStatus        : QUEUED | SENT | DELIVERED | READ | FAILED
 //   AdminRole       : SUPER_ADMIN | HR_MANAGER | BRANCH_MANAGER | PAYROLL_ADMIN | CASHIER
 //   TenantStatus    : ACTIVE | SUSPENDED
@@ -50,6 +58,10 @@ model Employee {
   driveFolderId      String? // Google Drive folder id holding this employee's claim files
   passwordHash       String? // bcrypt; set by admin at creation — employee logs in with phone + password
   reportingManagerId String? // AdminUser id — approvals (leave / outside check-in) route to this manager
+  /// How this employee is paid — PayrollBasis. Null inherits the dealer's
+  /// default (TenantSettings.defaultPayrollBasis), which is what every existing
+  /// employee does, so nobody's pay changes by adding this column.
+  payrollBasis       String?
   pfEnabled          Boolean  @default(false) // PF deduction applies to this employee
   esiEnabled         Boolean  @default(false) // ESI deduction applies to this employee
   fcmToken           String? // FCM device token for push notifications
@@ -329,6 +341,14 @@ model Payslip {
   leaveDeduction  Float     @default(0)
   perDaySalary    Float     @default(0)
   daysInMonth     Int       @default(30)
+  /// The PayrollBasis this slip was computed under. Stored rather than derived,
+  /// so a slip still explains itself after the employee's basis is changed.
+  payrollBasis    String    @default("MONTHLY")
+  /// Days inside service that paid nothing and are neither absent nor LOP —
+  /// unworked weekly-offs and unpaid leave under PRESENT_DAYS. Always 0 on
+  /// MONTHLY, which keeps that basis's invariant
+  /// paidDays + absentDays + lopDays = servedDays exactly as it was.
+  unpaidDays      Float     @default(0)
   // OT & Sunday-duty metrics (owner policy: >10h/day accrues OT; 10 OT hours = 1 day's pay)
   otHours         Float     @default(0)
   otDays          Float     @default(0)
@@ -504,6 +524,8 @@ model TenantSettings {
   openPunchLookbackDays Int     @default(7)
 
   // ── Payroll policy (was PAYROLL_*, and hardcoded constants) ──
+  /// PayrollBasis a new employee gets when their own is not set.
+  defaultPayrollBasis     String @default("MONTHLY")
   monthDivisor            Int @default(30) // per-day salary = monthly / this
   clPerYear               Int @default(12) // paid casual leave before it becomes LOP
   otHoursPerDay           Int @default(10) // OT hours that add up to one day's pay

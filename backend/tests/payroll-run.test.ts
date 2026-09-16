@@ -62,6 +62,14 @@ function fakePrisma(punches: Punch[], leaves: LeaveRow[] = []): PrismaClient {
 const run = (punches: Punch[], leaves: LeaveRow[] = []) =>
   computeMonthlyPayroll(fakePrisma(punches, leaves), EMPLOYEE, MONTH, YEAR, new Set());
 
+/** The same month, for an employee paid only for the days they worked. */
+const runPresentOnly = (punches: Punch[], leaves: LeaveRow[] = []) =>
+  computeMonthlyPayroll(
+    fakePrisma(punches, leaves),
+    { ...EMPLOYEE, payrollBasis: 'PRESENT_DAYS' },
+    MONTH, YEAR, new Set(),
+  );
+
 describe('computeMonthlyPayroll', () => {
   it('pays Sundays as weekly-offs even with no attendance at all', async () => {
     const r = await run([]);
@@ -341,5 +349,120 @@ describe('a company-wide run does not query per employee', () => {
     expect(preloadedResult.presentDays).toBe(queried.presentDays);
     expect(preloadedResult.netSalary).toBe(queried.netSalary);
     expect(preloadedResult.paidDays).toBe(queried.paidDays);
+  });
+});
+
+/**
+ * Two payroll structures in one dealership.
+ *
+ * MONTHLY is a monthly salary: weekly-offs and approved leave are paid, and
+ * unpaid days are deducted. PRESENT_DAYS pays for days actually worked —
+ * an unworked Sunday, holiday or leave day pays nothing.
+ *
+ * July 2026 has 31 days and four Sundays (5, 12, 19, 26), so 27 working days.
+ * Salary ₹9,000 → ₹300/day.
+ */
+describe('payroll basis', () => {
+  /** Every working day of July worked in full. */
+  const everyWorkingDay = () => {
+    const punches: Punch[] = [];
+    for (let day = 1; day <= 31; day++) {
+      if (new Date(YEAR, MONTH - 1, day).getDay() === 0) continue; // Sunday
+      punches.push({ day, in: '09:00', out: '18:00' });
+    }
+    return punches;
+  };
+
+  it('defaults to MONTHLY, so an employee with no basis is paid as before', async () => {
+    const r = await run([]);
+    expect(r.payrollBasis).toBe('MONTHLY');
+    expect(r.paidDays).toBe(4); // the four Sundays, paid
+    expect(r.unpaidDays).toBe(0);
+  });
+
+  it('pays a monthly employee for the whole month when every working day is worked', async () => {
+    const r = await run(everyWorkingDay());
+    expect(r.paidDays).toBe(31); // 27 worked + 4 paid Sundays
+    expect(r.basePay).toBe(9300); // 31 × ₹300 — a 31-day month over a 30-day divisor
+  });
+
+  it('pays a present-days employee only for the days worked', async () => {
+    const r = await runPresentOnly(everyWorkingDay());
+    expect(r.payrollBasis).toBe('PRESENT_DAYS');
+    expect(r.paidDays).toBe(27); // the Sundays pay nothing
+    expect(r.unpaidDays).toBe(4); // and are not absences either
+    expect(r.absentDays).toBe(0);
+    expect(r.basePay).toBe(8100); // 27 × ₹300
+  });
+
+  it('pays a present-days employee nothing for a Sunday they did not work', async () => {
+    const r = await runPresentOnly([]);
+    expect(r.paidDays).toBe(0);
+    expect(r.unpaidDays).toBe(4); // four Sundays, unworked
+    expect(r.absentDays).toBe(27); // the working days they did not attend
+    expect(r.basePay).toBe(0);
+  });
+
+  it('still pays a present-days employee the extra day for working a Sunday', async () => {
+    // 5 July is a Sunday. Working it pays the day itself plus the Sunday extra.
+    const r = await runPresentOnly([{ day: 5, in: '09:00', out: '18:00' }]);
+    expect(r.paidDays).toBe(1); // the day worked
+    expect(r.sundayDays).toBe(1);
+    expect(r.sundayPay).toBe(300); // the extra day, same on both bases
+    expect(r.unpaidDays).toBe(3); // the other three Sundays
+  });
+
+  it('does not pay approved leave on the present-days basis', async () => {
+    // 1-3 July: casual leave, approved and inside quota.
+    const r = await runPresentOnly([], [{ type: 'CL', fromDay: 1, toDay: 3 }]);
+    expect(r.clDays).toBe(3); // the quota is still consumed, so the balance reads right
+    expect(r.paidDays).toBe(0); // but it buys time off, not pay
+    expect(r.unpaidDays).toBe(7); // 3 leave days + 4 unworked Sundays
+  });
+
+  it('does pay the same leave on the monthly basis', async () => {
+    const r = await run([], [{ type: 'CL', fromDay: 1, toDay: 3 }]);
+    expect(r.clDays).toBe(3);
+    expect(r.paidDays).toBe(7); // 3 leave + 4 Sundays
+    expect(r.unpaidDays).toBe(0);
+  });
+
+  it('keeps LOP unpaid on both bases', async () => {
+    const monthly = await run([], [{ type: 'LOP', fromDay: 1, toDay: 2 }]);
+    const present = await runPresentOnly([], [{ type: 'LOP', fromDay: 1, toDay: 2 }]);
+    expect(monthly.lopDays).toBe(2);
+    expect(present.lopDays).toBe(2);
+  });
+
+  it('balances its days on both bases', async () => {
+    // The invariant, generalised: everything inside the served window is
+    // either paid, absent, LOP, or explicitly unpaid.
+    for (const r of [await run(everyWorkingDay()), await runPresentOnly(everyWorkingDay())]) {
+      expect(r.paidDays + r.absentDays + r.lopDays + r.unpaidDays).toBe(r.servedDays);
+    }
+  });
+
+  it('lets the dealer default decide when the employee has none', async () => {
+    const policy = {
+      defaultPayrollBasis: 'PRESENT_DAYS' as const,
+      monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, payDay: 5, payDayLate: 8,
+    };
+    const r = await computeMonthlyPayroll(
+      fakePrisma(everyWorkingDay()), EMPLOYEE, MONTH, YEAR, new Set(), policy,
+    );
+    expect(r.payrollBasis).toBe('PRESENT_DAYS');
+    expect(r.paidDays).toBe(27);
+  });
+
+  it('lets an employee override the dealer default', async () => {
+    const policy = {
+      defaultPayrollBasis: 'PRESENT_DAYS' as const,
+      monthDivisor: 30, clPerYear: 12, otHoursPerDay: 10, lateShiftAt: 5, payDay: 5, payDayLate: 8,
+    };
+    const r = await computeMonthlyPayroll(
+      fakePrisma(everyWorkingDay()), { ...EMPLOYEE, payrollBasis: 'MONTHLY' }, MONTH, YEAR, new Set(), policy,
+    );
+    expect(r.payrollBasis).toBe('MONTHLY');
+    expect(r.paidDays).toBe(31);
   });
 });

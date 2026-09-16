@@ -9,7 +9,11 @@ import { Building2, GitBranch, Briefcase, Plus, Loader2, Pencil, Trash2, Check, 
 
 interface Named { id: string; name: string }
 
-interface Company { name: string; address: string; phone: string; email: string; gstin: string }
+interface Company {
+  name: string; address: string; phone: string; email: string; gstin: string;
+  /** What a new employee is paid on unless their own record says otherwise. */
+  defaultPayrollBasis?: 'MONTHLY' | 'PRESENT_DAYS';
+}
 
 export default function SettingsPage() {
   return (
@@ -57,6 +61,19 @@ function CompanyCard() {
         <input className={input} placeholder="Phone" value={c.phone} onChange={(e) => set('phone', e.target.value)} />
         <input className={input} placeholder="Email" value={c.email} onChange={(e) => set('email', e.target.value)} />
         <input className={input} placeholder="GSTIN" value={c.gstin} onChange={(e) => set('gstin', e.target.value)} />
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+            Default pay basis — applies to staff whose own record does not set one
+          </label>
+          <select
+            className={input}
+            value={c.defaultPayrollBasis ?? 'MONTHLY'}
+            onChange={(e) => set('defaultPayrollBasis', e.target.value)}
+          >
+            <option value="MONTHLY">Monthly — weekly offs and approved leave are paid</option>
+            <option value="PRESENT_DAYS">Present days — paid only for days worked</option>
+          </select>
+        </div>
         <div className="flex items-center gap-3 sm:col-span-2">
           <button onClick={save} disabled={saving} className="flex h-10 items-center gap-2 rounded-xl brand-gradient px-5 text-sm font-semibold text-white disabled:opacity-60">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
