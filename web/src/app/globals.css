@@ -59,6 +59,46 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+
+  /*
+   * Honour the system setting rather than deciding for people.
+   *
+   * The ambient loops on the brand surfaces are decorative; for someone with
+   * vestibular sensitivity they are a reason to avoid the product. Entrances
+   * are collapsed to a single frame rather than removed, so elements still
+   * arrive in their final state instead of never appearing.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+ * The staggered entrance used by the landing and login screens.
+ *
+ * Declared here rather than in tailwind.config because those screens set
+ * `animation` inline to give each element its own delay, so no `animate-rise-in`
+ * class is ever written and Tailwind's JIT would drop the keyframe as unused —
+ * leaving an animation that names a keyframe the stylesheet does not have.
+ * Elements still render, they just never animate, which is the kind of failure
+ * nobody notices until someone asks why the page feels dead.
+ */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @layer components {

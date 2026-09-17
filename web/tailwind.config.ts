@@ -41,6 +41,49 @@ const config: Config = {
         soft: '0 8px 30px -12px rgba(91,79,196,0.25)',
         brand: '0 12px 32px -8px rgba(91,79,196,0.45)',
       },
+      /*
+       * Ambient motion for the brand surfaces.
+       *
+       * tailwindcss-animate covers entrances (`animate-in`, `fade-in`,
+       * `slide-in-from-*`), which is most of what the marketing surfaces need.
+       * These are the things it deliberately does not do: slow loops that keep
+       * a gradient panel from looking like a screenshot.
+       *
+       * All are long and low-amplitude on purpose. A login screen is somewhere
+       * people go every morning, and motion that is noticeable on the first
+       * visit is irritating by the fiftieth. Every one of them is switched off
+       * under prefers-reduced-motion — see globals.css.
+       */
+      /* `rise-in` is NOT here — it lives in globals.css. Tailwind only emits a
+       * keyframe when a matching `animate-*` utility appears in the source, and
+       * the staggered entrances set `animation` inline with a computed delay, so
+       * no such class is ever written and the JIT tree-shook the keyframe away.
+       * The animation then referenced a name the stylesheet did not define and
+       * silently did nothing. These four are used as real utility classes. */
+      keyframes: {
+        /* Light sources drifting behind the panel. */
+        drift: {
+          '0%, 100%': { transform: 'translate3d(0, 0, 0) scale(1)' },
+          '33%': { transform: 'translate3d(3%, -4%, 0) scale(1.08)' },
+          '66%': { transform: 'translate3d(-3%, 3%, 0) scale(0.96)' },
+        },
+        /* A highlight travelling once across a surface. */
+        sheen: {
+          '0%': { transform: 'translateX(-120%)' },
+          '100%': { transform: 'translateX(220%)' },
+        },
+        /* Breathing ring behind the logo mark. */
+        halo: {
+          '0%, 100%': { opacity: '0.35', transform: 'scale(1)' },
+          '50%': { opacity: '0.6', transform: 'scale(1.12)' },
+        },
+      },
+      animation: {
+        drift: 'drift 22s ease-in-out infinite',
+        'drift-slow': 'drift 30s ease-in-out infinite reverse',
+        sheen: 'sheen 6s ease-in-out infinite',
+        halo: 'halo 5s ease-in-out infinite',
+      },
     },
   },
   plugins: [require('tailwindcss-animate')],

@@ -56,6 +56,15 @@ export default function LoginPage() {
   const googleDiv = useRef<HTMLDivElement>(null);
   const [gsiReady, setGsiReady] = useState(false);
   const [workspace, setWorkspace] = useState<string | null>(null);
+  /**
+   * The same staggered arrival as the landing page, so the two screens read as
+   * one product. Pure CSS, and not gated on hydration — a sign-in form that
+   * waits for a bundle before becoming visible is a sign-in form that is blank
+   * on a bad connection. See the note on the landing page.
+   */
+  const rise = (delayMs: number) => ({
+    animation: `rise-in 0.7s cubic-bezier(0.22,1,0.36,1) ${delayMs}ms both`,
+  });
 
   // Show which dealer this login belongs to, so someone arriving on a branded
   // link can see they are in the right place before typing a password. Silent
@@ -146,11 +155,11 @@ export default function LoginPage() {
             grid that catches it. Both masked so they fade rather than stop. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -left-24 -top-32 h-[28rem] w-[28rem] rounded-full bg-white/20 blur-3xl"
+          className="pointer-events-none absolute -left-24 -top-32 h-[28rem] w-[28rem] animate-drift rounded-full bg-white/20 blur-3xl"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -bottom-40 -right-24 h-[26rem] w-[26rem] rounded-full bg-indigo-300/20 blur-3xl"
+          className="pointer-events-none absolute -bottom-40 -right-24 h-[26rem] w-[26rem] animate-drift-slow rounded-full bg-indigo-300/20 blur-3xl"
         />
         <div
           aria-hidden
@@ -162,8 +171,9 @@ export default function LoginPage() {
 
         <div className="relative flex h-full flex-col">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-              <ShieldCheck className="h-6 w-6" />
+            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
+              <span aria-hidden className="absolute inset-0 animate-halo rounded-2xl bg-white/20 blur-md" />
+              <ShieldCheck className="relative h-6 w-6" />
             </div>
             <div className="leading-tight">
               <div className="text-sm font-semibold tracking-wide">HR &amp; Payroll</div>
@@ -171,7 +181,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="mt-10 lg:mt-auto lg:pt-16">
+          <div className="mt-10 lg:mt-auto lg:pt-16" style={rise(120)}>
             <h2 className="max-w-md text-2xl font-bold leading-tight tracking-tight sm:text-3xl lg:text-[2.6rem] lg:leading-[1.1]">
               Attendance, people and payroll in one place.
             </h2>
@@ -180,8 +190,8 @@ export default function LoginPage() {
             </p>
 
             <ul className="mt-8 hidden space-y-5 lg:block">
-              {FEATURES.map((f) => (
-                <li key={f.title} className="flex gap-3.5">
+              {FEATURES.map((f, i) => (
+                <li key={f.title} className="flex gap-3.5" style={rise(300 + i * 90)}>
                   <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/20">
                     <f.icon className="h-4 w-4" />
                   </div>
@@ -198,7 +208,7 @@ export default function LoginPage() {
 
       {/* Form side */}
       <section className="flex flex-1 items-center justify-center bg-background px-6 py-12 sm:px-10">
-        <div className="w-full max-w-[26rem]">
+        <div className="w-full max-w-[26rem]" style={rise(200)}>
           {/* The dealer this link belongs to, when the URL names one. Shown
               before the password field so someone on a branded link can tell
               they are in the right workspace first. */}
