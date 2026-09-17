@@ -283,7 +283,32 @@ function ApprovalsCard() {
     }
   }
 
-  if (approvals.length === 0) return null;
+  /*
+   * An empty queue still says so.
+   *
+   * This card used to return null with nothing decided, which meant a cleared
+   * queue and a broken feed looked identical: the section simply was not on the
+   * page. Someone who had just approved a batch, or who had been told there
+   * were punches waiting, went looking and found no trace that approvals exist
+   * here at all. A quiet confirmation costs one row and answers the question.
+   */
+  if (approvals.length === 0) {
+    return (
+      <Card className="border-emerald-300/50">
+        <CardContent className="flex items-center gap-3 p-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <Check className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">No punches awaiting approval</div>
+            <div className="text-xs text-muted-foreground">
+              Everything is signed off. Late arrivals, out-of-zone check-ins and manual punches appear here for a decision.
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-amber-300/60">
