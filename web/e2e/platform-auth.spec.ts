@@ -89,7 +89,7 @@ test('a first sign-in sets up two-step verification before letting anyone in', a
   await page.getByRole('button', { name: 'Turn on and sign in' }).click();
 
   await expect(page.getByRole('heading', { name: 'Two-step verification is on' })).toBeVisible();
-  await expect(page.locator('ul li')).toHaveCount(10);
+  await expect(page.getByRole('list', { name: 'Recovery codes' }).getByRole('listitem')).toHaveCount(10);
 
   // The codes exist only on this screen, so leaving it is gated on saying so.
   const proceed = page.getByRole('button', { name: 'Continue to the console' });

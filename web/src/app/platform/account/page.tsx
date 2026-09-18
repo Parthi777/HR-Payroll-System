@@ -14,6 +14,9 @@ import { platformApi, suggestPassword, type PlatformMe } from '@/lib/platform-ap
  * way to create the first account and a poor way to maintain it, which is why
  * the credential went unrotated.
  */
+const FIELD =
+  'w-full rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm outline-none focus:border-primary';
+
 export default function PlatformAccountPage() {
   const [me, setMe] = useState<PlatformMe | null>(null);
   const [current, setCurrent] = useState('');
@@ -85,12 +88,12 @@ export default function PlatformAccountPage() {
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium">Current password</span>
-            <PasswordInput value={current} onChange={setCurrent} placeholder="The one you signed in with" />
+            <PasswordInput value={current} onChange={setCurrent} placeholder="The one you signed in with" className={FIELD} />
           </label>
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium">New password</span>
-            <PasswordInput value={next} onChange={setNext} placeholder="At least 12 characters" />
+            <PasswordInput value={next} onChange={setNext} placeholder="At least 12 characters" className={FIELD} />
             <span className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <span className={tooShort ? 'text-destructive' : 'text-muted-foreground'}>
                 {tooShort ? `${next.length} of 12 characters` : 'At least 12 characters'}
@@ -107,7 +110,7 @@ export default function PlatformAccountPage() {
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium">Confirm new password</span>
-            <PasswordInput value={confirm} onChange={setConfirm} placeholder="Type it again" />
+            <PasswordInput value={confirm} onChange={setConfirm} placeholder="Type it again" className={FIELD} />
             {mismatch && <span className="mt-1 block text-xs text-destructive">These do not match</span>}
           </label>
 
@@ -193,7 +196,7 @@ function TwoStepSection({ me, onChanged }: { me: PlatformMe; onChanged: () => vo
             <strong>New recovery codes.</strong> Your old ones no longer work. Save these somewhere that
             is not your phone — they will not be shown again.
           </p>
-          <ul className="grid grid-cols-2 gap-2 font-mono text-[13px]">
+          <ul aria-label="Recovery codes" className="grid grid-cols-2 gap-2 font-mono text-[13px]">
             {codes.map((c) => <li key={c}>{c}</li>)}
           </ul>
           <div className="flex gap-2">

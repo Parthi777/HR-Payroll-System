@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
-import { Check, Copy, KeyRound, Loader2, ShieldCheck, Smartphone } from 'lucide-react';
+import { Building2, Check, Copy, KeyRound, Loader2, ScrollText, ShieldCheck, Smartphone } from 'lucide-react';
 import { PasswordInput } from '@/components/password-input';
 import {
   platformApi,
@@ -46,17 +46,73 @@ export default function PlatformLoginPage() {
 
   const restart = () => setStage({ kind: 'password' });
 
+  /** Same staggered arrival as the rest of the product, in CSS only. */
+  const rise = (delayMs: number) => ({
+    animation: `rise-in 0.7s cubic-bezier(0.22,1,0.36,1) ${delayMs}ms both`,
+  });
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-900 p-6">
-      <div className="w-full max-w-sm rounded-2xl bg-card p-8 shadow-brand">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
-            <ShieldCheck className="h-7 w-7" />
-          </div>
-          <h1 className="mt-4 text-xl font-bold">Platform Console</h1>
-          <p className="text-sm text-muted-foreground">Onboard and manage dealers</p>
+    <div className="flex min-h-screen flex-col lg:flex-row">
+      {/*
+        The console's own panel — slate, not the brand gradient the dealer app
+        uses. Someone who signs in here every week should be able to tell at a
+        glance which of the two systems they are looking at.
+      */}
+      <section className="relative isolate overflow-hidden bg-slate-950 px-6 py-10 text-white lg:w-[44%] lg:px-14 lg:py-16">
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+          <div className="absolute -left-24 -top-32 h-[26rem] w-[26rem] animate-drift rounded-full bg-indigo-500/25 blur-3xl" />
+          <div className="absolute -bottom-40 -right-24 h-[24rem] w-[24rem] animate-drift-slow rounded-full bg-violet-500/20 blur-3xl" />
+          <div className="absolute inset-0 opacity-[0.15]
+            [background-image:linear-gradient(to_right,rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,.6)_1px,transparent_1px)]
+            [background-size:56px_56px]
+            [mask-image:radial-gradient(ellipse_at_top_left,black,transparent_70%)]" />
         </div>
 
+        <div className="relative flex h-full flex-col">
+          <div className="flex items-center gap-3" style={rise(0)}>
+            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20 backdrop-blur">
+              <span aria-hidden className="absolute inset-0 animate-halo rounded-2xl bg-white/15 blur-md" />
+              <ShieldCheck className="relative h-6 w-6" />
+            </div>
+            <div className="leading-tight">
+              <h1 className="text-sm font-semibold tracking-wide">Platform Console</h1>
+              <div className="text-xs text-white/60">Dealer onboarding</div>
+            </div>
+          </div>
+
+          <div className="mt-10 lg:mt-auto lg:pt-16" style={rise(120)}>
+            <h2 className="max-w-md text-2xl font-bold leading-tight tracking-tight sm:text-3xl lg:text-[2.4rem] lg:leading-[1.1]">
+              Every dealership, from one place.
+            </h2>
+            <p className="mt-3 max-w-sm text-sm leading-relaxed text-white/60">
+              The account behind this door creates workspaces, suspends them, and can see across
+              all of them. It is protected accordingly.
+            </p>
+
+            <ul className="mt-8 hidden space-y-5 lg:block">
+              {[
+                { icon: Building2, title: 'Onboard in one step', copy: 'A workspace, its first branch and its first login, created together.' },
+                { icon: ScrollText, title: 'Recorded as it happens', copy: 'Every action lands in the platform log with who did it, when and from where.' },
+                { icon: KeyRound, title: 'Two-step, always', copy: 'A password alone never opens the console — a code from your authenticator is required.' },
+              ].map((item, i) => (
+                <li key={item.title} className="flex gap-3.5" style={rise(280 + i * 90)}>
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15">
+                    <item.icon className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">{item.title}</div>
+                    <div className="mt-0.5 max-w-xs text-xs leading-relaxed text-white/55">{item.copy}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Form side */}
+      <section className="flex flex-1 items-center justify-center bg-background px-6 py-12 sm:px-10">
+        <div className="w-full max-w-[24rem]" style={rise(200)}>
         {stage.kind === 'password' && (
           <PasswordForm onNext={(res) => setStage({ kind: res.step, challenge: res.challenge })} />
         )}
@@ -72,8 +128,9 @@ export default function PlatformLoginPage() {
         {stage.kind === 'recovery-used' && (
           <RecoveryUsed left={stage.left} onDone={() => router.push('/platform')} />
         )}
-      </div>
-    </main>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -111,6 +168,11 @@ function PasswordForm({ onNext }: { onNext: (res: PasswordStep) => void }) {
         void run(async () => onNext(await platformApi.post<PasswordStep>('/auth/login', { email, password })));
       }}
     >
+      <h2 className="text-[1.6rem] font-bold leading-tight tracking-tight">Welcome back</h2>
+      <p className="mb-7 mt-1.5 text-sm text-muted-foreground">
+        Sign in with your password, then a code from your authenticator app.
+      </p>
+
       <label className="mb-1 block text-sm font-medium">Email</label>
       <input
         type="email"
@@ -123,7 +185,7 @@ function PasswordForm({ onNext }: { onNext: (res: PasswordStep) => void }) {
       />
 
       <label className="mb-1 block text-sm font-medium">Password</label>
-      <PasswordInput value={password} onChange={setPassword} />
+      <PasswordInput value={password} onChange={setPassword} className={inputClass} />
 
       {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
@@ -355,7 +417,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
         printed. If you lose your phone, each one signs you in once. <strong>They will not be shown again.</strong>
       </p>
 
-      <ul className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-muted/50 p-4 font-mono text-[13px]">
+      <ul aria-label="Recovery codes" className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-muted/50 p-4 font-mono text-[13px]">
         {codes.map((c) => <li key={c}>{c}</li>)}
       </ul>
 

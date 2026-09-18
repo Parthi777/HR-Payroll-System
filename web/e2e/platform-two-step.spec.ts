@@ -25,7 +25,7 @@ test('replaces your recovery codes, and only with a live code', async ({ page })
   await codeInput.fill(currentCode(PLATFORM.email));
   await generate.click();
   await expect(page.getByText('New recovery codes.')).toBeVisible();
-  await expect(page.locator('section ul li')).toHaveCount(10);
+  await expect(page.getByRole('list', { name: 'Recovery codes' }).getByRole('listitem')).toHaveCount(10);
   await expect(page.getByText('10 recovery codes left.')).toBeVisible();
 });
 

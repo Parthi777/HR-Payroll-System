@@ -3,28 +3,21 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck, ScanFace, MapPin, Wallet, Clock, MessageSquare, ArrowRight, LogIn } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { isPlatformHost } from '@/lib/tenant';
-import { masterControlHref } from '@/lib/hosts';
+import { FEATURES } from '@/lib/features';
+import { SiteHeader } from '@/components/site-header';
+import { SiteFooter } from '@/components/site-footer';
 
 /**
  * The public page.
  *
- * A description and a way in, on the bare domain.
- * Master Control can live on its own address (NEXT_PUBLIC_ADMIN_HOST), which
- * is where both links below point once it is set — see src/proxy.ts. The
- * platform console is not linked from here at all.
+ * A description and a way in, on the bare domain. There is exactly one way to
+ * sign in — the header — because a second button to the same door only made the
+ * page look like it had two. The main action here is to look around: each
+ * capability opens its own page. Master Control can live on its own address
+ * (NEXT_PUBLIC_ADMIN_HOST); the platform console is not linked from here at all.
  */
-
-/** What the product does, in the order a working day uses it. */
-const CAPABILITIES = [
-  { icon: ScanFace, title: 'Selfie attendance', copy: 'Check-in verified against the enrolled face — nobody clocks in for anyone else.' },
-  { icon: MapPin, title: 'GPS geofencing', copy: 'Punches tied to a branch boundary, with every exception raised for sign-off.' },
-  { icon: Clock, title: 'Shift monitor', copy: 'Live hours, breaks and overtime against the roster someone is actually on.' },
-  { icon: Wallet, title: 'Payroll engine', copy: 'Attendance straight through to net salary, payslips and the bank transfer file.' },
-  { icon: MessageSquare, title: 'WhatsApp alerts', copy: 'Check-in confirmations, leave decisions and payslips where staff already read.' },
-  { icon: ShieldCheck, title: 'Audited throughout', copy: 'Every approval, correction and payroll run recorded with who did it and when.' },
-];
 
 export default function HomePage() {
   const router = useRouter();
@@ -67,24 +60,9 @@ export default function HomePage() {
       </div>
 
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8 sm:px-10 lg:py-12">
-        <header className="flex items-center justify-between" style={rise(0)}>
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-              <span aria-hidden className="absolute inset-0 animate-halo rounded-2xl bg-white/20 blur-md" />
-              <ShieldCheck className="relative h-6 w-6" />
-            </div>
-            <div className="leading-tight">
-              <div className="text-sm font-semibold tracking-wide">HR &amp; Payroll</div>
-              <div className="text-xs text-white/75">Master Control</div>
-            </div>
-          </div>
-          <Link
-            href={masterControlHref('/login')}
-            className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 backdrop-blur transition hover:bg-white/25"
-          >
-            <LogIn className="h-4 w-4" /> Sign in
-          </Link>
-        </header>
+        <div style={rise(0)}>
+          <SiteHeader />
+        </div>
 
         <div className="flex flex-1 flex-col justify-center py-14 lg:py-20">
           <p
@@ -111,14 +89,20 @@ export default function HomePage() {
 
           <div className="mt-9 flex flex-wrap gap-3" style={rise(320)}>
             <Link
-              href={masterControlHref('/login')}
+              href="/features"
               className="group relative flex h-12 items-center gap-2 overflow-hidden rounded-xl bg-white px-6 text-sm font-semibold text-brand-600 shadow-brand transition hover:shadow-lg"
             >
               {/* A highlight crossing the button once in a while — the only
                   motion on an interactive element, and it never moves it. */}
               <span aria-hidden className="absolute inset-y-0 -left-full w-1/2 animate-sheen bg-gradient-to-r from-transparent via-brand-100/70 to-transparent" />
-              <span className="relative">Open Master Control</span>
+              <span className="relative">Explore now</span>
               <ArrowRight className="relative h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+            <Link
+              href="/pricing"
+              className="flex h-12 items-center gap-2 rounded-xl bg-white/12 px-6 text-sm font-semibold ring-1 ring-white/25 backdrop-blur transition hover:bg-white/20"
+            >
+              See pricing
             </Link>
             {/* No link to the platform console. Every visitor here is a dealer,
                 and that sign-in manages every dealer — advertising it to all of
@@ -127,26 +111,36 @@ export default function HomePage() {
         </div>
 
         <ul className="grid gap-4 pb-6 sm:grid-cols-2 lg:grid-cols-3">
-          {CAPABILITIES.map((c, i) => (
+          {FEATURES.map((f, i) => (
             <li
-              key={c.title}
+              key={f.slug}
               // Cards arrive after the headline has landed, one just behind the
               // next, so the grid assembles rather than appearing all at once.
               style={rise(420 + i * 70)}
-              className="group rounded-2xl bg-white/[0.07] p-5 ring-1 ring-white/15 backdrop-blur transition duration-300 hover:-translate-y-1 hover:bg-white/[0.12] hover:ring-white/25"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/20 transition group-hover:scale-105">
-                <c.icon className="h-5 w-5" />
-              </div>
-              <div className="mt-4 text-sm font-semibold">{c.title}</div>
-              <p className="mt-1.5 text-xs leading-relaxed text-white/70">{c.copy}</p>
+              {/* Each card is the way into that feature's own page. */}
+              <Link
+                href={`/features/${f.slug}`}
+                className="group flex h-full flex-col rounded-2xl bg-white/[0.07] p-5 ring-1 ring-white/15 backdrop-blur transition duration-300 hover:-translate-y-1 hover:bg-white/[0.12] hover:ring-white/25"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/20 transition group-hover:scale-105">
+                  <f.icon className="h-5 w-5" />
+                </div>
+                <div className="mt-4 text-sm font-semibold">{f.name}</div>
+                <p className="mt-1.5 text-xs leading-relaxed text-white/70">{f.summary}</p>
+                <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-white/85">
+                  Explore <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
 
-        <footer className="border-t border-white/15 pt-5 text-xs text-white/60" style={rise(900)}>
-          Access is limited to registered accounts. Every action inside a workspace is audited.
-        </footer>
+      </div>
+
+      {/* The footer sits on the page's own surface, below the gradient. */}
+      <div className="bg-background text-foreground">
+        <SiteFooter />
       </div>
     </main>
   );

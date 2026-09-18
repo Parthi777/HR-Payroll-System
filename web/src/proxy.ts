@@ -32,6 +32,12 @@ export function proxy(request: NextRequest) {
     .toLowerCase();
   const { pathname, search } = request.nextUrl;
   const isConsole = pathname === '/platform' || pathname.startsWith('/platform/');
+  // The public site: the landing page and everything someone reads before they
+  // have an account. These belong to the bare domain and are never redirected
+  // to Master Control, which would send a prospect to a sign-in form.
+  const isPublicSite =
+    pathname === '/' ||
+    ['/features', '/pricing', '/signup'].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   // Built from the public host rather than request.url: behind the platform's
   // proxy the URL Next sees can name an internal address.
@@ -48,13 +54,13 @@ export function proxy(request: NextRequest) {
   if (adminHost && host === adminHost) {
     // The console is a different product on a different address, never here.
     if (isConsole) return notHere();
-    // Nobody signs in to Master Control to read the public page.
-    return pathname === '/' ? sendTo(adminHost, '/login') : NextResponse.next();
+    // Nobody opens the admin address to read the public site.
+    return isPublicSite ? sendTo(adminHost, '/login') : NextResponse.next();
   }
 
   // Any other host is the public one.
   if (isConsole) return platformHost ? notHere() : NextResponse.next();
-  if (!adminHost || pathname === '/') return NextResponse.next();
+  if (!adminHost || isPublicSite) return NextResponse.next();
   // Old links and bookmarks still work: same path, on the address it now lives at.
   return sendTo(adminHost, `${pathname}${search}`);
 }
