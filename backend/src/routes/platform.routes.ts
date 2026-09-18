@@ -5,6 +5,8 @@ import { requirePlatform, type JwtPayload, type JwtRole } from '../middleware/au
 import { AppError } from '../utils/AppError.js';
 import { env } from '../config/env.js';
 import { parseAllowList, platformAccessHook } from '../services/platform/platform-access.js';
+import { planByCode } from '../services/subscription/plans.js';
+import { markPaid, paymentUrl, startSubscription } from '../services/subscription/subscription.service.js';
 import {
   CHALLENGE_TTL,
   TWO_STEP_CLEARED,
@@ -97,6 +99,24 @@ function driveFolderId(raw: string): string {
   }
   return id;
 }
+
+const approveSignupSchema = z.object({
+  /** Override what they asked for, when the address or the name needs fixing. */
+  slug: z.string().trim().toLowerCase().min(2).max(31).optional(),
+  companyName: z.string().trim().min(1).optional(),
+  adminName: z.string().trim().min(1).optional(),
+  adminEmail: z.string().trim().toLowerCase().email().optional(),
+  password: z.string().min(12, 'Use at least 12 characters'),
+  branchName: z.string().trim().min(1).optional(),
+  planCode: z.enum(['STARTER', 'GROWTH', 'ENTERPRISE']).optional(),
+});
+
+const rejectSignupSchema = z.object({ reason: z.string().trim().min(1).max(500) });
+
+const signupQuerySchema = z.object({
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
 
 const addAdminSchema = z.object({
   name: z.string().min(1),
@@ -438,6 +458,138 @@ export async function platformRoutes(app: FastifyInstance) {
     });
     await audit(req, 'PLATFORM_USER_TWO_STEP_RESET', { targetId: id, metadata: { email: target.email } });
     return { staff: staffView(updated) };
+  });
+
+  // ── Signups ──
+  //
+  // A dealership that asked to join. Approving one provisions its workspace
+  // suspended and starts a subscription; the workspace opens when that is paid.
+  // Nothing here is created by a stranger — they can only ask.
+
+  app.get('/platform/signups', { preHandler: requirePlatform }, async (req) => {
+    const { status, limit } = signupQuerySchema.parse(req.query);
+    const signups = await app.prisma.signupRequest.findMany({
+      where: status ? { status } : {},
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    // The subscription state of the ones that became workspaces, so the console
+    // can show who has paid without a request per row.
+    const workspaceIds = signups.map((s) => s.workspaceId).filter((id): id is string => Boolean(id));
+    const subscriptions = workspaceIds.length
+      ? await app.prisma.subscription.findMany({ where: { workspaceId: { in: workspaceIds } } })
+      : [];
+    const byWorkspace = new Map(subscriptions.map((sub) => [sub.workspaceId, sub]));
+
+    return {
+      signups: signups.map((s) => {
+        const sub = s.workspaceId ? byWorkspace.get(s.workspaceId) : undefined;
+        return {
+          ...s,
+          reference: s.id.slice(-6).toUpperCase(),
+          subscription: sub
+            ? { status: sub.status, planCode: sub.planCode, amountPaise: sub.amountPaise, paymentUrl: paymentUrl(sub.payToken) }
+            : null,
+        };
+      }),
+      pending: await app.prisma.signupRequest.count({ where: { status: 'PENDING' } }),
+    };
+  });
+
+  app.patch('/platform/signups/:id/approve', { preHandler: requirePlatform }, async (req) => {
+    const { id } = req.params as { id: string };
+    const input = approveSignupSchema.parse(req.body);
+
+    const signup = await app.prisma.signupRequest.findUnique({ where: { id } });
+    if (!signup) throw AppError.notFound('Signup');
+    if (signup.status !== 'PENDING') throw new AppError(`This signup was already ${signup.status.toLowerCase()}`, 409);
+
+    const planCode = input.planCode ?? signup.planCode;
+    if (!planByCode(planCode)) throw new AppError(`"${planCode}" is not a plan`, 400);
+
+    // Provisioned suspended on purpose: approving says "you may have a
+    // workspace", and the payment is what opens it.
+    const tenant = await provisionTenant(app.prisma, {
+      slug: input.slug ?? signup.slug,
+      name: input.companyName ?? signup.companyName,
+      status: 'SUSPENDED',
+      branchName: input.branchName,
+      admin: {
+        name: input.adminName ?? signup.contactName,
+        email: input.adminEmail ?? signup.email,
+        password: input.password,
+      },
+    });
+
+    const subscription = await startSubscription(app.prisma, tenant.id, planCode);
+
+    await app.prisma.signupRequest.update({
+      where: { id },
+      data: {
+        status: 'APPROVED',
+        workspaceId: tenant.id,
+        reviewedById: req.user.sub,
+        reviewedAt: new Date(),
+        planCode,
+      },
+    });
+
+    await audit(req, 'SIGNUP_APPROVED', {
+      targetTenantId: tenant.id,
+      targetId: id,
+      metadata: { company: tenant.name, slug: tenant.slug, plan: planCode },
+    });
+    await audit(req, 'TENANT_CREATED', {
+      targetTenantId: tenant.id,
+      metadata: { slug: tenant.slug, adminEmail: tenant.adminEmail, via: 'signup' },
+    });
+
+    return {
+      tenant,
+      subscription: {
+        planCode: subscription.planCode,
+        amountPaise: subscription.amountPaise,
+        status: subscription.status,
+        paymentUrl: paymentUrl(subscription.payToken),
+      },
+    };
+  });
+
+  app.patch('/platform/signups/:id/reject', { preHandler: requirePlatform }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { reason } = rejectSignupSchema.parse(req.body);
+
+    const signup = await app.prisma.signupRequest.findUnique({ where: { id } });
+    if (!signup) throw AppError.notFound('Signup');
+    if (signup.status !== 'PENDING') throw new AppError(`This signup was already ${signup.status.toLowerCase()}`, 409);
+
+    const updated = await app.prisma.signupRequest.update({
+      where: { id },
+      data: { status: 'REJECTED', reviewNote: reason, reviewedById: req.user.sub, reviewedAt: new Date() },
+    });
+    await audit(req, 'SIGNUP_REJECTED', { targetId: id, metadata: { company: signup.companyName, reason } });
+    return { signup: updated };
+  });
+
+  /**
+   * Record a payment taken outside the gateway — a bank transfer, or UPI to
+   * your own account. It opens the workspace exactly as a card payment does,
+   * and names who said so.
+   */
+  app.patch('/platform/subscriptions/:workspaceId/mark-paid', { preHandler: requirePlatform }, async (req) => {
+    const { workspaceId } = req.params as { workspaceId: string };
+    const subscription = await app.prisma.subscription.findUnique({ where: { workspaceId } });
+    if (!subscription) throw AppError.notFound('Subscription');
+
+    const { subscription: updated, alreadyPaid } = await markPaid(app.prisma, subscription, { paidById: req.user.sub });
+    if (!alreadyPaid) {
+      await audit(req, 'SUBSCRIPTION_MARKED_PAID', {
+        targetTenantId: workspaceId,
+        metadata: { plan: updated.planCode, amountPaise: updated.amountPaise },
+      });
+    }
+    return { subscription: updated, alreadyPaid };
   });
 
   // ── Dealers ──

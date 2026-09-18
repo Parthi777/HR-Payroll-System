@@ -73,6 +73,20 @@ const envSchema = z.object({
   META_WHATSAPP_APP_SECRET: z.string().optional(),
 
   FACE_MATCH_THRESHOLD: z.coerce.number().default(85),
+
+  // Razorpay (subscription payments). Unset = no online payment: a signup is
+  // still approved and provisioned, and the platform records the payment by
+  // hand. The key id reaches the browser; neither secret ever does.
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  // A different secret from the key secret — set it to whatever is configured
+  // on the webhook in the Razorpay dashboard. Without it the webhook refuses
+  // everything rather than trusting an unsigned call.
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+
+  // Where the public site lives, for building the payment link that is handed
+  // to a new dealership. Falls back to a relative path when unset.
+  PUBLIC_SITE_URL: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

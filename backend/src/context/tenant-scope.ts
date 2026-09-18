@@ -22,7 +22,14 @@ export const TENANT_SCOPED_MODELS = new Set([
  * decision to make its rows visible to every tenant, so keep it short — the
  * DMMF coverage test fails on any model that is in neither set.
  */
-export const GLOBAL_MODELS = new Set(['Tenant', 'PlatformUser', 'PlatformAuditLog']);
+export const GLOBAL_MODELS = new Set([
+  'Tenant', 'PlatformUser', 'PlatformAuditLog',
+  // A signup has no workspace yet, and a subscription is the platform's record
+  // of what a workspace pays — read by the console and by a payment page that
+  // has no session at all. Neither carries a `tenantId` field, so neither can
+  // be mistaken for a dealer-owned row.
+  'SignupRequest', 'Subscription',
+]);
 
 /** Operations whose `where` is a plain filter, or an extended unique filter. */
 const WHERE_OPS = new Set([

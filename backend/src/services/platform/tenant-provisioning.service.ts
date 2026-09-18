@@ -22,6 +22,12 @@ export interface NewTenantInput {
   slug: string;
   name: string;
   admin: { name: string; email: string; password: string };
+  /**
+   * Whether the workspace opens immediately. A self-serve signup is provisioned
+   * SUSPENDED and opens when its first payment lands, so approving a signup
+   * does not hand out a working system before anyone has paid for it.
+   */
+  status?: 'ACTIVE' | 'SUSPENDED';
   /** Optional starting org data; sensible defaults are created when omitted. */
   branchName?: string;
   timezone?: string;
@@ -69,7 +75,7 @@ export async function provisionTenant(
   if (taken) throw new AppError(`The address "${slug}" is already taken`, 409);
 
   const tenant = await prisma.tenant.create({
-    data: { slug, name: input.name.trim(), status: 'ACTIVE' },
+    data: { slug, name: input.name.trim(), status: input.status ?? 'ACTIVE' },
   });
 
   // Everything below belongs to the new tenant, so it is created inside that

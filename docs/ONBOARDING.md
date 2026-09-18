@@ -4,6 +4,12 @@ One platform administrator account signs in, creates a dealer, and hands over
 that dealer's login. Everything a dealer needs is created in a single step, so
 there is never a half-made customer waiting on a follow-up.
 
+This is the direct route, which you use when you have sold to someone yourself.
+A dealership can also ask for a workspace from the public site, which you then
+approve — that path, and what it does about payment, is
+[SUBSCRIPTIONS.md](SUBSCRIPTIONS.md). Both end in the same place: a Tenant with
+its first administrator.
+
 ```
   platform administrator  ──creates──▶  dealer (tenant)
    owner@yourco.com                      · workspace address (subdomain)

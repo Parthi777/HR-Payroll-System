@@ -133,6 +133,38 @@ export interface PlatformStaff {
   twoStepEnabled: boolean;
 }
 
+/** A dealership that asked to join, as the console lists it. */
+export interface SignupRow {
+  id: string;
+  reference: string;
+  companyName: string;
+  slug: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  staffCount: number | null;
+  branchCount: number | null;
+  planCode: string;
+  note: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  workspaceId: string | null;
+  createdAt: string;
+  /** Present once approved: what they owe and where they pay it. */
+  subscription: {
+    status: 'PENDING_PAYMENT' | 'ACTIVE' | 'PAST_DUE' | 'CANCELLED';
+    planCode: string;
+    amountPaise: number;
+    paymentUrl: string;
+  } | null;
+}
+
+export interface ApprovedSignup {
+  tenant: CreatedDealer;
+  subscription: { planCode: string; amountPaise: number; status: string; paymentUrl: string };
+}
+
 export interface CreatedDealer {
   id: string;
   slug: string;

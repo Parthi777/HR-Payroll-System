@@ -467,6 +467,21 @@ GET    /api/admin/attendance/approvals  # Punches awaiting sign-off
 PATCH  /api/admin/attendance/:id/approve | /reject
 ```
 
+### Public (no account — the site anyone can reach)
+```
+GET    /api/public/plans                   # Plan codes and prices (the authority)
+POST   /api/public/signup                  # A dealership asks for a workspace → PENDING
+GET    /api/public/subscription/:token     # What a payment link owes
+POST   /api/public/subscription/:token/order    # Razorpay order, at the server's amount
+POST   /api/public/subscription/:token/confirm  # Checkout result, verified by signature
+POST   /api/public/razorpay/webhook        # payment.captured → opens the workspace
+```
+Signing up creates nothing but a request. Approving it provisions the workspace
+**SUSPENDED** with a Subscription (PENDING_PAYMENT); the first payment is what
+opens it. Both the checkout callback and the webhook are signature-verified and
+idempotent. With no Razorpay keys the flow still works and the platform records
+the payment by hand. See `docs/SUBSCRIPTIONS.md`.
+
 ### Geofence
 ```
 GET    /api/geofence/check?lat=&lng=&branchId=   # Is point inside geofence?
@@ -566,6 +581,14 @@ never with the value. SUPER_ADMIN only — the trail gathers salaries and payrol
 totals into one place, so it is gated above the screens it describes.
 ```
 GET    /api/admin/audit?actorId=&entity=&action=&cursor=&limit=
+```
+
+### Platform — signups and billing
+```
+GET    /api/platform/signups?status=&limit=
+PATCH  /api/platform/signups/:id/approve   # Provisions suspended + starts the subscription
+PATCH  /api/platform/signups/:id/reject
+PATCH  /api/platform/subscriptions/:workspaceId/mark-paid   # Payment taken outside the gateway
 ```
 Read on the web at `/activity`. Rows are tenant-owned, so the Prisma extension
 scopes them; one dealer can never read another's (pinned by `isolation.test.ts`
@@ -889,6 +912,13 @@ FIREBASE_CLIENT_EMAIL=
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
 NEXT_PUBLIC_GOOGLE_MAPS_KEY=
 NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
+
+# Razorpay (subscriptions; all optional — unset means payments are recorded by
+# hand in the console. See docs/SUBSCRIPTIONS.md)
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=           # a different secret from the key secret
+PUBLIC_SITE_URL=                   # so payment links are absolute
 
 # Addresses (all optional; see docs/HOSTNAMES.md)
 NEXT_PUBLIC_ADMIN_HOST=            # web: Master Control, e.g. "admin.yourdomain.com"; build-time

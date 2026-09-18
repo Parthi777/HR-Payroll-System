@@ -614,6 +614,61 @@ model PlatformUser {
   updatedAt         DateTime  @updatedAt
 }
 
+/// A dealership asking to join, before it is a Tenant.
+///
+/// Global by necessity: there is no workspace yet, and approving one is what
+/// creates it. `workspaceId` is deliberately not named `tenantId` — the same
+/// reasoning as PlatformAuditLog below, so the tenant-scoping extension can
+/// never mistake this for a row a dealer owns.
+model SignupRequest {
+  id           String    @id @default(cuid())
+  companyName  String
+  /// The workspace address they asked for. Only reserved once approved.
+  slug         String
+  contactName  String
+  email        String
+  phone        String
+  staffCount   Int?
+  branchCount  Int?
+  planCode     String // STARTER | GROWTH | ENTERPRISE
+  note         String?
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedById String? // PlatformUser
+  reviewedAt   DateTime?
+  reviewNote   String?
+  workspaceId  String? // the Tenant it became, once approved
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// What a dealership pays, and whether it has.
+///
+/// Global for two reasons: the payment page is opened from a link by someone
+/// who has no session at all, and billing belongs to the platform rather than
+/// to the dealer. No dealer-facing route reads this model. `workspaceId`, not
+/// `tenantId`, for the reason given above.
+model Subscription {
+  id                String    @id @default(cuid())
+  workspaceId       String    @unique
+  planCode          String
+  status            String    @default("PENDING_PAYMENT") // PENDING_PAYMENT | ACTIVE | PAST_DUE | CANCELLED
+  /// Paise, so money is only ever integer arithmetic.
+  amountPaise       Int
+  /// Unguessable: it is what the payment link carries instead of a login.
+  payToken          String    @unique
+  periodEnd         DateTime?
+  razorpayOrderId   String?   @unique
+  razorpayPaymentId String?   @unique
+  paidAt            DateTime?
+  /// Set when a person recorded the payment rather than a gateway.
+  paidById          String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
 /// Platform-level actions: a dealer onboarded, suspended, or issued credentials.
 ///
 /// Separate from AuditLog, which is tenant-scoped and whose actor is an

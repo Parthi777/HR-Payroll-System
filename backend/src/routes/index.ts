@@ -16,6 +16,7 @@ import { appRoutes } from './app.routes.js';
 import { notificationRoutes } from './notification.routes.js';
 import { auditRoutes } from './audit.routes.js';
 import { platformRoutes } from './platform.routes.js';
+import { publicRoutes } from './public.routes.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
@@ -38,4 +39,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(auditRoutes, { prefix: '/api' });
   // Platform surface — dealer onboarding. Guarded by requirePlatform, not requireRole.
   await app.register(platformRoutes, { prefix: '/api' });
+  // The public surface: plans, signup and the payment page. No session at all,
+  // and no route in it can reach a dealer's data.
+  await app.register(publicRoutes, { prefix: '/api' });
 }

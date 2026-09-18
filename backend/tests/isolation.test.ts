@@ -361,6 +361,15 @@ suite('cross-tenant isolation', () => {
     'GET /api/auth/workspace/:slug',
     'GET /api/claims/types',
     'GET /api/admin/whatsapp/templates',
+    // The public surface: plans, a signup request and a payment page reached by
+    // an unguessable token. None of these models carries a tenantId, and no
+    // route here reads one that does — see tests/signup.test.ts.
+    'GET /api/public/plans',
+    'POST /api/public/signup',
+    'GET /api/public/subscription/:token',
+    'POST /api/public/subscription/:token/order',
+    'POST /api/public/subscription/:token/confirm',
+    'POST /api/public/razorpay/webhook',
   ];
 
   const NOT_YET_ASSERTED = [
@@ -468,6 +477,10 @@ suite('cross-tenant isolation', () => {
     'PATCH /api/platform/tenants/:id/status',
     'PATCH /api/platform/tenants/:id/storage',
     'POST /api/platform/tenants/:id/admins',
+    'GET /api/platform/signups',
+    'PATCH /api/platform/signups/:id/approve',
+    'PATCH /api/platform/signups/:id/reject',
+    'PATCH /api/platform/subscriptions/:workspaceId/mark-paid',
     'GET /api/platform/audit',
   ];
 

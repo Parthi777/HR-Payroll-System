@@ -74,6 +74,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         <nav className="ml-8 hidden items-center gap-1 sm:flex">
           {[
             { href: '/platform', label: 'Dealers' },
+            { href: '/platform/signups', label: 'Signups' },
             { href: '/platform/users', label: 'Team' },
             { href: '/platform/activity', label: 'Activity' },
           ].map((item) => {
