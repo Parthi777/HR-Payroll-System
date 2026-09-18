@@ -10,6 +10,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
+import { currentCode, platformSignIn } from './support/platform-session.js';
+import { codeForStep, stepAt } from '../src/services/platform/totp.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -97,13 +99,7 @@ suite('dealer onboarding', () => {
       },
     });
 
-    const login = await app.inject({
-      method: 'POST', url: '/api/platform/auth/login',
-        remoteAddress: freshIp(),
-      payload: { email: PLATFORM.email, password: PLATFORM.password },
-    });
-    expect(login.statusCode, login.body).toBe(200);
-    platformToken = login.json().token;
+    platformToken = await platformSignIn(app, PLATFORM, freshIp);
   }, 60_000);
 
   afterAll(async () => {
@@ -499,6 +495,9 @@ suite('dealer onboarding', () => {
       const staff = res.json().staff as { email: string; isActive: boolean }[];
       expect(staff.map((s) => s.email)).toContain(PLATFORM.email);
       expect(staff.every((s) => !('passwordHash' in s)), 'the hash was serialised').toBe(true);
+      for (const secret of ['totpSecret', 'totpPendingSecret', 'recoveryCodes']) {
+        expect(res.body, `${secret} was serialised`).not.toContain(secret);
+      }
     });
 
     it('adds a second administrator who can then sign in', async () => {
@@ -508,6 +507,10 @@ suite('dealer onboarding', () => {
 
       const login = await platformLogin(COLLEAGUE.email, COLLEAGUE.password);
       expect(login.statusCode, 'the new administrator cannot sign in').toBe(200);
+      // A new account has no authenticator yet, so it is sent to enrol.
+      expect(login.json().step).toBe('enroll');
+      expect(login.json().token).toBeUndefined();
+      await platformSignIn(app, COLLEAGUE, freshIp);
     });
 
     it('refuses an email that already has an account', async () => {
@@ -541,7 +544,7 @@ suite('dealer onboarding', () => {
     it('deactivating locks the account out on the next request, not at token expiry', async () => {
       // A token minted while they were active must stop working immediately —
       // otherwise revoking access means waiting up to 8 hours.
-      const stillValid = (await platformLogin(COLLEAGUE.email, COLLEAGUE.password)).json().token;
+      const stillValid = await platformSignIn(app, COLLEAGUE, freshIp);
 
       const off = await asPlatform('PATCH', `/api/platform/users/${colleagueId}`, { isActive: false });
       expect(off.statusCode, off.body).toBe(200);
@@ -574,6 +577,229 @@ suite('dealer onboarding', () => {
       expect(actions).toContain('PLATFORM_USER_REACTIVATED');
       expect(actions).toContain('PLATFORM_USER_PASSWORD_RESET');
       expect(JSON.stringify(res.json())).not.toContain(COLLEAGUE.password);
+    });
+  });
+
+  describe('two-step verification', () => {
+    const ACCOUNT = { name: 'Two Step', email: 'twostep@platform.test', password: 'two-step-password-1' };
+    let accountId: string;
+    let secret: string;
+    let recoveryCodes: string[];
+
+    const post = (url: string, payload: object, headers: Record<string, string> = {}) =>
+      app.inject({ method: 'POST', url, remoteAddress: freshIp(), headers, payload });
+
+    /** The password step, asserting which second step it asks for. */
+    async function passwordStep(expected: 'verify' | 'enroll'): Promise<string> {
+      const res = await post('/api/platform/auth/login', { email: ACCOUNT.email, password: ACCOUNT.password });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().step).toBe(expected);
+      return res.json().challenge;
+    }
+
+    const lastStep = async () =>
+      (await app.prisma.platformUser.findUniqueOrThrow({ where: { id: accountId } })).totpLastStep!;
+
+    const auditFor = async (action: string) =>
+      (await asPlatform('GET', `/api/platform/audit?action=${action}`)).json().entries as { targetId: string | null }[];
+
+    beforeAll(async () => {
+      const res = await asPlatform('POST', '/api/platform/users', ACCOUNT);
+      expect(res.statusCode, res.body).toBe(201);
+      accountId = res.json().staff.id;
+    });
+
+    it('a correct password alone never yields a session', async () => {
+      const res = await post('/api/platform/auth/login', { email: ACCOUNT.email, password: ACCOUNT.password });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).not.toHaveProperty('token');
+
+      // The challenge it does return opens nothing — not the console, not a dealer.
+      const { challenge } = res.json();
+      const console = await app.inject({
+        method: 'GET', url: '/api/platform/tenants', headers: { authorization: `Bearer ${challenge}` },
+      });
+      expect(console.statusCode).toBe(403);
+      const dealer = await app.inject({
+        method: 'GET', url: '/api/admin/employees',
+        headers: { authorization: `Bearer ${challenge}`, 'x-tenant-slug': 'abc-motors' },
+      });
+      expect(dealer.statusCode).toBe(403);
+    });
+
+    it('ends console sessions that never passed a second step', async () => {
+      // What every session issued before two-step verification existed looks like.
+      const legacy = app.jwt.sign({ sub: accountId, role: 'PLATFORM_ADMIN', scope: 'PLATFORM' }, { expiresIn: '8h' });
+      const res = await app.inject({
+        method: 'GET', url: '/api/platform/me', headers: { authorization: `Bearer ${legacy}` },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('enrols: scan a secret, confirm it with a code, get recovery codes once', async () => {
+      const challenge = await passwordStep('enroll');
+
+      // An enrolment challenge is not a sign-in, and cannot confirm a secret it was never shown.
+      expect((await post('/api/platform/auth/two-step/verify', { challenge, code: '123456' })).statusCode).toBe(401);
+      expect((await post('/api/platform/auth/two-step/enable', { challenge, code: '123456' })).statusCode).toBe(400);
+
+      const setup = await post('/api/platform/auth/two-step/setup', { challenge });
+      expect(setup.statusCode, setup.body).toBe(200);
+      secret = setup.json().secret;
+      expect(setup.json().otpauthUri).toContain(`secret=${secret}`);
+
+      const wrong = await post('/api/platform/auth/two-step/enable', {
+        challenge, code: codeForStep(secret, stepAt(Date.now()) - 5),
+      });
+      expect(wrong.statusCode).toBe(401);
+      // A half-finished setup changes nothing.
+      await passwordStep('enroll');
+
+      const enabled = await post('/api/platform/auth/two-step/enable', {
+        challenge, code: codeForStep(secret, stepAt(Date.now())),
+      });
+      expect(enabled.statusCode, enabled.body).toBe(200);
+      recoveryCodes = enabled.json().recoveryCodes;
+      expect(recoveryCodes).toHaveLength(10);
+      expect(new Set(recoveryCodes).size).toBe(10);
+
+      const me = await app.inject({
+        method: 'GET', url: '/api/platform/me', headers: { authorization: `Bearer ${enabled.json().token}` },
+      });
+      expect(me.statusCode, me.body).toBe(200);
+      expect(me.json().twoStep.recoveryCodesLeft).toBe(10);
+      expect(me.json().twoStep.enabledAt).toBeTruthy();
+
+      // Enrolled now, so the same challenge cannot enrol a second secret over it.
+      expect((await post('/api/platform/auth/two-step/setup', { challenge })).statusCode).toBe(409);
+      await passwordStep('verify');
+
+      expect((await auditFor('PLATFORM_TWO_STEP_ENABLED')).some((e) => e.targetId === accountId)).toBe(true);
+      const team = await asPlatform('GET', '/api/platform/users');
+      const row = (team.json().staff as { id: string; twoStepEnabled: boolean }[]).find((s) => s.id === accountId);
+      expect(row?.twoStepEnabled).toBe(true);
+    });
+
+    it('stores recovery codes only as hashes', async () => {
+      const row = await app.prisma.platformUser.findUniqueOrThrow({ where: { id: accountId } });
+      for (const code of recoveryCodes) {
+        expect(row.recoveryCodes).not.toContain(code);
+        expect(row.recoveryCodes).not.toContain(code.replace('-', ''));
+      }
+    });
+
+    it('signs in with an authenticator code, and never twice with the same code', async () => {
+      // The code that confirmed enrolment is already spent.
+      const spent = await lastStep();
+      const replayed = await post('/api/platform/auth/two-step/verify', {
+        challenge: await passwordStep('verify'), code: codeForStep(secret, spent),
+      });
+      expect(replayed.statusCode).toBe(401);
+
+      const code = codeForStep(secret, spent + 1);
+      const first = await post('/api/platform/auth/two-step/verify', { challenge: await passwordStep('verify'), code });
+      expect(first.statusCode, first.body).toBe(200);
+      expect(first.json().token).toBeTruthy();
+
+      const again = await post('/api/platform/auth/two-step/verify', { challenge: await passwordStep('verify'), code });
+      expect(again.statusCode, 'the same code signed in twice').toBe(401);
+    });
+
+    it('accepts a recovery code once, however it is typed, and says how many are left', async () => {
+      const [code] = recoveryCodes;
+      const used = await post('/api/platform/auth/two-step/verify', {
+        challenge: await passwordStep('verify'), code: ` ${code.toLowerCase()} `,
+      });
+      expect(used.statusCode, used.body).toBe(200);
+      expect(used.json().recoveryCodesLeft).toBe(9);
+
+      const again = await post('/api/platform/auth/two-step/verify', { challenge: await passwordStep('verify'), code });
+      expect(again.statusCode).toBe(401);
+
+      expect((await auditFor('PLATFORM_RECOVERY_CODE_USED')).filter((e) => e.targetId === accountId)).toHaveLength(1);
+    });
+
+    it('replaces recovery codes only with a live authenticator code', async () => {
+      const token = await platformSignIn(app, ACCOUNT, freshIp);
+      const auth = { authorization: `Bearer ${token}` };
+
+      // A session alone, or an old recovery code, is not enough to mint new ones.
+      expect((await post('/api/platform/me/recovery-codes', { code: recoveryCodes[1] }, auth)).statusCode).toBe(401);
+
+      const res = await post('/api/platform/me/recovery-codes', { code: await currentCode(app, ACCOUNT.email) }, auth);
+      expect(res.statusCode, res.body).toBe(200);
+      const fresh = res.json().recoveryCodes as string[];
+      expect(fresh).toHaveLength(10);
+
+      const old = await post('/api/platform/auth/two-step/verify', {
+        challenge: await passwordStep('verify'), code: recoveryCodes[1],
+      });
+      expect(old.statusCode, 'a replaced recovery code still worked').toBe(401);
+      recoveryCodes = fresh;
+    });
+
+    it('locks the second step after five wrong codes — even for the right code', async () => {
+      await app.prisma.platformUser.update({ where: { id: accountId }, data: { mfaFailures: 0 } });
+      for (let i = 0; i < 5; i++) {
+        const res = await post('/api/platform/auth/two-step/verify', {
+          challenge: await passwordStep('verify'), code: 'AAAAA-AAAAA',
+        });
+        expect(res.statusCode).toBe(401);
+      }
+
+      const right = await post('/api/platform/auth/two-step/verify', {
+        challenge: await passwordStep('verify'), code: await currentCode(app, ACCOUNT.email),
+      });
+      expect(right.statusCode).toBe(429);
+      expect(right.json().message).toMatch(/Try again in 15 minutes/);
+      expect((await auditFor('PLATFORM_TWO_STEP_LOCKED')).filter((e) => e.targetId === accountId)).toHaveLength(1);
+
+      await app.prisma.platformUser.update({ where: { id: accountId }, data: { mfaLockedUntil: null } });
+    });
+
+    it('refuses a challenge used for the wrong step, altered, or that is really a session', async () => {
+      const challenge = await passwordStep('verify');
+      expect((await post('/api/platform/auth/two-step/setup', { challenge })).statusCode).toBe(401);
+
+      // Re-pointed at another account, keeping the signature: the classic swap.
+      const ownerId = (await asPlatform('GET', '/api/platform/me')).json().id as string;
+      const [header, payload, signature] = challenge.split('.');
+      const swapped = Buffer.from(JSON.stringify({
+        ...JSON.parse(Buffer.from(payload, 'base64url').toString()), sub: ownerId,
+      })).toString('base64url');
+      const forged = await post('/api/platform/auth/two-step/verify', {
+        challenge: [header, swapped, signature].join('.'), code: await currentCode(app, PLATFORM.email),
+      });
+      expect(forged.statusCode).toBe(401);
+
+      const session = await post('/api/platform/auth/two-step/verify', {
+        challenge: platformToken, code: await currentCode(app, PLATFORM.email),
+      });
+      expect(session.statusCode).toBe(401);
+    });
+
+    it('resets a colleague’s two-step verification, but never your own', async () => {
+      const auth = { authorization: `Bearer ${platformToken}` };
+      const ownerId = (await asPlatform('GET', '/api/platform/me')).json().id as string;
+
+      const own = await app.inject({ method: 'DELETE', url: `/api/platform/users/${ownerId}/two-step`, headers: auth });
+      expect(own.statusCode).toBe(400);
+
+      const res = await app.inject({ method: 'DELETE', url: `/api/platform/users/${accountId}/two-step`, headers: auth });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().staff.twoStepEnabled).toBe(false);
+
+      // Their next sign-in enrols again, and the old authenticator is dead.
+      await passwordStep('enroll');
+      expect((await auditFor('PLATFORM_USER_TWO_STEP_RESET')).some((e) => e.targetId === accountId)).toBe(true);
+    });
+
+    it('cannot be reset with a dealer’s own sign-in', async () => {
+      const res = await app.inject({
+        method: 'DELETE', url: `/api/platform/users/${accountId}/two-step`,
+        headers: { authorization: `Bearer ${await dealerLogin('abc-motors', 'owner@abc.test')}`, 'x-tenant-slug': 'abc-motors' },
+      });
+      expect(res.statusCode).toBe(403);
     });
   });
 

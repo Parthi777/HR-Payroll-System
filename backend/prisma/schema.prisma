@@ -587,14 +587,31 @@ model Tenant {
 
 /// Platform super admin. Separate from AdminUser: platform staff are not
 /// members of any tenant, and AdminUser is itself tenant-scoped.
+///
+/// Two-step verification is mandatory: a password alone never yields a console
+/// session. See services/platform/two-step.service.ts.
 model PlatformUser {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String
+  passwordHash      String
+  isActive          Boolean   @default(true)
+  /// Base32 TOTP secret (RFC 6238). Null until the person has enrolled.
+  totpSecret        String?
+  /// A secret shown during enrolment, promoted to totpSecret only once a code
+  /// generated from it is confirmed — so a half-finished setup locks nobody out.
+  totpPendingSecret String?
+  totpEnabledAt     DateTime?
+  /// The 30-second step the last accepted code belonged to. A code is refused
+  /// for any step at or before it, so an observed code cannot be replayed.
+  totpLastStep      Int?
+  /// JSON array of SHA-256 hashes of the unused recovery codes.
+  recoveryCodes     String?
+  /// Wrong codes since the last correct one; five lock the second step.
+  mfaFailures       Int       @default(0)
+  mfaLockedUntil    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
 
 /// Platform-level actions: a dealer onboarded, suspended, or issued credentials.

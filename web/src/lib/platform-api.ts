@@ -56,7 +56,40 @@ export const platformApi = {
     request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
+
+// ── Signing in ──
+//
+// Two requests, never one. The password earns a challenge naming the next
+// step; only the challenge plus an authenticator code earns a session.
+
+export interface PasswordStep {
+  step: 'verify' | 'enroll';
+  challenge: string;
+}
+
+export interface PlatformSession {
+  token: string;
+  name: string;
+  email: string;
+  /** Present when a recovery code was used — how many remain. */
+  recoveryCodesLeft?: number;
+  /** Present only when enrolment just finished: shown once, never again. */
+  recoveryCodes?: string[];
+}
+
+export interface EnrolmentSecret {
+  secret: string;
+  otpauthUri: string;
+}
+
+export interface PlatformMe {
+  id: string;
+  name: string;
+  email: string;
+  twoStep: { enabledAt: string | null; recoveryCodesLeft: number };
+}
 
 // ── Shapes the console renders ──
 
@@ -97,6 +130,7 @@ export interface PlatformStaff {
   email: string;
   isActive: boolean;
   createdAt: string;
+  twoStepEnabled: boolean;
 }
 
 export interface CreatedDealer {

@@ -116,10 +116,12 @@ test('filters by person', async ({ page }) => {
   await choose(page, PERSON, COLLEAGUE.name);
   await expect(page).toHaveURL(/actorId=/);
 
-  // The colleague did exactly one thing in the seed.
-  await expect(rows(page)).toHaveCount(1);
+  // The colleague did two things in the seed: set up two-step verification on
+  // their first sign-in, then renamed a dealer.
+  await expect(rows(page)).toHaveCount(2);
   await expect(rows(page).first()).toContainText(COLLEAGUE.name);
   await expect(rows(page).first()).toContainText('Dealer renamed');
+  await expect(rows(page).nth(1)).toContainText('Set up two-step verification');
   await expect(page.locator('ol').first()).not.toContainText(PLATFORM.name);
 });
 

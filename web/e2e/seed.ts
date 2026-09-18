@@ -13,6 +13,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { currentCode, totp } from './two-step';
 
 const BACKEND = path.resolve(__dirname, '../../backend');
 
@@ -59,7 +60,7 @@ export async function seed(apiUrl: string, databaseUrl: string): Promise<Seeded>
     '--email', PLATFORM.email, '--name', PLATFORM.name, '--password', PLATFORM.password,
   ], { cwd: BACKEND, stdio: 'pipe', env: { ...process.env, DATABASE_URL: databaseUrl } });
 
-  const api = await client(apiUrl, PLATFORM.email, PLATFORM.password);
+  const api = await client(apiUrl, databaseUrl, PLATFORM.email, PLATFORM.password);
 
   const dealerIds: Record<string, string> = {};
   for (const dealer of DEALERS) {
@@ -90,7 +91,7 @@ export async function seed(apiUrl: string, databaseUrl: string): Promise<Seeded>
 
   // A second actor, who then does something of their own.
   await api.post('/platform/users', COLLEAGUE);
-  const theirApi = await client(apiUrl, COLLEAGUE.email, COLLEAGUE.password);
+  const theirApi = await client(apiUrl, databaseUrl, COLLEAGUE.email, COLLEAGUE.password);
   await theirApi.patch(`/platform/tenants/${quiet}`, { name: QUIET_DEALER_FINAL_NAME });
 
   return { apiUrl, dealerIds };
@@ -99,19 +100,36 @@ export async function seed(apiUrl: string, databaseUrl: string): Promise<Seeded>
 /** A minimal authenticated client — the seed needs no more than this. */
 let seedIp = 0;
 
-async function client(apiUrl: string, email: string, password: string) {
+async function client(apiUrl: string, databaseUrl: string, email: string, password: string) {
   // A distinct client IP per sign-in. Sign-in is rate-limited to 5 attempts per
   // 10 minutes per IP, and the backend trusts X-Forwarded-For — so this is the
   // same thing the backend suite does with freshIp(), rather than turning a
   // real security control off to make the fixture fit.
   const ip = `10.8.0.${++seedIp}`;
-  const login = await fetch(`${apiUrl}/platform/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': ip },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!login.ok) throw new Error(`seed: could not sign in as ${email} (${login.status})`);
-  const { token } = (await login.json()) as { token: string };
+  const post = async <T>(path: string, body: unknown): Promise<T> => {
+    const res = await fetch(`${apiUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': ip },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`seed: signing in as ${email}, ${path} failed (${res.status}): ${await res.text()}`);
+    return res.json() as Promise<T>;
+  };
+
+  // The whole sign-in, as a person does it: password, then the second step —
+  // enrolling first, which is what every account's first sign-in is.
+  const { step, challenge } = await post<{ step: 'verify' | 'enroll'; challenge: string }>(
+    '/platform/auth/login', { email, password },
+  );
+  let token: string;
+  if (step === 'enroll') {
+    const { secret } = await post<{ secret: string }>('/platform/auth/two-step/setup', { challenge });
+    ({ token } = await post<{ token: string }>('/platform/auth/two-step/enable', { challenge, code: totp(secret) }));
+  } else {
+    ({ token } = await post<{ token: string }>('/platform/auth/two-step/verify', {
+      challenge, code: currentCode(email, databaseUrl),
+    }));
+  }
 
   const send = async (method: string, path: string, body: unknown) => {
     const res = await fetch(`${apiUrl}${path}`, {

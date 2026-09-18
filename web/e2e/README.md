@@ -36,6 +36,15 @@ run without either disturbing the other.
 3. **Signs in once** (`auth.setup.ts`) and shares that session with every spec.
    The login form itself is tested separately, without it.
 
+## Two-step codes
+
+Console sign-in needs an authenticator code. The seed enrols its accounts
+through the API, and `two-step.ts` produces codes from there: `totp()` from a
+secret (enrolment), `currentCode()` from the secret in the database (every
+later sign-in). `currentCode()` also clears the replay guard, because the suite
+signs the same account in several times inside one 30-second window, which the
+server refuses by design. The guard itself is tested in the backend suite.
+
 ## The client IP
 
 Sign-in is rate-limited to five attempts per ten minutes per IP, and every

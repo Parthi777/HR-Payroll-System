@@ -27,8 +27,22 @@ export interface JwtPayload {
    * without it, and `requirePlatform()` rejects a platform request with it.
    */
   tenantId?: string;
-  /** Which API surface the token is for. Absent is treated as TENANT. */
-  scope?: 'TENANT' | 'PLATFORM';
+  /**
+   * Which API surface the token is for. Absent is treated as TENANT.
+   *
+   * PLATFORM_CHALLENGE is the half-way token between a correct platform
+   * password and a correct second-step code. It opens no route at all; the
+   * only thing it is good for is being handed back to the two-step endpoints.
+   */
+  scope?: 'TENANT' | 'PLATFORM' | 'PLATFORM_CHALLENGE';
+  /** On a challenge: whether the holder is confirming a code or enrolling. */
+  purpose?: 'verify' | 'enroll';
+  /**
+   * On a platform token: the second step was passed. Tokens issued before
+   * two-step verification existed lack it, and are refused — so deploying it
+   * ends every password-only session rather than letting them run for 8 hours.
+   */
+  twoStep?: true;
   branchId?: string;
   /**
    * Access and refresh tokens share one signing secret, so they are told apart
@@ -77,7 +91,7 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
   }
 
   const payload = request.user;
-  if (payload.scope === 'PLATFORM') {
+  if (payload.scope === 'PLATFORM' || payload.scope === 'PLATFORM_CHALLENGE') {
     // A platform token carries no tenant, so nothing here could be scoped by it.
     throw AppError.forbidden('Platform sign-in cannot be used on tenant endpoints');
   }
@@ -168,6 +182,9 @@ export async function requirePlatform(request: FastifyRequest, _reply: FastifyRe
   const payload = request.user;
   if (payload.scope !== 'PLATFORM') {
     throw AppError.forbidden('This endpoint requires a platform sign-in');
+  }
+  if (payload.twoStep !== true) {
+    throw AppError.unauthorized('Please sign in again — the console now needs two-step verification');
   }
 
   // The row is the authority here too: revoking a platform account takes effect

@@ -116,6 +116,36 @@ const SHAPES: Record<string, Shape> = {
     kind: 'credential',
     tone: 'neutral',
   },
+  PLATFORM_TWO_STEP_ENABLED: {
+    title: 'Set up two-step verification',
+    kind: 'credential',
+    tone: 'grant',
+  },
+  PLATFORM_USER_TWO_STEP_RESET: {
+    title: 'Two-step verification reset',
+    kind: 'credential',
+    tone: 'revoke',
+    detail: (m) => join(text(m.email), 'sets it up again at their next sign-in'),
+  },
+  // The entries below are the ones worth being alarmed by: either the phone is
+  // gone, or someone other than the owner is holding the password.
+  PLATFORM_RECOVERY_CODE_USED: {
+    title: 'Signed in with a recovery code',
+    kind: 'credential',
+    tone: 'revoke',
+    detail: (m) => (m.left === undefined ? '' : `${text(m.left)} left`),
+  },
+  PLATFORM_RECOVERY_CODES_REGENERATED: {
+    title: 'Replaced their recovery codes',
+    kind: 'credential',
+    tone: 'neutral',
+  },
+  PLATFORM_TWO_STEP_LOCKED: {
+    title: 'Locked out after five wrong codes',
+    kind: 'credential',
+    tone: 'revoke',
+    detail: () => 'the password was right — 15 minutes before another try',
+  },
 };
 
 /**

@@ -7,7 +7,7 @@ there is never a half-made customer waiting on a follow-up.
 ```
   platform administrator  ──creates──▶  dealer (tenant)
    owner@yourco.com                      · workspace address (subdomain)
-   POST /api/platform/auth/login         · Head Office branch, department,
+   password + authenticator code         · Head Office branch, department,
                                            designation, General Shift
                                           · first SUPER_ADMIN login
                                           ──▶ hand the credentials over
@@ -24,15 +24,30 @@ npx tsx scripts/create-platform-admin.ts \
 ```
 
 Re-running with the same email updates the name and password — that is also how
-you reset it if the password is lost.
+you reset it if the password is lost. (It does not touch two-step verification;
+see [PLATFORM-CONSOLE-ACCESS.md](PLATFORM-CONSOLE-ACCESS.md) for that.)
 
 ## 2. Sign in to the platform
+
+Sign in at `/platform/login`. Two-step verification is mandatory: the first
+sign-in shows a QR code for an authenticator app and hands you ten recovery
+codes, and every sign-in after that asks for the app's 6-digit code.
+
+Over the API it is two calls, because a password alone never yields a session:
 
 ```http
 POST /api/platform/auth/login
 { "email": "you@yourco.com", "password": "…" }
-→ { "token": "…", "name": "Your Name" }
+→ { "step": "verify", "challenge": "…" }        // "enroll" on a first sign-in
+
+POST /api/platform/auth/two-step/verify
+{ "challenge": "…", "code": "123456" }           // or a recovery code
+→ { "token": "…", "name": "Your Name", "email": "…" }
 ```
+
+An `enroll` challenge goes to `/two-step/setup` (returns the secret and its
+`otpauth://` URI) and then `/two-step/enable` with a code from the new
+authenticator, which returns the token and the recovery codes.
 
 The token lasts 8 hours. Send it as `Authorization: Bearer <token>` on every
 platform call below.

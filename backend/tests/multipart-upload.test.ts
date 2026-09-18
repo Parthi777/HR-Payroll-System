@@ -16,6 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
+import { platformSignIn } from './support/platform-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -71,14 +72,11 @@ suite('multipart upload', () => {
     await p.platformUser.create({
       data: { email: PLATFORM.email, name: PLATFORM.name, passwordHash: await bcrypt.hash(PLATFORM.password, 4) },
     });
-    const platformLogin = await app.inject({
-      method: 'POST', url: '/api/platform/auth/login', remoteAddress: freshIp(), payload: PLATFORM,
-    });
-    expect(platformLogin.statusCode, platformLogin.body).toBe(200);
+    const platformToken = await platformSignIn(app, PLATFORM, freshIp);
 
     const made = await app.inject({
       method: 'POST', url: '/api/platform/tenants',
-      headers: { authorization: `Bearer ${platformLogin.json().token}` },
+      headers: { authorization: `Bearer ${platformToken}` },
       payload: {
         slug: SLUG, name: 'Upload Motors',
         admin: { name: 'Owner', email: ADMIN.email, password: ADMIN.password },

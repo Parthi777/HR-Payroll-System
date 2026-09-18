@@ -45,7 +45,9 @@ async function main() {
 
   console.log(`\n✓ Platform administrator ${existing ? 'updated' : 'created'}`);
   console.log(`  ${staff.name} <${staff.email}>`);
-  console.log('\nSign in at POST /api/platform/auth/login, then create your first dealer:');
+  console.log('\nSign in at /platform/login. The first sign-in sets up two-step verification —');
+  console.log('have an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password) ready.');
+  console.log('\nThen create your first dealer:');
   console.log('  POST /api/platform/tenants  { slug, name, admin: { name, email, password } }\n');
 
   const tenants = await prisma.tenant.count();

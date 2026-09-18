@@ -805,8 +805,21 @@ policy (`isLateArrival()` is tracked separately).
   platform proxy or everyone shares one bucket). OTP no longer exists; these are
   the limits actually configured, per 10 minutes:
   admin sign-in 5, platform sign-in 5, platform password change 5,
-  employee sign-in 10, Google sign-in 10, workspace lookup 20,
+  platform two-step verify / setup / enable 10 each, platform recovery-code
+  replacement 5, employee sign-in 10, Google sign-in 10, workspace lookup 20,
   refresh token 30, webhook handshake 30, APK download 30.
+- **Platform console sign-in is two-step, always.** The password returns a
+  challenge (`scope: PLATFORM_CHALLENGE`) that opens no route; only the
+  challenge plus a TOTP or recovery code yields a session, and `requirePlatform`
+  refuses any token without `twoStep: true`. First sign-in enrols. A code is
+  accepted once per 30-second step; five wrong codes lock the account's second
+  step for 15 minutes. Recovery codes are stored as SHA-256 hashes. Logic in
+  `services/platform/two-step.service.ts`; reset a lost phone from Team, or
+  `scripts/reset-platform-two-step.ts`. Optional extras, off until configured:
+  `PLATFORM_ALLOWED_IPS` (404 for other addresses) and
+  `NEXT_PUBLIC_PLATFORM_HOST` (console on its own hostname, via `web/src/proxy.ts`).
+  The landing page deliberately does not link to the console. See
+  `docs/PLATFORM-CONSOLE-ACCESS.md`.
 - **HTTPS only** for all API communication
 - **No certificate pinning.** The API is on a platform-managed domain whose
   certificate rotates; a pin that outlives its certificate bricks every
@@ -869,6 +882,10 @@ FIREBASE_CLIENT_EMAIL=
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
 NEXT_PUBLIC_GOOGLE_MAPS_KEY=
 NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
+
+# Platform console lockdown (both optional; see docs/PLATFORM-CONSOLE-ACCESS.md)
+PLATFORM_ALLOWED_IPS=              # backend: e.g. "203.0.113.7, 198.51.100.0/24"
+NEXT_PUBLIC_PLATFORM_HOST=         # web: e.g. "admin.yourdomain.com"; build-time
 ```
 
 ---

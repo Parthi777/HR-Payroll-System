@@ -2,15 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, KeyRound, Loader2 } from 'lucide-react';
+import { ArrowLeft, Check, Copy, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { PasswordInput } from '@/components/password-input';
-import { platformApi, suggestPassword } from '@/lib/platform-api';
-
-interface Me {
-  id: string;
-  name: string;
-  email: string;
-}
+import { platformApi, suggestPassword, type PlatformMe } from '@/lib/platform-api';
 
 /**
  * The platform administrator's own account.
@@ -21,7 +15,7 @@ interface Me {
  * the credential went unrotated.
  */
 export default function PlatformAccountPage() {
-  const [me, setMe] = useState<Me | null>(null);
+  const [me, setMe] = useState<PlatformMe | null>(null);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -29,8 +23,9 @@ export default function PlatformAccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
+  const loadMe = () => platformApi.get<PlatformMe>('/me').then(setMe).catch(() => setMe(null));
   useEffect(() => {
-    platformApi.get<Me>('/me').then(setMe).catch(() => setMe(null));
+    void loadMe();
   }, []);
 
   const tooShort = next.length > 0 && next.length < 12;
@@ -129,10 +124,125 @@ export default function PlatformAccountPage() {
         </form>
       )}
 
+      {me && <TwoStepSection me={me} onChanged={loadMe} />}
+
       <p className="text-xs text-muted-foreground">
         This account manages every dealer, so it is worth a password you do not use anywhere
         else. It is stored hashed — nobody, including support, can read it back.
       </p>
     </div>
+  );
+}
+
+/**
+ * Two-step status, and replacing the recovery codes.
+ *
+ * There is no "turn off" here on purpose: two-step verification is required
+ * for every console account. Moving to a new phone is a reset by a colleague
+ * (Team), followed by setting it up again at the next sign-in.
+ */
+function TwoStepSection({ me, onChanged }: { me: PlatformMe; onChanged: () => void }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const left = me.twoStep.recoveryCodesLeft;
+
+  async function replace(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await platformApi.post<{ recoveryCodes: string[] }>('/me/recovery-codes', { code });
+      setCodes(res.recoveryCodes);
+      setCode('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not replace the codes');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+        <h2 className="font-semibold">Two-step verification</h2>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        {me.twoStep.enabledAt ? (
+          <>
+            On since{' '}
+            {new Date(me.twoStep.enabledAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.{' '}
+            <span className={left <= 3 ? 'font-medium text-amber-700' : ''}>
+              {left} recovery code{left === 1 ? '' : 's'} left.
+            </span>
+          </>
+        ) : (
+          'Not set up — sign out and sign in again to set it up.'
+        )}
+      </p>
+
+      {codes ? (
+        <div className="space-y-3 rounded-xl border-2 border-emerald-500/40 bg-emerald-50 p-4">
+          <p className="text-sm text-emerald-900">
+            <strong>New recovery codes.</strong> Your old ones no longer work. Save these somewhere that
+            is not your phone — they will not be shown again.
+          </p>
+          <ul className="grid grid-cols-2 gap-2 font-mono text-[13px]">
+            {codes.map((c) => <li key={c}>{c}</li>)}
+          </ul>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(codes.join('\n'));
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              className="flex items-center gap-2 rounded-xl border border-emerald-600/30 px-3 py-2 text-sm"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copied ? 'Copied' : 'Copy codes'}
+            </button>
+            <button type="button" onClick={() => setCodes(null)} className="rounded-xl border border-emerald-600/30 px-3 py-2 text-sm">
+              I have saved these
+            </button>
+          </div>
+        </div>
+      ) : (
+        me.twoStep.enabledAt && (
+          <form onSubmit={replace} className="space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Replace recovery codes</span>
+              <span className="mb-2 block text-xs text-muted-foreground">
+                Enter the current code from your authenticator app. Your existing recovery codes stop working.
+              </span>
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                className="w-40 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-center font-mono tracking-[0.3em] outline-none focus:border-primary"
+              />
+            </label>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <button
+              type="submit"
+              disabled={busy || code.length !== 6}
+              className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {busy ? 'Replacing…' : 'Generate new codes'}
+            </button>
+          </form>
+        )
+      )}
+    </section>
   );
 }

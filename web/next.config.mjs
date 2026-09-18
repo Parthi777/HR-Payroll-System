@@ -30,6 +30,9 @@ const nextConfig = {
     // The apex tenants live under, e.g. "yourapp.com". Unset means subdomains
     // are not in use and the tenant comes from ?tenant= or the last sign-in.
     NEXT_PUBLIC_APP_BASE_DOMAIN: process.env.NEXT_PUBLIC_APP_BASE_DOMAIN,
+    // The platform console's own hostname, e.g. "admin.yourapp.com". Unset
+    // means the console is served at /platform on every host. See src/proxy.ts.
+    NEXT_PUBLIC_PLATFORM_HOST: process.env.NEXT_PUBLIC_PLATFORM_HOST,
   },
 };
 

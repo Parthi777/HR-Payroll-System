@@ -8,6 +8,7 @@
 import path from 'node:path';
 import { expect, test as setup } from './fixtures';
 import { PLATFORM } from './seed';
+import { currentCode } from './two-step';
 
 export const PLATFORM_STATE = path.join(__dirname, '.auth/platform.json');
 
@@ -16,6 +17,10 @@ setup('sign in to the platform console', async ({ page }) => {
   await page.getByPlaceholder('you@yourcompany.com').fill(PLATFORM.email);
   await page.locator('input[type="password"]').fill(PLATFORM.password);
   await page.getByRole('button', { name: 'Sign In' }).click();
+
+  // The seed enrolled this account, so the second step is a code.
+  await page.getByPlaceholder('123456').fill(currentCode(PLATFORM.email));
+  await page.getByRole('button', { name: 'Verify' }).click();
 
   await expect(page).toHaveURL(/\/platform$/);
   await expect(page.getByRole('link', { name: PLATFORM.name })).toBeVisible();

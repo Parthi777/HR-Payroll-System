@@ -10,6 +10,7 @@ import { createHmac } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
+import { platformSignIn } from './support/platform-session.js';
 import {
   parseMetaInbound,
   parseTwilioInbound,
@@ -273,12 +274,7 @@ suite('working out whose employee sent a message', () => {
     await p.platformUser.create({
       data: { email: PLATFORM.email, name: PLATFORM.name, passwordHash: await bcrypt.hash(PLATFORM.password, 4) },
     });
-    const login = await app.inject({
-      method: 'POST', url: '/api/platform/auth/login', remoteAddress: freshIp(),
-      payload: { email: PLATFORM.email, password: PLATFORM.password },
-    });
-    expect(login.statusCode, login.body).toBe(200);
-    const platformToken = login.json().token;
+    const platformToken = await platformSignIn(app, PLATFORM, freshIp);
 
     await makeDealer('wa-one', 'Dealer One', 'owner@wa-one.test', platformToken);
     await makeDealer('wa-two', 'Dealer Two', 'owner@wa-two.test', platformToken);

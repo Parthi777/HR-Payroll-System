@@ -92,11 +92,16 @@ export function clearSession(): void {
 /**
  * Whether this hostname is the platform console rather than a dealer.
  *
- * Uses the same reserved list that stops a dealer claiming "admin" or
+ * NEXT_PUBLIC_PLATFORM_HOST names it exactly when set (and src/proxy.ts then
+ * keeps the console to that host). Otherwise it falls back to the first label,
+ * using the same reserved list that stops a dealer claiming "admin" or
  * "platform" as a slug, so the two can never disagree about who owns a host.
  */
 export function isPlatformHost(): boolean {
   if (typeof window === 'undefined') return false;
-  const label = window.location.hostname.toLowerCase().split('.')[0];
+  const host = window.location.hostname.toLowerCase();
+  const configured = process.env.NEXT_PUBLIC_PLATFORM_HOST?.trim().toLowerCase();
+  if (configured) return host === configured;
+  const label = host.split('.')[0];
   return label === 'admin' || label === 'platform';
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Copy, Loader2, Plus, RotateCcw, UserMinus, UserPlus } from 'lucide-react';
+import { Check, Copy, Loader2, Plus, RotateCcw, ShieldOff, UserMinus, UserPlus } from 'lucide-react';
 import { platformApi, suggestPassword, type PlatformStaff } from '@/lib/platform-api';
 
 /** A password handed over once, and the person it belongs to. */
@@ -75,6 +75,28 @@ export default function PlatformTeamPage() {
     }
   }
 
+  /**
+   * For a lost or replaced phone. Until they sign in again and set it up, the
+   * password alone is what protects the account — so say so before doing it.
+   */
+  async function resetTwoStep(person: PlatformStaff) {
+    if (!confirm(
+      `Reset two-step verification for ${person.name}?\n\n` +
+      'Their authenticator and recovery codes stop working. Their next sign-in sets it up again — ' +
+      'ask them to do that straight away, because until then their password alone is enough to set it up.',
+    )) return;
+    setBusyId(person.id);
+    setError(null);
+    try {
+      await platformApi.del(`/users/${person.id}/two-step`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reset two-step verification');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const activeCount = staff?.filter((s) => s.isActive).length ?? 0;
 
   return (
@@ -116,14 +138,15 @@ export default function PlatformTeamPage() {
           <Loader2 className="h-4 w-4 animate-spin" /> Loading team…
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="overflow-x-auto rounded-2xl border border-border bg-card">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+            <thead className="whitespace-nowrap bg-muted/50 text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Added</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Two-step</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -142,29 +165,48 @@ export default function PlatformTeamPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{person.email}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                       {new Date(person.createdAt).toLocaleDateString('en-IN', {
                         day: 'numeric', month: 'short', year: 'numeric',
                       })}
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
                           person.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
                         }`}
                       >
                         {person.isActive ? 'Active' : 'Deactivated'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <td className="px-4 py-3">
+                      <span
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
+                          person.twoStepEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
+                        }`}
+                        title={person.twoStepEnabled ? undefined : 'Sets it up at their next sign-in'}
+                      >
+                        {person.twoStepEnabled ? 'On' : 'Not set up'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
                       {busyId === person.id ? (
                         <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />
                       ) : (
-                        <>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {person.isActive && !isMe && person.twoStepEnabled && (
+                            <button
+                              onClick={() => resetTwoStep(person)}
+                              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                              title="For a lost or replaced phone — they set it up again at their next sign-in"
+                            >
+                              <ShieldOff className="h-3.5 w-3.5" /> Reset two-step
+                            </button>
+                          )}
                           {person.isActive && !isMe && (
                             <button
                               onClick={() => resetPassword(person)}
-                              className="mr-2 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
                               title="Generate a new password for this administrator"
                             >
                               <RotateCcw className="h-3.5 w-3.5" /> Reset password
@@ -193,7 +235,7 @@ export default function PlatformTeamPage() {
                               <UserPlus className="h-3.5 w-3.5" /> Reactivate
                             </button>
                           )}
-                        </>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -300,6 +342,10 @@ function CredentialsHandover({ handover, onDone }: { handover: Handover; onDone:
           Give these to them directly. <strong>The password is not stored anywhere</strong> — once you
           leave this screen it cannot be shown again, only reset. Ask them to change it on My account
           once they are in.
+          {!handover.reset && (
+            <> Their first sign-in sets up two-step verification, so they will need an authenticator
+            app on their phone.</>
+          )}
         </p>
       </div>
 

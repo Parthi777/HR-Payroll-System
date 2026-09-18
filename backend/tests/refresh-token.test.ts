@@ -19,6 +19,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
+import { platformSignIn } from './support/platform-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -68,9 +69,7 @@ suite('refresh tokens', () => {
     await p.platformUser.create({
       data: { email: PLATFORM.email, name: PLATFORM.name, passwordHash: await bcrypt.hash(PLATFORM.password, 4) },
     });
-    const platformLogin = await post('/api/platform/auth/login', PLATFORM);
-    expect(platformLogin.statusCode, platformLogin.body).toBe(200);
-    const platformToken = platformLogin.json().token;
+    const platformToken = await platformSignIn(app, PLATFORM, freshIp);
 
     const made = await app.inject({
       method: 'POST', url: '/api/platform/tenants',

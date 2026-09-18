@@ -119,12 +119,9 @@ export default function HomePage() {
               <span className="relative">Open Master Control</span>
               <ArrowRight className="relative h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
-            <Link
-              href="/platform"
-              className="flex h-12 items-center gap-2 rounded-xl bg-white/12 px-6 text-sm font-semibold ring-1 ring-white/25 backdrop-blur transition hover:bg-white/20"
-            >
-              Platform Console
-            </Link>
+            {/* No link to the platform console. Every visitor here is a dealer,
+                and that sign-in manages every dealer — advertising it to all of
+                them buys nothing. Platform staff go to /platform/login directly. */}
           </div>
         </div>
 

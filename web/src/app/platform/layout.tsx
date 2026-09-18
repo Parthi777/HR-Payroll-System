@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { LogOut, ShieldCheck } from 'lucide-react';
-import { clearPlatformSession, platformName, platformToken } from '@/lib/platform-api';
+import { ApiError } from '@/lib/api';
+import { clearPlatformSession, platformApi, platformName, platformToken } from '@/lib/platform-api';
 
 /**
  * Shell for the platform console.
@@ -29,8 +30,29 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       router.replace('/platform/login');
       return;
     }
-    setWho(platformName());
-    setReady(true);
+    // A stored token can still be dead: expired, or issued before two-step
+    // verification, which the server now refuses. Ask once, before rendering,
+    // so that shows up as the sign-in page rather than an error on every panel.
+    // Anything other than a 401 (the API briefly unreachable) is not a reason
+    // to throw someone out.
+    let active = true;
+    platformApi
+      .get('/me')
+      .then(
+        () => true,
+        (err) => !(err instanceof ApiError && err.status === 401),
+      )
+      .then((valid) => {
+        if (!active) return;
+        if (!valid) {
+          clearPlatformSession();
+          router.replace('/platform/login');
+          return;
+        }
+        setWho(platformName());
+        setReady(true);
+      });
+    return () => { active = false; };
   }, [router, isLogin]);
 
   if (!ready) return null;

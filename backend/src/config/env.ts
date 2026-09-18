@@ -24,6 +24,12 @@ const envSchema = z.object({
   // resolution is off and clients must send X-Tenant-Slug (dev, and Android).
   APP_BASE_DOMAIN: z.string().optional(),
 
+  // Addresses allowed to reach /api/platform at all, e.g. "203.0.113.7,
+  // 198.51.100.0/24". Unset = reachable from anywhere (the password and the
+  // two-step code still apply). Everyone else gets a 404, as if it did not
+  // exist. See services/platform/platform-access.ts.
+  PLATFORM_ALLOWED_IPS: z.string().optional(),
+
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),

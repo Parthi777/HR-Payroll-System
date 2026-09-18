@@ -1,8 +1,24 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
-import { requirePlatform, type JwtRole } from '../middleware/auth.js';
+import { requirePlatform, type JwtPayload, type JwtRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
+import { env } from '../config/env.js';
+import { parseAllowList, platformAccessHook } from '../services/platform/platform-access.js';
+import {
+  CHALLENGE_TTL,
+  TWO_STEP_CLEARED,
+  acceptTotp,
+  assertNotLocked,
+  completeEnrolment,
+  consumeRecoveryCode,
+  generateRecoveryCodes,
+  looksLikeTotp,
+  recordFailure,
+  recoveryCodesLeft,
+  startEnrolment,
+  type ChallengePurpose,
+} from '../services/platform/two-step.service.js';
 import {
   addTenantAdmin,
   provisionTenant,
@@ -12,6 +28,21 @@ import {
 const PLATFORM_TOKEN_TTL = '8h'; // this account can create and suspend dealers
 
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
+
+const challengeSchema = z.object({ challenge: z.string().min(1) });
+const challengeCodeSchema = z.object({ challenge: z.string().min(1), code: z.string().trim().min(1).max(32) });
+const codeSchema = z.object({ code: z.string().trim().min(1).max(32) });
+
+/** What the console may show about a colleague — never a hash or a secret. */
+const STAFF_SELECT = {
+  id: true, name: true, email: true, isActive: true, createdAt: true, totpEnabledAt: true,
+} as const;
+
+function staffView({ totpEnabledAt, ...rest }: {
+  id: string; name: string; email: string; isActive: boolean; createdAt: Date; totpEnabledAt: Date | null;
+}) {
+  return { ...rest, twoStepEnabled: totpEnabledAt !== null };
+}
 
 const createTenantSchema = z.object({
   slug: z.string().min(2).max(31),
@@ -87,16 +118,27 @@ const addAdminSchema = z.object({
  * customer, so it needs to be the best-recorded part of the system.
  */
 export async function platformRoutes(app: FastifyInstance) {
-  /** Record a platform action. Best-effort: it must never fail the action. */
+  // Before every route below, and before their rate limits: an address that is
+  // not allowed should not even use up a sign-in attempt. This plugin is
+  // encapsulated, so the hook guards the platform routes and nothing else.
+  const allowList = parseAllowList(env.PLATFORM_ALLOWED_IPS);
+  if (allowList) app.addHook('onRequest', platformAccessHook(allowList));
+
+  /**
+   * Record a platform action. Best-effort: it must never fail the action.
+   *
+   * `actorId` is for the sign-in steps, which run before there is a session to
+   * read the actor from.
+   */
   async function audit(
     req: FastifyRequest,
     action: string,
-    detail: { targetTenantId?: string; targetId?: string; metadata?: unknown },
+    detail: { targetTenantId?: string; targetId?: string; metadata?: unknown; actorId?: string },
   ) {
     try {
       await app.prisma.platformAuditLog.create({
         data: {
-          platformUserId: req.user.sub,
+          platformUserId: detail.actorId ?? req.user.sub,
           action,
           targetTenantId: detail.targetTenantId ?? null,
           targetId: detail.targetId ?? null,
@@ -124,21 +166,147 @@ export async function platformRoutes(app: FastifyInstance) {
       throw AppError.unauthorized('Invalid email or password');
     }
 
+    // A correct password is half a sign-in. It earns a challenge — good for
+    // nothing but the next step — and never a session. Which step comes next
+    // depends on whether this person has an authenticator set up yet.
+    const step: ChallengePurpose = staff.totpSecret ? 'verify' : 'enroll';
+    return { step, challenge: signChallenge(staff.id, step) };
+  });
+
+  function signChallenge(staffId: string, purpose: ChallengePurpose): string {
+    return app.jwt.sign(
+      { sub: staffId, role: 'PLATFORM_ADMIN' as JwtRole, scope: 'PLATFORM_CHALLENGE' as const, purpose },
+      { expiresIn: CHALLENGE_TTL[purpose] },
+    );
+  }
+
+  /** The account a challenge was issued to, if it is still valid for this step. */
+  async function readChallenge(challenge: string, purpose: ChallengePurpose) {
+    let payload: JwtPayload;
+    try {
+      payload = app.jwt.verify<JwtPayload>(challenge);
+    } catch {
+      throw AppError.unauthorized('This sign-in has expired — enter your password again');
+    }
+    if (payload.scope !== 'PLATFORM_CHALLENGE' || payload.purpose !== purpose) {
+      throw AppError.unauthorized('This sign-in has expired — enter your password again');
+    }
+    const staff = await app.prisma.platformUser.findUnique({ where: { id: payload.sub } });
+    // Deactivated between the two steps counts as not signing in.
+    if (!staff || !staff.isActive) throw AppError.unauthorized('Invalid email or password');
+    return staff;
+  }
+
+  function signSession(staff: { id: string; name: string; email: string }) {
     const token = app.jwt.sign(
-      { sub: staff.id, role: 'PLATFORM_ADMIN' as JwtRole, scope: 'PLATFORM' as const },
+      { sub: staff.id, role: 'PLATFORM_ADMIN' as JwtRole, scope: 'PLATFORM' as const, twoStep: true as const },
       { expiresIn: PLATFORM_TOKEN_TTL },
     );
     return { token, name: staff.name, email: staff.email };
-  });
+  }
+
+  /**
+   * A wrong code: counted against the account, and the lock recorded if this
+   * was the one that tripped it — a lock means someone holds the password.
+   */
+  async function wrongCode(req: FastifyRequest, staffId: string): Promise<never> {
+    const { locked } = await recordFailure(app.prisma, { id: staffId });
+    if (locked) await audit(req, 'PLATFORM_TWO_STEP_LOCKED', { actorId: staffId, targetId: staffId });
+    throw AppError.unauthorized('That code is not right');
+  }
+
+  // Second step, for an account that is already enrolled. Takes either the
+  // six digits from the authenticator app or one of the recovery codes.
+  app.post(
+    '/platform/auth/two-step/verify',
+    { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { challenge, code } = challengeCodeSchema.parse(req.body);
+      const staff = await readChallenge(challenge, 'verify');
+      if (!staff.totpSecret) throw AppError.unauthorized('This sign-in has expired — enter your password again');
+      assertNotLocked(staff);
+
+      if (looksLikeTotp(code)) {
+        if (!(await acceptTotp(app.prisma, staff, staff.totpSecret, code))) return wrongCode(req, staff.id);
+        return signSession(staff);
+      }
+
+      const left = await consumeRecoveryCode(app.prisma, staff, code);
+      if (left === null) return wrongCode(req, staff.id);
+      // Worth a line in the log every time: either the phone is lost, or the
+      // codes are no longer only in the owner's hands.
+      await audit(req, 'PLATFORM_RECOVERY_CODE_USED', { actorId: staff.id, targetId: staff.id, metadata: { left } });
+      return { ...signSession(staff), recoveryCodesLeft: left };
+    },
+  );
+
+  // Enrolment, step one: a secret to scan. Replaces any half-finished attempt.
+  app.post(
+    '/platform/auth/two-step/setup',
+    { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { challenge } = challengeSchema.parse(req.body);
+      const staff = await readChallenge(challenge, 'enroll');
+      return startEnrolment(app.prisma, staff);
+    },
+  );
+
+  // Enrolment, step two: a code from the new authenticator proves the scan
+  // worked. Only then is the secret live, and the recovery codes are returned
+  // — once, never again.
+  app.post(
+    '/platform/auth/two-step/enable',
+    { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { challenge, code } = challengeCodeSchema.parse(req.body);
+      const staff = await readChallenge(challenge, 'enroll');
+      assertNotLocked(staff);
+
+      const recoveryCodes = await completeEnrolment(app.prisma, staff, code);
+      if (!recoveryCodes) return wrongCode(req, staff.id);
+
+      await audit(req, 'PLATFORM_TWO_STEP_ENABLED', { actorId: staff.id, targetId: staff.id });
+      return { ...signSession(staff), recoveryCodes };
+    },
+  );
 
   app.get('/platform/me', { preHandler: requirePlatform }, async (req) => {
     const staff = await app.prisma.platformUser.findUnique({
       where: { id: req.user.sub },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, totpEnabledAt: true, recoveryCodes: true },
     });
     if (!staff) throw AppError.notFound('Account');
-    return staff;
+    return {
+      id: staff.id,
+      name: staff.name,
+      email: staff.email,
+      twoStep: { enabledAt: staff.totpEnabledAt, recoveryCodesLeft: recoveryCodesLeft(staff) },
+    };
   });
+
+  /**
+   * Replace your recovery codes — after using some, or if the printout went
+   * missing. Needs a live code from the authenticator, not just the session:
+   * a stolen token must not be able to mint itself a way back in.
+   */
+  app.post(
+    '/platform/me/recovery-codes',
+    { preHandler: requirePlatform, config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } },
+    async (req) => {
+      const { code } = codeSchema.parse(req.body);
+      const staff = await app.prisma.platformUser.findUnique({ where: { id: req.user.sub } });
+      if (!staff) throw AppError.notFound('Account');
+      if (!staff.totpSecret) throw new AppError('Set up two-step verification first — sign out and in again', 400);
+      assertNotLocked(staff);
+
+      if (!(await acceptTotp(app.prisma, staff, staff.totpSecret, code))) return wrongCode(req, staff.id);
+
+      const { codes, stored } = generateRecoveryCodes();
+      await app.prisma.platformUser.update({ where: { id: staff.id }, data: { recoveryCodes: stored } });
+      await audit(req, 'PLATFORM_RECOVERY_CODES_REGENERATED', {});
+      return { recoveryCodes: codes };
+    },
+  );
 
   /**
    * Change your own password.
@@ -185,10 +353,10 @@ export async function platformRoutes(app: FastifyInstance) {
 
   app.get('/platform/users', { preHandler: requirePlatform }, async () => {
     const staff = await app.prisma.platformUser.findMany({
-      select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+      select: STAFF_SELECT,
       orderBy: { createdAt: 'asc' },
     });
-    return { staff };
+    return { staff: staff.map(staffView) };
   });
 
   app.post('/platform/users', { preHandler: requirePlatform }, async (req, reply) => {
@@ -200,11 +368,11 @@ export async function platformRoutes(app: FastifyInstance) {
 
     const created = await app.prisma.platformUser.create({
       data: { name: input.name.trim(), email, passwordHash: await bcrypt.hash(input.password, 12) },
-      select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+      select: STAFF_SELECT,
     });
     await audit(req, 'PLATFORM_USER_CREATED', { targetId: created.id, metadata: { email: created.email } });
 
-    return reply.code(201).send({ staff: created });
+    return reply.code(201).send({ staff: staffView(created) });
   });
 
   app.patch('/platform/users/:id', { preHandler: requirePlatform }, async (req) => {
@@ -232,7 +400,7 @@ export async function platformRoutes(app: FastifyInstance) {
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         ...(input.password ? { passwordHash: await bcrypt.hash(input.password, 12) } : {}),
       },
-      select: { id: true, name: true, email: true, isActive: true, createdAt: true },
+      select: STAFF_SELECT,
     });
 
     if (input.isActive !== undefined) {
@@ -244,7 +412,32 @@ export async function platformRoutes(app: FastifyInstance) {
       await audit(req, 'PLATFORM_USER_PASSWORD_RESET', { targetId: id, metadata: { email: target.email } });
     }
 
-    return { staff: updated };
+    return { staff: staffView(updated) };
+  });
+
+  /**
+   * Clear a colleague's two-step verification, for a lost or replaced phone.
+   * Their next sign-in walks them through enrolment again.
+   *
+   * Never your own: that would let a stolen session strip the second step off
+   * the account it was stolen from. Losing your own phone is what recovery
+   * codes are for, then a colleague, then scripts/reset-platform-two-step.ts.
+   */
+  app.delete('/platform/users/:id/two-step', { preHandler: requirePlatform }, async (req) => {
+    const { id } = req.params as { id: string };
+    if (id === req.user.sub) {
+      throw new AppError('You cannot reset your own two-step verification — ask another administrator', 400);
+    }
+    const target = await app.prisma.platformUser.findUnique({ where: { id } });
+    if (!target) throw AppError.notFound('Account');
+
+    const updated = await app.prisma.platformUser.update({
+      where: { id },
+      data: TWO_STEP_CLEARED,
+      select: STAFF_SELECT,
+    });
+    await audit(req, 'PLATFORM_USER_TWO_STEP_RESET', { targetId: id, metadata: { email: target.email } });
+    return { staff: staffView(updated) };
   });
 
   // ── Dealers ──

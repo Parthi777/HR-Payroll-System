@@ -450,11 +450,16 @@ suite('cross-tenant isolation', () => {
    */
   const PLATFORM_SURFACE = [
     'POST /api/platform/auth/login',
+    'POST /api/platform/auth/two-step/verify',
+    'POST /api/platform/auth/two-step/setup',
+    'POST /api/platform/auth/two-step/enable',
     'GET /api/platform/me',
     'PATCH /api/platform/me/password',
+    'POST /api/platform/me/recovery-codes',
     'GET /api/platform/users',
     'POST /api/platform/users',
     'PATCH /api/platform/users/:id',
+    'DELETE /api/platform/users/:id/two-step',
     'GET /api/platform/tenants',
     'POST /api/platform/tenants',
     'GET /api/platform/tenants/:id',

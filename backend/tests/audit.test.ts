@@ -11,6 +11,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
+import { platformSignIn } from './support/platform-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -93,12 +94,7 @@ suite('dealer audit trail', () => {
     await p.platformUser.create({
       data: { email: PLATFORM.email, name: PLATFORM.name, passwordHash: await bcrypt.hash(PLATFORM.password, 4) },
     });
-    const login = await app.inject({
-      method: 'POST', url: '/api/platform/auth/login', remoteAddress: freshIp(),
-      payload: { email: PLATFORM.email, password: PLATFORM.password },
-    });
-    expect(login.statusCode, login.body).toBe(200);
-    platformToken = login.json().token;
+    platformToken = await platformSignIn(app, PLATFORM, freshIp);
 
     // Two dealers, so "one workspace cannot read another's trail" is a claim
     // this suite can actually make.
