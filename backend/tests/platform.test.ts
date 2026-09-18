@@ -457,6 +457,20 @@ suite('dealer onboarding', () => {
       expect(res.json().message).toContain('which workspace');
     });
 
+    it('tells the sign-in page to ask which workspace, without naming any', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/auth/workspace', remoteAddress: freshIp() });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().required).toBe(true);
+      expect(res.body, 'the answer listed a customer').not.toContain('abc-motors');
+
+      // Naming one settles it — this is the branded-link case.
+      const named = await app.inject({
+        method: 'GET', url: '/api/auth/workspace',
+        remoteAddress: freshIp(), headers: { 'x-tenant-slug': 'abc-motors' },
+      });
+      expect(named.json().required).toBe(false);
+    });
+
     it('resolves to the only dealer when just one is active', async () => {
       const list = await asPlatform('GET', '/api/platform/tenants');
       const others = list.json().tenants.filter((t: { slug: string }) => t.slug !== 'abc-motors');
@@ -470,6 +484,10 @@ suite('dealer onboarding', () => {
         });
         expect(res.statusCode, res.body).toBe(200);
         expect(res.json().tenant.slug).toBe('abc-motors');
+
+        // And with one dealer the page does not ask which workspace.
+        const ask = await app.inject({ method: 'GET', url: '/api/auth/workspace', remoteAddress: freshIp() });
+        expect(ask.json().required).toBe(false);
       } finally {
         for (const t of others) {
           await asPlatform('PATCH', `/api/platform/tenants/${t.id}/status`, { status: 'ACTIVE' });

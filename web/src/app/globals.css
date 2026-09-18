@@ -74,7 +74,14 @@
     *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
+      /* Delays too, not just durations. The staggered entrances run with
+         `both`, which holds the opening frame — opacity 0 — for the whole
+         delay: shortening only the duration left the screen blank for up to
+         0.9s and then popped everything in, which is the failure the entrance
+         was written to avoid, aimed at the people least able to tolerate it. */
+      animation-delay: 0s !important;
       transition-duration: 0.01ms !important;
+      transition-delay: 0s !important;
       scroll-behavior: auto !important;
     }
   }

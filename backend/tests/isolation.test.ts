@@ -357,6 +357,7 @@ suite('cross-tenant isolation', () => {
     'POST /api/auth/admin/login',
     'POST /api/auth/employee-login',
     'POST /api/auth/refresh-token',
+    'GET /api/auth/workspace',
     'GET /api/auth/workspace/:slug',
     'GET /api/claims/types',
     'GET /api/admin/whatsapp/templates',

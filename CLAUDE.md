@@ -443,7 +443,13 @@ POST   /api/auth/send-otp
 POST   /api/auth/verify-otp
 POST   /api/auth/refresh-token
 POST   /api/auth/admin/login
+GET    /api/auth/workspace                 # Must the sign-in page ask which workspace? { required }
+GET    /api/auth/workspace/:slug           # A workspace's name, for the sign-in page's badge
 ```
+
+One address (`admin.<domain>`) serves every dealer, so the sign-in page asks
+which workspace when the address names none and more than one exists — see
+`docs/HOSTNAMES.md`. The slug is then remembered and travels as `X-Tenant-Slug`.
 
 ### Attendance
 ```
@@ -816,8 +822,9 @@ policy (`isLateArrival()` is tracked separately).
   step for 15 minutes. Recovery codes are stored as SHA-256 hashes. Logic in
   `services/platform/two-step.service.ts`; reset a lost phone from Team, or
   `scripts/reset-platform-two-step.ts`. Optional extras, off until configured:
-  `PLATFORM_ALLOWED_IPS` (404 for other addresses) and
-  `NEXT_PUBLIC_PLATFORM_HOST` (console on its own hostname, via `web/src/proxy.ts`).
+  `PLATFORM_ALLOWED_IPS` (404 for other addresses) and `NEXT_PUBLIC_PLATFORM_HOST`
+  / `NEXT_PUBLIC_ADMIN_HOST` (console and Master Control on their own hostnames,
+  via `web/src/proxy.ts` — see `docs/HOSTNAMES.md`).
   The landing page deliberately does not link to the console. See
   `docs/PLATFORM-CONSOLE-ACCESS.md`.
 - **HTTPS only** for all API communication
@@ -883,9 +890,10 @@ NEXT_PUBLIC_API_URL=http://localhost:3001/api
 NEXT_PUBLIC_GOOGLE_MAPS_KEY=
 NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
 
-# Platform console lockdown (both optional; see docs/PLATFORM-CONSOLE-ACCESS.md)
-PLATFORM_ALLOWED_IPS=              # backend: e.g. "203.0.113.7, 198.51.100.0/24"
-NEXT_PUBLIC_PLATFORM_HOST=         # web: e.g. "admin.yourdomain.com"; build-time
+# Addresses (all optional; see docs/HOSTNAMES.md)
+NEXT_PUBLIC_ADMIN_HOST=            # web: Master Control, e.g. "admin.yourdomain.com"; build-time
+NEXT_PUBLIC_PLATFORM_HOST=         # web: platform console, e.g. "platform.yourdomain.com"; build-time
+PLATFORM_ALLOWED_IPS=              # backend: console IP allowlist, e.g. "203.0.113.7, 198.51.100.0/24"
 ```
 
 ---

@@ -1,50 +1,65 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * The platform console on its own address.
+ * One deployment, up to three addresses.
  *
- * Off until NEXT_PUBLIC_PLATFORM_HOST is set (e.g. "admin.yourapp.com"). Once
- * it is:
+ *   yourdomain.com          the public page and nothing else
+ *   admin.yourdomain.com    Master Control — dealer staff, after signing in
+ *   platform.yourdomain.com the platform console — you
  *
- *   - on that host, everything that is not the console redirects to /platform,
- *     so the address means one thing;
- *   - on every other host, /platform is a 404 — a dealer's address does not
- *     even show the console's sign-in page.
+ * Each host is set by its own variable (NEXT_PUBLIC_ADMIN_HOST,
+ * NEXT_PUBLIC_PLATFORM_HOST) and everything here is off until they are, so an
+ * unconfigured deployment serves every path on one host exactly as before.
  *
- * None of this is what protects the console. The page is JavaScript anyone can
- * download; the API's two-step sign-in and PLATFORM_ALLOWED_IPS are the
- * controls. What a separate host does buy is a separate browser origin, so the
- * console's token lives in storage that script on a dealer page cannot read.
+ * What this is and is not: Master Control and the console both require a
+ * sign-in wherever they are served from, so separating the addresses is not
+ * what keeps anyone out. What it buys is one address per audience — a client
+ * who lands on the public page sees the page and a sign-in link, not the
+ * console — and a separate browser origin per app, so a session token cannot
+ * be read by script running on another of them. The controls that actually
+ * refuse people are the sign-ins themselves, the console's two-step
+ * verification, and PLATFORM_ALLOWED_IPS on the API.
  */
 export function proxy(request: NextRequest) {
+  const adminHost = process.env.NEXT_PUBLIC_ADMIN_HOST?.trim().toLowerCase();
   const platformHost = process.env.NEXT_PUBLIC_PLATFORM_HOST?.trim().toLowerCase();
-  if (!platformHost) return NextResponse.next();
+  if (!adminHost && !platformHost) return NextResponse.next();
 
   const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '')
     .split(',')[0]
     .trim()
     .split(':')[0]
     .toLowerCase();
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
   const isConsole = pathname === '/platform' || pathname.startsWith('/platform/');
 
-  if (host === platformHost) {
-    if (isConsole) return NextResponse.next();
-    // Built from the public host, not request.url: behind the platform's proxy
-    // the URL Next sees can name an internal address.
-    const proto = request.headers.get('x-forwarded-proto')?.split(',')[0].trim() ?? request.nextUrl.protocol.replace(':', '');
-    return NextResponse.redirect(`${proto}://${platformHost}/platform`);
+  // Built from the public host rather than request.url: behind the platform's
+  // proxy the URL Next sees can name an internal address.
+  const proto = request.headers.get('x-forwarded-proto')?.split(',')[0].trim()
+    ?? request.nextUrl.protocol.replace(':', '');
+  const sendTo = (target: string, path: string) => NextResponse.redirect(`${proto}://${target}${path}`);
+  // Rendered as the app's ordinary not-found page, with a 404 status.
+  const notHere = () => NextResponse.rewrite(new URL('/_not-served-here', request.url));
+
+  if (platformHost && host === platformHost) {
+    return isConsole ? NextResponse.next() : sendTo(platformHost, '/platform');
   }
 
-  if (isConsole) {
-    // Rendered as the app's ordinary not-found page, with a 404 status.
-    return NextResponse.rewrite(new URL('/_console-not-here', request.url));
+  if (adminHost && host === adminHost) {
+    // The console is a different product on a different address, never here.
+    if (isConsole) return notHere();
+    // Nobody signs in to Master Control to read the public page.
+    return pathname === '/' ? sendTo(adminHost, '/login') : NextResponse.next();
   }
-  return NextResponse.next();
+
+  // Any other host is the public one.
+  if (isConsole) return platformHost ? notHere() : NextResponse.next();
+  if (!adminHost || pathname === '/') return NextResponse.next();
+  // Old links and bookmarks still work: same path, on the address it now lives at.
+  return sendTo(adminHost, `${pathname}${search}`);
 }
 
 export const config = {
-  // Pages only: never static assets, or the console host could not load its
-  // own scripts after the redirect.
+  // Pages only: never static assets, or a host could not load its own scripts.
   matcher: ['/((?!_next/|favicon.ico|.*\\.[a-zA-Z0-9]+$).*)'],
 };

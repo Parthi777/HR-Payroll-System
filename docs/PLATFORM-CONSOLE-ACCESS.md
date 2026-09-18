@@ -3,8 +3,9 @@
 The platform console (`/platform`) creates, suspends and reads across every
 dealer. Three things stand in front of it, from the outside in:
 
-1. **Its own address** (optional) — `admin.yourdomain.com`, not a path on a
-   dealer's address.
+1. **Its own address** (optional) — `platform.yourdomain.com`, not a path on
+   the address dealers use. Set up with the other two in
+   [HOSTNAMES.md](HOSTNAMES.md); `admin.` is Master Control, not this.
 2. **An office-IP allowlist** (optional) — every other address gets a 404.
 3. **Password plus two-step verification** (always on).
 
@@ -72,18 +73,18 @@ address, `/platform` returns 404 and the console's sign-in page is never shown.
 
 ### Steps
 
-1. **DNS.** Add a CNAME for `admin.yourdomain.com` pointing at the web service
-   (Railway → web service → Settings → Networking → Custom Domain shows the
-   target). Use `admin` or `platform` as the label: those two are reserved, so
-   no dealer can ever claim them as a workspace address.
-2. **Web service variable:** `NEXT_PUBLIC_PLATFORM_HOST=admin.yourdomain.com`.
-   It is read at build time, so Railway's redeploy after changing it is what
-   applies it.
+The full three-address setup — DNS records, variables and what each address
+serves — is in [HOSTNAMES.md](HOSTNAMES.md). For the console alone:
+
+1. **DNS.** A CNAME for `platform.yourdomain.com` pointing at the web service,
+   added as a custom domain on it. `platform` and `admin` are both reserved, so
+   no dealer can ever claim either as a workspace address.
+2. **Web service variable:** `NEXT_PUBLIC_PLATFORM_HOST=platform.yourdomain.com`.
+   Read at build time, so Railway's redeploy after changing it is what applies it.
 3. **Backend service variable:** `APP_BASE_DOMAIN=yourdomain.com`, if not set
-   already. That narrows CORS to the domain and its subdomains, the console
-   included.
+   already. That narrows CORS to the domain and its subdomains.
 4. **Check it:**
-   - `https://admin.yourdomain.com/` redirects to `/platform`.
+   - `https://platform.yourdomain.com/` redirects to `/platform`.
    - `https://<dealer address>/platform/login` is a 404.
 
 Unset `NEXT_PUBLIC_PLATFORM_HOST` to go back: the console is served at

@@ -5,14 +5,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldCheck, ScanFace, MapPin, Wallet, Clock, MessageSquare, ArrowRight, LogIn } from 'lucide-react';
 import { isPlatformHost } from '@/lib/tenant';
+import { masterControlHref } from '@/lib/hosts';
 
 /**
- * One deployment serves both audiences, so the landing page decides which.
+ * The public page.
  *
- * `admin.yourdomain.com` (or `platform.`) is the platform console; anything
- * else is a dealer workspace. The reserved-hostname list that keeps a dealer
- * from claiming "admin" is the same list that identifies it here, so the two
- * can never disagree.
+ * A description and a way in, on the bare domain.
+ * Master Control can live on its own address (NEXT_PUBLIC_ADMIN_HOST), which
+ * is where both links below point once it is set — see src/proxy.ts. The
+ * platform console is not linked from here at all.
  */
 
 /** What the product does, in the order a working day uses it. */
@@ -78,7 +79,7 @@ export default function HomePage() {
             </div>
           </div>
           <Link
-            href="/login"
+            href={masterControlHref('/login')}
             className="flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-medium ring-1 ring-white/25 backdrop-blur transition hover:bg-white/25"
           >
             <LogIn className="h-4 w-4" /> Sign in
@@ -110,7 +111,7 @@ export default function HomePage() {
 
           <div className="mt-9 flex flex-wrap gap-3" style={rise(320)}>
             <Link
-              href="/login"
+              href={masterControlHref('/login')}
               className="group relative flex h-12 items-center gap-2 overflow-hidden rounded-xl bg-white px-6 text-sm font-semibold text-brand-600 shadow-brand transition hover:shadow-lg"
             >
               {/* A highlight crossing the button once in a while — the only

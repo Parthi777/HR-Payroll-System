@@ -72,6 +72,17 @@ export function rememberTenant(slug: string, name: string): void {
   localStorage.setItem(NAME_KEY, name);
 }
 
+/**
+ * Forget the remembered workspace, without touching a session.
+ *
+ * For "not your workspace?" on the sign-in page: the next request must not
+ * still name the old dealer in its header.
+ */
+export function forgetTenant(): void {
+  localStorage.removeItem(SLUG_KEY);
+  localStorage.removeItem(NAME_KEY);
+}
+
 /** The signed-in workspace's display name, for the app header. */
 export function tenantName(): string | null {
   return typeof window === 'undefined' ? null : localStorage.getItem(NAME_KEY);
@@ -92,16 +103,15 @@ export function clearSession(): void {
 /**
  * Whether this hostname is the platform console rather than a dealer.
  *
- * NEXT_PUBLIC_PLATFORM_HOST names it exactly when set (and src/proxy.ts then
- * keeps the console to that host). Otherwise it falls back to the first label,
- * using the same reserved list that stops a dealer claiming "admin" or
- * "platform" as a slug, so the two can never disagree about who owns a host.
+ * NEXT_PUBLIC_PLATFORM_HOST names it exactly when set. The fallback is the
+ * label "platform" alone — deliberately not "admin", which belongs to Master
+ * Control (NEXT_PUBLIC_ADMIN_HOST). Both stay on the reserved list below, so
+ * no dealer can claim either as a workspace address whichever way they are used.
  */
 export function isPlatformHost(): boolean {
   if (typeof window === 'undefined') return false;
   const host = window.location.hostname.toLowerCase();
   const configured = process.env.NEXT_PUBLIC_PLATFORM_HOST?.trim().toLowerCase();
   if (configured) return host === configured;
-  const label = host.split('.')[0];
-  return label === 'admin' || label === 'platform';
+  return host.split('.')[0] === 'platform';
 }

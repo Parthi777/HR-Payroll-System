@@ -4,7 +4,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { adminLogin, employeeLogin } from '../services/auth/auth.service.js';
 import type { JwtRole } from '../middleware/auth.js';
 import { runInTenant } from '../context/tenant-context.js';
-import { requireTenantFromRequest, resolveTenant } from '../context/tenant-resolve.js';
+import { requireTenantFromRequest, resolveTenant, tenantSlugFromRequest } from '../context/tenant-resolve.js';
 import { env } from '../config/env.js';
 import { AppError } from '../utils/AppError.js';
 
@@ -206,6 +206,24 @@ export async function authRoutes(app: FastifyInstance) {
         tenant: { slug: tenant.slug, name: tenant.name },
       };
     });
+  });
+
+  /**
+   * Public: must the sign-in page ask which workspace this is?
+   *
+   * One shared address (admin.<domain>) serves every dealer, so the page has to
+   * know whether to ask before it asks for a password — asking everyone would
+   * be friction on a deployment with one dealer, and asking nobody would make
+   * the first sign-in fail on a deployment with several.
+   *
+   * Yes or no, and nothing else. It never names a customer or hints how many
+   * there are beyond "more than one", which submitting any sign-in would reveal
+   * anyway. Throttled like the lookup below.
+   */
+  app.get('/workspace', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (req) => {
+    if (tenantSlugFromRequest(req)) return { required: false };
+    const active = await app.prisma.tenant.count({ where: { status: 'ACTIVE' } });
+    return { required: active !== 1 };
   });
 
   /**

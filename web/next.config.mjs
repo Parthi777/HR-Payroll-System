@@ -33,6 +33,9 @@ const nextConfig = {
     // The platform console's own hostname, e.g. "admin.yourapp.com". Unset
     // means the console is served at /platform on every host. See src/proxy.ts.
     NEXT_PUBLIC_PLATFORM_HOST: process.env.NEXT_PUBLIC_PLATFORM_HOST,
+    // Master Control's own hostname, e.g. "admin.yourdomain.com". Unset means
+    // it is served on every host, alongside the public page.
+    NEXT_PUBLIC_ADMIN_HOST: process.env.NEXT_PUBLIC_ADMIN_HOST,
   },
 };
 

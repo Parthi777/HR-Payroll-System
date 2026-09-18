@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Script from 'next/script';
 import { ShieldCheck, ScanFace, MapPin, Wallet, Loader2, AlertCircle, ArrowRight } from 'lucide-react';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { PasswordInput } from '@/components/password-input';
-import { rememberTenant, tenantSlug } from '@/lib/tenant';
+import { forgetTenant, rememberTenant, tenantSlug } from '@/lib/tenant';
 import { landingFor, type AdminRole } from '@/lib/permissions';
 
 interface LoginResponse {
@@ -56,6 +56,9 @@ export default function LoginPage() {
   const googleDiv = useRef<HTMLDivElement>(null);
   const [gsiReady, setGsiReady] = useState(false);
   const [workspace, setWorkspace] = useState<string | null>(null);
+  /** Ask which dealer this is, before asking for a password. */
+  const [askWorkspace, setAskWorkspace] = useState(false);
+  const [slugInput, setSlugInput] = useState('');
   /**
    * The same staggered arrival as the landing page, so the two screens read as
    * one product. Pure CSS, and not gated on hydration — a sign-in form that
@@ -72,11 +75,46 @@ export default function LoginPage() {
   // single-tenant fallback.
   useEffect(() => {
     const slug = tenantSlug();
-    if (!slug) return;
-    api<{ slug: string; name: string }>(`/auth/workspace/${slug}`)
-      .then((w) => setWorkspace(w.name))
-      .catch(() => setWorkspace(null));
+    if (slug) {
+      api<{ slug: string; name: string }>(`/auth/workspace/${slug}`)
+        .then((w) => setWorkspace(w.name))
+        .catch(() => setWorkspace(null));
+      return;
+    }
+    // Nothing in the address and nothing remembered. One shared address serves
+    // every dealer, so ask the server whether this deployment has more than one
+    // — asking on a single-dealer deployment would be friction for nothing.
+    // Silent on failure: the sign-in below still explains what is missing.
+    api<{ required: boolean }>('/auth/workspace')
+      .then(({ required }) => setAskWorkspace(required))
+      .catch(() => {});
   }, []);
+
+  /** Name the workspace, so every request from here carries its slug. */
+  async function chooseWorkspace(e: React.FormEvent) {
+    e.preventDefault();
+    const slug = slugInput.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(slug)) {
+      setError('A workspace address is lowercase letters, digits and hyphens.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const found = await api<{ slug: string; name: string }>(`/auth/workspace/${slug}`);
+      rememberTenant(found.slug, found.name);
+      setWorkspace(found.name);
+      setAskWorkspace(false);
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 404
+          ? `No workspace at “${slug}”. Check the address in your company’s sign-in link.`
+          : err instanceof Error ? err.message : 'Could not find that workspace',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function finishLogin(res: LoginResponse) {
     localStorage.setItem('token', res.token);
@@ -101,7 +139,11 @@ export default function LoginPage() {
         }),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      const message = err instanceof Error ? err.message : 'Login failed';
+      // The server could not tell which dealer this is — ask, rather than
+      // leaving someone to guess what went wrong.
+      if (message.includes('which workspace')) setAskWorkspace(true);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -219,12 +261,16 @@ export default function LoginPage() {
             </div>
           )}
 
-          <h1 className="text-[1.75rem] font-bold leading-tight tracking-tight">Welcome back</h1>
+          <h1 className="text-[1.75rem] font-bold leading-tight tracking-tight">
+            {askWorkspace ? 'Which workspace?' : 'Welcome back'}
+          </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Sign in to your {workspace ? 'workspace' : 'admin account'} to continue.
+            {askWorkspace
+              ? 'One address serves every dealership, so name yours to continue.'
+              : `Sign in to your ${workspace ? 'workspace' : 'admin account'} to continue.`}
           </p>
 
-          {GOOGLE_CLIENT_ID && (
+          {GOOGLE_CLIENT_ID && !askWorkspace && (
             <>
               <div ref={googleDiv} className="mt-7 flex justify-center [color-scheme:light]" />
               <div className="my-6 flex items-center gap-4 text-xs font-medium text-muted-foreground">
@@ -235,30 +281,56 @@ export default function LoginPage() {
             </>
           )}
 
-          <form onSubmit={onSubmit} className={GOOGLE_CLIENT_ID ? '' : 'mt-7'}>
-            <label htmlFor="email" className="mb-1.5 block text-xs font-semibold text-foreground/80">
-              Email address
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
-              className={`${field} mb-5`}
-              required
-            />
+          <form
+            onSubmit={askWorkspace ? chooseWorkspace : onSubmit}
+            className={GOOGLE_CLIENT_ID && !askWorkspace ? '' : 'mt-7'}
+          >
+            {askWorkspace ? (
+              <>
+                <label htmlFor="workspace" className="mb-1.5 block text-xs font-semibold text-foreground/80">
+                  Workspace address
+                </label>
+                <input
+                  id="workspace"
+                  value={slugInput}
+                  onChange={(e) => setSlugInput(e.target.value)}
+                  placeholder="bhavani-motors"
+                  autoComplete="organization"
+                  autoFocus
+                  className={field}
+                  required
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  The name in your company&rsquo;s sign-in link. Ask your HR administrator if you are not sure.
+                </p>
+              </>
+            ) : (
+              <>
+                <label htmlFor="email" className="mb-1.5 block text-xs font-semibold text-foreground/80">
+                  Email address
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  className={`${field} mb-5`}
+                  required
+                />
 
-            <label htmlFor="password" className="mb-1.5 block text-xs font-semibold text-foreground/80">
-              Password
-            </label>
-            <PasswordInput
-              value={password}
-              onChange={setPassword}
-              placeholder="••••••••"
-              className={field}
-            />
+                <label htmlFor="password" className="mb-1.5 block text-xs font-semibold text-foreground/80">
+                  Password
+                </label>
+                <PasswordInput
+                  value={password}
+                  onChange={setPassword}
+                  placeholder="••••••••"
+                  className={field}
+                />
+              </>
+            )}
 
             {/*
               Reserved space, so an error appears without the button jumping
@@ -285,16 +357,34 @@ export default function LoginPage() {
             >
               {loading ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Signing in…
+                  <Loader2 className="h-4 w-4 animate-spin" /> {askWorkspace ? 'Checking…' : 'Signing in…'}
                 </>
               ) : (
                 <>
-                  Sign in
+                  {askWorkspace ? 'Continue' : 'Sign in'}
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                 </>
               )}
             </button>
           </form>
+
+          {/* A shared address can be the wrong workspace as easily as the right
+              one, so leave a way back out of it. */}
+          {!askWorkspace && workspace && (
+            <button
+              type="button"
+              onClick={() => {
+                forgetTenant();
+                setWorkspace(null);
+                setSlugInput('');
+                setError(null);
+                setAskWorkspace(true);
+              }}
+              className="mt-4 w-full text-center text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Not {workspace}? Choose another workspace
+            </button>
+          )}
 
           <p className="mt-8 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
             <ShieldCheck className="h-3.5 w-3.5" />
