@@ -34,9 +34,15 @@ export interface JwtPayload {
    * password and a correct second-step code. It opens no route at all; the
    * only thing it is good for is being handed back to the two-step endpoints.
    */
-  scope?: 'TENANT' | 'PLATFORM' | 'PLATFORM_CHALLENGE';
+  scope?: 'TENANT' | 'PLATFORM' | 'PLATFORM_CHALLENGE' | 'KIOSK';
   /** On a challenge: whether the holder is confirming a code or enrolling. */
   purpose?: 'verify' | 'enroll';
+  /**
+   * On a kiosk token: the branch the tablet was paired to, and the device row's
+   * token version. The version is compared with the row on every request, so
+   * revoking a lost tablet takes effect immediately rather than in six months.
+   */
+  deviceVersion?: number;
   /**
    * On a platform token: the second step was passed. Tokens issued before
    * two-step verification existed lack it, and are refused — so deploying it
@@ -94,6 +100,12 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
   if (payload.scope === 'PLATFORM' || payload.scope === 'PLATFORM_CHALLENGE') {
     // A platform token carries no tenant, so nothing here could be scoped by it.
     throw AppError.forbidden('Platform sign-in cannot be used on tenant endpoints');
+  }
+  if (payload.scope === 'KIOSK') {
+    // A kiosk is a shared tablet, not a person. It may punch on the kiosk
+    // routes and reach nothing else — no payroll, no employee records, no
+    // reports — however long its token lives.
+    throw AppError.forbidden('A kiosk device cannot be used to sign in');
   }
   if (!payload.tenantId) {
     // Pre-tenancy token. Nothing can be scoped from it, so it must not be honoured.
@@ -197,6 +209,60 @@ export async function requirePlatform(request: FastifyRequest, _reply: FastifyRe
   if (!staff.isActive) throw AppError.unauthorized('Account disabled');
 
   enterContext({ kind: 'PLATFORM', subjectId: payload.sub });
+}
+
+/**
+ * Guard for the branch kiosk — a paired tablet, acting for whoever is standing
+ * in front of it.
+ *
+ * Its own scope rather than a role, for the same reason the platform API has
+ * one: the kiosk is not a person with permissions, it is a device with exactly
+ * one job. The row is read on every request, so deactivating a tablet or
+ * bumping its version in Master Control cuts it off at once — which matters
+ * more here than anywhere else, because the token deliberately lives for
+ * months.
+ */
+export async function requireKiosk(request: FastifyRequest, _reply: FastifyReply) {
+  try {
+    await request.jwtVerify();
+  } catch {
+    throw AppError.unauthorized('This tablet is not paired');
+  }
+
+  const payload = request.user;
+  if (payload.scope !== 'KIOSK' || !payload.tenantId || !payload.branchId) {
+    throw AppError.forbidden('This endpoint is for a paired kiosk');
+  }
+
+  const prisma = request.server.prisma;
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: payload.tenantId },
+    select: { status: true, name: true },
+  });
+  if (!tenant) throw AppError.unauthorized('Workspace no longer exists');
+  if (tenant.status !== 'ACTIVE') {
+    throw new AppError(`The ${tenant.name} workspace is suspended — please contact support.`, 403);
+  }
+
+  enterContext({
+    kind: 'TENANT',
+    tenantId: payload.tenantId,
+    subjectId: payload.sub,
+    role: 'EMPLOYEE',
+    branchId: payload.branchId,
+  });
+
+  const device = await prisma.kioskDevice.findUnique({
+    where: { id: payload.sub },
+    select: { isActive: true, tokenVersion: true, branchId: true, name: true },
+  });
+  if (!device) throw AppError.unauthorized('This tablet is no longer registered');
+  if (!device.isActive) throw AppError.unauthorized('This tablet has been switched off by an administrator');
+  if (device.tokenVersion !== payload.deviceVersion) {
+    throw AppError.unauthorized('This tablet needs pairing again');
+  }
+  // The row wins over the token, the same way it does for a person's account.
+  request.user = { ...payload, branchId: device.branchId };
 }
 
 /** Role-based access control. SUPER_ADMIN > HR_MANAGER > BRANCH_MANAGER > PAYROLL_ADMIN. */

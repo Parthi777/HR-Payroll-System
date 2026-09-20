@@ -74,6 +74,23 @@ const envSchema = z.object({
 
   FACE_MATCH_THRESHOLD: z.coerce.number().default(85),
 
+  // Branch kiosk (a shared tablet staff punch on).
+  //   aws — AWS Rekognition Face Liveness, which is what stops a photo or a
+  //         phone screen being held up to the tablet.
+  //   off — no liveness check. Only sensible for a supervised tablet or local
+  //         development; the punch is then a face match against a still image.
+  KIOSK_LIVENESS: z.enum(['aws', 'off']).default('aws'),
+  // Rekognition Face Liveness is not offered in every region. It does not have
+  // to match AWS_REGION: the session runs wherever this points, and the image
+  // it returns is matched against the face collection in AWS_REGION.
+  AWS_LIVENESS_REGION: z.string().optional(),
+  // AWS's own guidance is 80 and above. Raise it for a busier entrance.
+  KIOSK_LIVENESS_THRESHOLD: z.coerce.number().default(80),
+  // How long a paired tablet stays signed in. Long by design — a tablet that
+  // logs itself out every week is a tablet nobody punches on — and revocable
+  // at any moment from Master Control, which is checked on every request.
+  KIOSK_TOKEN_DAYS: z.coerce.number().default(180),
+
   // Razorpay (subscription payments). Unset = no online payment: a signup is
   // still approved and provisioned, and the platform records the payment by
   // hand. The key id reaches the browser; neither secret ever does.

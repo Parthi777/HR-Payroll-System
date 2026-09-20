@@ -40,7 +40,17 @@ export default defineConfig({
       name: 'chromium',
       dependencies: ['setup'],
       testIgnore: /auth\.setup\.ts/,
-      use: { ...devices['Desktop Chrome'], storageState: './e2e/.auth/platform.json' },
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: './e2e/.auth/platform.json',
+        // The kiosk takes a photo. Chromium's synthetic camera gives it
+        // something to capture, so that path is exercised headlessly instead of
+        // being the one screen nobody ever drives.
+        permissions: ['camera'],
+        launchOptions: {
+          args: ['--use-fake-device-for-media-capture', '--use-fake-ui-for-media-stream'],
+        },
+      },
     },
   ],
 
@@ -63,6 +73,14 @@ export default defineConfig({
         JWT_SECRET: 'e2e-jwt-secret-key',
         JWT_REFRESH_SECRET: 'e2e-jwt-refresh-key',
         NODE_ENV: 'test',
+        // The API server loads backend/.env, which on a developer's machine has
+        // live AWS keys. Blanking them here keeps the suite off the real face
+        // and liveness services: an empty value is still "defined", so dotenv
+        // leaves it alone. The kiosk then takes the plain-capture path, which
+        // is also what a deployment without liveness does.
+        AWS_ACCESS_KEY_ID: '',
+        AWS_SECRET_ACCESS_KEY: '',
+        KIOSK_LIVENESS: 'off',
       },
     },
     {

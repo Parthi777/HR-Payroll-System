@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "AI HR Payroll System \u2014 API Server (Fastify + Prisma + PostgreSQL)",
+  "description": "AI HR Payroll System — API Server (Fastify + Prisma + PostgreSQL)",
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
@@ -25,6 +25,7 @@
   "dependencies": {
     "@aws-sdk/client-rekognition": "^3.1059.0",
     "@aws-sdk/client-s3": "^3.1059.0",
+    "@aws-sdk/client-sts": "^3.1136.0",
     "@aws-sdk/lib-storage": "^3.1102.0",
     "@aws-sdk/s3-request-presigner": "^3.1059.0",
     "@fastify/cors": "^11.3.0",

@@ -30,6 +30,10 @@ export const ROUTE_ROLES: Record<string, AdminRole[]> = {
   '/attendance': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'],
   '/employees': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'],
   '/geofence': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'],
+  // A pairing code turns a tablet into a device that can mark this branch's
+  // staff present, so it sits with the roles that decide who works where.
+  // Mirrors the guard on /api/admin/kiosks.
+  '/kiosks': ['SUPER_ADMIN', 'HR_MANAGER'],
   '/shifts': ['SUPER_ADMIN', 'HR_MANAGER'],
   '/leaves': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'],
   '/claims': ALL_ROLES, // the cashier's main screen

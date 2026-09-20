@@ -19,6 +19,7 @@ import {
   UserCheck,
   ReceiptText,
   ShieldCheck,
+  MonitorSmartphone,
   Menu,
   X,
 } from 'lucide-react';
@@ -89,6 +90,7 @@ const nav = [
   { href: '/attendance', label: 'Live Attendance', icon: Clock },
   { href: '/employees', label: 'Employees', icon: Users },
   { href: '/geofence', label: 'Geofence', icon: MapPin },
+  { href: '/kiosks', label: 'Kiosks', icon: MonitorSmartphone },
   { href: '/shifts', label: 'Shifts', icon: Clock },
   { href: '/leaves', label: 'Leaves', icon: CalendarDays },
   { href: '/claims', label: 'Claims', icon: ReceiptText },

@@ -482,6 +482,26 @@ opens it. Both the checkout callback and the webhook are signature-verified and
 idempotent. With no Razorpay keys the flow still works and the platform records
 the payment by hand. See `docs/SUBSCRIPTIONS.md`.
 
+### Branch kiosk
+A shared tablet at a branch: staff type their employee number, then look at the
+camera. Paired to one branch by a one-time code, and it punches at that branch's
+coordinates rather than trusting a browser's location. The punch itself goes
+through the same `markCheckIn` / `markCheckOut` as the app, so every attendance
+rule is unchanged. A kiosk token reaches these routes and nothing else — see
+`docs/KIOSK.md`.
+```
+POST   /api/kiosk/pair                     # { workspace, code } → long-lived device token
+GET    /api/kiosk/session                  # Which branch this tablet stands in
+POST   /api/kiosk/lookup                   # { code } → name + whether they are in or out
+POST   /api/kiosk/liveness/session         # AWS liveness session + federated browser credentials
+POST   /api/kiosk/punch                    # multipart: employeeId + liveness session (or a photo)
+GET    /api/admin/kiosks
+POST   /api/admin/kiosks                   # Returns the pairing code, once
+POST   /api/admin/kiosks/:id/pairing-code  # A fresh code; retires the old tablet
+PATCH  /api/admin/kiosks/:id               # Rename, or switch off (stops it on its next request)
+DELETE /api/admin/kiosks/:id
+```
+
 ### Geofence
 ```
 GET    /api/geofence/check?lat=&lng=&branchId=   # Is point inside geofence?
@@ -913,6 +933,12 @@ NEXT_PUBLIC_API_URL=http://localhost:3001/api
 NEXT_PUBLIC_GOOGLE_MAPS_KEY=
 NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
 
+# Branch kiosk (see docs/KIOSK.md)
+KIOSK_LIVENESS=aws                 # aws | off — off means a plain photo, no live-person check
+AWS_LIVENESS_REGION=               # only if AWS_REGION does not offer Face Liveness
+KIOSK_LIVENESS_THRESHOLD=80
+KIOSK_TOKEN_DAYS=180               # how long a paired tablet stays signed in
+
 # Razorpay (subscriptions; all optional — unset means payments are recorded by
 # hand in the console. See docs/SUBSCRIPTIONS.md)
 RAZORPAY_KEY_ID=
@@ -1059,6 +1085,8 @@ When working in this repo, Claude should:
 | Employee checks in from home | Geofence will flag; HR to investigate |
 | Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days. Check-out finds nothing open today and falls back to yesterday's open punch (`Shift.isNightShift` only). |
 | Same employee multiple devices | Allowed. Each punch still needs a matching face inside the geofence, which is what stops someone else clocking you in. |
+| Staff with no usable phone | A branch kiosk: a paired tablet at the door. Employee number on a keypad, then the camera. Only that branch's staff, only that tablet's branch coordinates — `docs/KIOSK.md`. |
+| Kiosk at a branch with no map location | Every punch is refused with that reason (409), and the Kiosks page flags the branch — a kiosk punches at its branch's coordinates, so there is nothing to punch at until it is placed. |
 | WhatsApp delivery failure | Retry 3 times via BullMQ, then the log row is marked FAILED. Without a queue there is one inline attempt, then FAILED. |
 | Payroll run mid-month | System allows partial month calculation (pro-rata) |
 | Public holidays | Holiday calendar set at Settings → Holiday Calendar; a listed day is a paid day off, not an absence. Unlisted = ordinary working day. |

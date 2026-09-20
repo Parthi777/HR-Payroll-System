@@ -80,7 +80,14 @@ export type AuditAction =
   | 'DESIGNATION_DELETED'
   | 'HOLIDAY_CREATED'
   | 'HOLIDAY_UPDATED'
-  | 'HOLIDAY_DELETED';
+  | 'HOLIDAY_DELETED'
+  // Branch kiosk. A pairing code can put a tablet on the floor that punches for
+  // everyone at that branch, so issuing and revoking one is worth a line.
+  | 'KIOSK_CREATED'
+  | 'KIOSK_PAIRING_CODE_ISSUED'
+  | 'KIOSK_ENABLED'
+  | 'KIOSK_DISABLED'
+  | 'KIOSK_DELETED';
 
 /** The kind of thing acted on. Used to filter the log by area. */
 export type AuditEntity =
@@ -96,7 +103,8 @@ export type AuditEntity =
   | 'Department'
   | 'Designation'
   | 'Holiday'
-  | 'Company';
+  | 'Company'
+  | 'Kiosk';
 
 interface AuditDetail {
   /** The row acted on, where there is a single one. */

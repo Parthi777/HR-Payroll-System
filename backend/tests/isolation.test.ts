@@ -138,7 +138,7 @@ suite('cross-tenant isolation', () => {
       for (const del of [
         p.gPSLog, p.claimMessage, p.claim, p.attendance, p.leave, p.leaveBalance,
         p.payslip, p.notification, p.whatsAppLog, p.geofenceViolation, p.auditLog,
-        p.employee, p.adminUser, p.branch, p.department, p.designation, p.shift,
+        p.kioskDevice, p.employee, p.adminUser, p.branch, p.department, p.designation, p.shift,
         p.holiday, p.tenantSettings,
       ]) {
         await (del as { deleteMany: (a?: unknown) => Promise<unknown> }).deleteMany({});
@@ -345,6 +345,16 @@ suite('cross-tenant isolation', () => {
     'POST /api/admin/payroll/run',
     'GET /api/admin/payroll/payslips/:month/:year',
     'GET /api/leaves/my-leaves',
+    // The branch kiosk — tests/kiosk.test.ts proves a paired tablet reaches no
+    // other branch, no other dealership and no other route.
+    'GET /api/kiosk/session',
+    'POST /api/kiosk/lookup',
+    'POST /api/kiosk/punch',
+    'GET /api/admin/kiosks',
+    'POST /api/admin/kiosks',
+    'POST /api/admin/kiosks/:id/pairing-code',
+    'PATCH /api/admin/kiosks/:id',
+    'DELETE /api/admin/kiosks/:id',
   ];
 
   const NO_TENANT_DATA = [
@@ -370,6 +380,10 @@ suite('cross-tenant isolation', () => {
     'POST /api/public/subscription/:token/order',
     'POST /api/public/subscription/:token/confirm',
     'POST /api/public/razorpay/webhook',
+    // Pairing names its workspace explicitly and reads only KioskDevice rows in
+    // that tenant; the liveness session touches no dealer data at all.
+    'POST /api/kiosk/pair',
+    'POST /api/kiosk/liveness/session',
   ];
 
   const NOT_YET_ASSERTED = [

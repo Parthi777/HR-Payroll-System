@@ -172,6 +172,7 @@ model Branch {
 
   employees          Employee[]
   geofenceViolations GeofenceViolation[]
+  kiosks             KioskDevice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -568,6 +569,43 @@ model Holiday {
   date     DateTime
 
   @@unique([tenantId, date])
+}
+
+/// A tablet at a branch that staff punch on.
+///
+/// Belongs to one branch, decided when an administrator pairs it. That is the
+/// trust anchor for a kiosk punch: the device cannot move itself to another
+/// branch, so the punch uses the branch's own coordinates rather than asking a
+/// browser where it is.
+///
+/// Tenant-scoped like everything else a dealer owns. Pairing names the
+/// workspace explicitly (the tablet has no session yet), so finding a device by
+/// its code never needs an unscoped read.
+model KioskDevice {
+  id               String    @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId         String
+  branchId         String
+  name             String
+  /// bcrypt hash of the one-time pairing code. Cleared the moment it is used,
+  /// so a code that has paired a tablet cannot pair a second one.
+  pairingHash      String?
+  pairingExpiresAt DateTime?
+  pairedAt         DateTime?
+  lastSeenAt       DateTime?
+  isActive         Boolean   @default(true)
+  /// Bumped to invalidate the tablet's token without deleting the row the
+  /// punches point at. A device token is long-lived, so this is how a lost
+  /// tablet is cut off.
+  tokenVersion     Int       @default(1)
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@index([tenantId, branchId])
 }
 
 // ─────────────────────────────────────────────────────────────
