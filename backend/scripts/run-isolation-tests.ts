@@ -43,7 +43,8 @@ run(
     'tests/isolation.test.ts', 'tests/platform.test.ts', 'tests/audit.test.ts',
     'tests/attendance-override.test.ts', 'tests/whatsapp-inbound.test.ts',
     'tests/whatsapp-queue.test.ts', 'tests/refresh-token.test.ts',
-    'tests/multipart-upload.test.ts',
+    'tests/multipart-upload.test.ts', 'tests/signup.test.ts', 'tests/kiosk.test.ts',
+    'tests/employee-month.test.ts', 'tests/punch-reminders.test.ts',
   ],
   {
     DATABASE_URL: url,

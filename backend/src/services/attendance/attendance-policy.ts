@@ -81,18 +81,40 @@ export function resolveAttendanceStatus(
   return inMin > startMin + (shift.gracePeriod ?? 0) ? 'LATE' : 'PRESENT';
 }
 
+/** An approver's explicit call on a held day: the whole day, or half of it. */
+export type ApprovedAs = 'FULL' | 'HALF';
+
 /**
  * Re-derive the status of a stored attendance row. Rows that were marked
  * ON_LEAVE / ABSENT / HOLIDAY by an admin decision are left untouched — only
  * real punches are re-evaluated against the current half-day policy.
+ *
+ * `approvedAs` is the one exception to "the times decide". When a manager
+ * approves a late or hand-raised punch they may say how much of the day it is
+ * worth, and that answer outranks the clock in both directions: HALF pays half
+ * a day for someone who strolled in at 11, and FULL keeps a whole day for
+ * someone whose 12:40 arrival would otherwise land in the midday window even
+ * though they worked until nine. It is stored rather than derived precisely
+ * because no rule can reach it — see the column comment in schema.prisma.
+ *
+ * A row the approver never ruled on has `approvedAs` null and behaves exactly
+ * as it did before the column existed.
  */
 export function effectiveStatus(
-  att: { status: string; checkIn: Date | null; checkOut: Date | null },
+  att: { status: string; checkIn: Date | null; checkOut: Date | null; approvedAs?: string | null },
   shift: ShiftClock | null | undefined,
   window: HalfDayWindow = DEFAULT_HALF_DAY_WINDOW,
 ): string {
   if (!shift || !isPunchStatus(att.status) || !att.checkIn) return att.status;
-  return resolveAttendanceStatus({ checkIn: att.checkIn, checkOut: att.checkOut, shift }, window);
+  if (att.approvedAs === 'HALF') return 'HALF_DAY';
+  const derived = resolveAttendanceStatus({ checkIn: att.checkIn, checkOut: att.checkOut, shift }, window);
+  // A full day was granted, so the midday window must not take half of it back.
+  // The late flag is kept: lateness is a separate fact from how much the day
+  // pays, and the discipline policy counts it.
+  if (att.approvedAs === 'FULL' && derived === 'HALF_DAY') {
+    return isLateArrival(att.checkIn, shift) ? 'LATE' : 'PRESENT';
+  }
+  return derived;
 }
 
 /**

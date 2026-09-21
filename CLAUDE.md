@@ -60,6 +60,7 @@ ai-hr-payroll/
 ├── docs/
 │   ├── api.md
 │   ├── geofence-logic.md
+│   ├── PUNCH-REMINDERS.md
 │   ├── whatsapp-flows.md
 │   └── payroll-engine.md
 ├── docker-compose.yml
@@ -464,8 +465,16 @@ PATCH  /api/admin/attendance/:id/override  # Manual correction (times/status/app
 POST   /api/attendance/manual-punch     # Manual/selfie punch (employee) — needs manager approval
 POST   /api/admin/attendance/manual-punch  # Same, raised by HR on an employee's behalf
 GET    /api/admin/attendance/approvals  # Punches awaiting sign-off
-PATCH  /api/admin/attendance/:id/approve | /reject
+PATCH  /api/admin/attendance/:id/approve   # Body { as: "FULL" | "HALF" } — how much of the day to pay
+PATCH  /api/admin/attendance/:id/reject
+PATCH  /api/admin/attendance/bulk-decide   # Decide a queue; always derives the day, never HALF
 ```
+`as` is the approver's own call, and the one status decision that is *stored*
+rather than derived (`Attendance.approvedAs`): HALF pays half a day for someone
+who arrived at eleven, FULL keeps a whole day for someone whose 12:45 arrival
+would otherwise land in the midday window. Omitted, the day is derived from its
+times exactly as before — which is what the bulk sweep does, because a half/full
+judgement is about one person's morning.
 
 ### Public (no account — the site anyone can reach)
 ```
@@ -811,6 +820,13 @@ awaiting sign-off → PN; approved leave → LV/LOP; otherwise A.
 Derived reports must aggregate these codes rather than re-deriving statuses.
 `tests/day-counts.test.ts` pins the counting rules and the row arithmetic.
 
+The single exception to "the times decide" is `Attendance.approvedAs`, set when
+an approver signs a held punch off as FULL or HALF. `effectiveStatus()` honours
+it in both directions, so the decision reaches payroll, the grid and every
+report through the one classifier. Every `classifyDay()` caller fetches whole
+attendance rows; a caller that narrowed to a `select` would have to include
+`approvedAs` or it would pay a full day for one a manager cut to half.
+
 ### 3b. Half-day policy (`attendance-policy.ts`)
 
 A punch inside the midday window (default 12:30–14:00, env
@@ -826,6 +842,29 @@ policy, so a rule change applies to history too — but rows an admin set to
 ON_LEAVE / ABSENT are left alone. A late arrival that also lands in the window
 reports as HALF_DAY while still counting as a late punch for the discipline
 policy (`isLateArrival()` is tracked separately).
+
+### 3d. Punch reminders (`attendance/reminders.service.ts`)
+
+Four FCM pushes a day at most, and never to someone who has already done the
+thing being asked. Three are keyed to the employee's **own shift** — 15 minutes
+before it starts, at the start, and 15 minutes after, naming the minute the day
+turns late. The fourth is one fixed time for the whole dealership
+(`TenantSettings.punchOutReminderAt`, 19:30) to anyone still checked in;
+deliberately before `manualPunchLatest`, after which an employee can no longer
+settle a forgotten check-out themselves.
+
+Skipped: Sundays, holidays, approved leave, before joining, anyone who has
+already punched, anyone with no FCM token, and — for the evening sweep only —
+night shifts, whose day is just beginning.
+
+An in-process timer started from `start()` in `server.ts` (not `buildServer()`,
+so tests open none), waking every minute. **Not BullMQ** — repeatable jobs need
+Redis and this deployment has none. Tenants are listed as the platform and
+entered one at a time with `runInTenant`; a scheduler must not become a second
+`runUnscoped`. `AttendanceReminder`, unique on `(tenantId, employeeId, date,
+kind)`, is written *before* the push and is what makes a restart or a second
+instance send nothing. Off per dealer in Settings, or platform-wide with
+`ATTENDANCE_REMINDERS=off`. See `docs/PUNCH-REMINDERS.md`.
 
 ### 4. Shift Anomaly Detection
 - Flag if check-in time is >1 hour before shift start
@@ -922,6 +961,11 @@ TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 META_WHATSAPP_TOKEN=
 META_WHATSAPP_PHONE_ID=
 META_WHATSAPP_VERIFY_TOKEN=
+
+# Punch reminders (all optional — see docs/PUNCH-REMINDERS.md)
+ATTENDANCE_REMINDERS=            # "off" stops the scheduler starting at all
+PUNCH_REMINDERS=                 # "off" = default for a dealer with no settings row
+PUNCH_OUT_REMINDER_AT=19:30      # ditto, for the evening sweep
 
 # Firebase (push notifications)
 FIREBASE_PROJECT_ID=
@@ -1077,6 +1121,10 @@ When working in this repo, Claude should:
 | Employee joins mid-month | Days before `joiningDate` are neither paid nor absent (blank in the grid); salary is pro-rata on the days served |
 | Report run for the current month | Dates still to come are blank, not absent — totals cover the days served so far |
 | Punch awaiting approval (PN) | Unpaid, shown as PN in the grid and counted under Absent; approve it and re-run payroll to pay the day |
+| Approving a late arrival | The approver picks **Full day** or **Half day** (`as` on the approve route, stored as `Attendance.approvedAs`). Half pays 0.5 and adds 0.5 to absentDays, like any other half day. The bulk sweep never halves a day — it derives each one. |
+| Employee forgets to punch in | Three reminders on their phone: 15 minutes before the shift, at the start, 15 after. They stop the moment the punch lands. Nothing on a Sunday, holiday or approved leave. |
+| Employee forgets to punch out | A reminder at 19:30 to anyone still checked in (per dealer; night shifts excluded). If they still forget, the next check-in is blocked until the day is settled as a manual punch. |
+| Server restarts mid-morning | Reminders already sent are not re-sent — the `AttendanceReminder` ledger row is written before the push. A reminder more than 10 minutes stale is dropped rather than delivered late. |
 | Deactivated employee | Excluded from every report, export, payslip list and dashboard figure |
 | App update prompt | Asked at most once per day per versionCode (`UpdatePrefs`), never on every launch. "Update now" downloads via DownloadManager and opens the system installer — it does not hand off to a browser. The published versionCode is read from the APK by `scripts/publish-apk.ts`, never typed. |
 | Claim numbering | Two never-reset sequences, printed zero-padded (001): `claimNo` on receipt (every claim), `voucherNo` only on approval. Both `@unique`; allocation retries on P2002. |

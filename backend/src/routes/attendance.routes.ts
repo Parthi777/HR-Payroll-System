@@ -670,9 +670,22 @@ export async function attendanceRoutes(app: FastifyInstance) {
     return { decided: decided.length, failed, approve };
   });
 
+  /**
+   * Approve one held punch, optionally saying how much of the day it is worth.
+   *
+   * `as` is what an approver reaches for on a late arrival: someone who turned
+   * up at eleven can be approved — the day is not an absence — while still
+   * being paid for half of it. Omitted, the day is derived from its times
+   * exactly as it was before the option existed, which is what the bulk sweep
+   * does: a half/full judgement is about one person's morning, and a screen
+   * that asked it 27 times at once would be answered 27 times identically.
+   */
   app.patch('/admin/attendance/:id/approve', { preHandler: approvalGuard }, async (req) => {
     const { id } = req.params as { id: string };
-    const attendance = await decideAttendanceApproval(app.prisma, req.user, id, true);
+    const { as } = z
+      .object({ as: z.enum(['FULL', 'HALF']).optional() })
+      .parse(req.body ?? {});
+    const attendance = await decideAttendanceApproval(app.prisma, req.user, id, true, as);
     // Approval is what makes an unpaid day paid, so it is recorded on both
     // outcomes — an approval and a refusal are equally worth explaining later.
     await recordAudit(req, 'ATTENDANCE_APPROVED', 'Attendance', {
@@ -682,6 +695,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
         date: fmtDate(attendance.date),
         punchMode: attendance.punchMode,
         status: attendance.status,
+        // Half a day's pay is the part of this decision someone will query.
+        approvedAs: attendance.approvedAs,
       },
     });
     return { attendance };

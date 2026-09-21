@@ -23,6 +23,9 @@ interface Company {
   lateRequiresApproval?: boolean;
   openPunchLookbackDays?: number;
   manualPunchLatest?: string;
+  /** Whether staff get the punch-in / punch-out reminders on their phones. */
+  punchRemindersOn?: boolean;
+  punchOutReminderAt?: string;
   // Payroll policy
   monthDivisor?: number;
   clPerYear?: number;
@@ -348,6 +351,21 @@ function CompanyCard() {
             </Field>
             <Field label="Forgotten check-out lookback (days)" hint="How far back an unclosed day still blocks the next check-in. 0–90, default 7.">
               <input type="number" min={0} max={90} className={input} value={c.openPunchLookbackDays ?? ''} onChange={(e) => num('openPunchLookbackDays', e.target.value)} />
+            </Field>
+            <Field
+              label="Punch reminders"
+              hint="Phone reminders 15 minutes before the shift, at the shift start and 15 minutes after — only to staff who have not punched in, and never on a Sunday, a holiday or approved leave."
+            >
+              <select className={input} value={String(c.punchRemindersOn ?? true)} onChange={(e) => set('punchRemindersOn', e.target.value === 'true')}>
+                <option value="true">On</option>
+                <option value="false">Off</option>
+              </select>
+            </Field>
+            <Field
+              label="Evening check-out reminder"
+              hint="One reminder to everyone still checked in at this time. Default 19:30 — before the self-entered check-out cut-off above, so people can still settle the day themselves."
+            >
+              <input type="time" className={input} value={c.punchOutReminderAt ?? ''} onChange={(e) => set('punchOutReminderAt', e.target.value)} disabled={c.punchRemindersOn === false} />
             </Field>
           </div>
         </div>

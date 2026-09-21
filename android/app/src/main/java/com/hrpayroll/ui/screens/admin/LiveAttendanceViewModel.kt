@@ -49,13 +49,21 @@ class LiveAttendanceViewModel @Inject constructor(
         }
     }
 
+    /** Approve and pay the whole day. */
     fun approve(id: String) = decide(id, approve = true)
+
+    /**
+     * Approve, but pay half the day — the answer a manager wants for someone
+     * who turned up at eleven: not an absence, not a full day's money.
+     */
+    fun approveHalf(id: String) = decide(id, approve = true, half = true)
+
     fun reject(id: String) = decide(id, approve = false)
 
-    private fun decide(id: String, approve: Boolean) {
+    private fun decide(id: String, approve: Boolean, half: Boolean = false) {
         _uiState.value = _uiState.value.copy(busyApprovalId = id)
         viewModelScope.launch {
-            runCatching { if (approve) repository.approveAttendance(id) else repository.rejectAttendance(id) }
+            runCatching { if (approve) repository.approveAttendance(id, half) else repository.rejectAttendance(id) }
             _uiState.value = _uiState.value.copy(busyApprovalId = null)
             loadApprovals()
             loadDate(_uiState.value.date) // refresh the day list to reflect the decision

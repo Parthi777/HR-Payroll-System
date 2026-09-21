@@ -84,6 +84,12 @@ const companySchema = z.object({
   // a self-reported departure is not taken on trust and HR has to record it.
   manualPunchLatest: z.string().regex(/^\d{2}:\d{2}$/).optional(),
 
+  // Punch reminders. One switch for all four, plus the hour of the evening
+  // sweep — the three around the shift start are keyed to each roster and have
+  // nothing for a dealer to choose.
+  punchRemindersOn: z.boolean().optional(),
+  punchOutReminderAt: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+
   // The basis a new employee inherits when their own is not set.
   defaultPayrollBasis: z.enum(['MONTHLY', 'PRESENT_DAYS']).optional(),
   monthDivisor: z.number().int().min(28).max(31).optional(),
@@ -120,6 +126,8 @@ export async function masterRoutes(app: FastifyInstance) {
         lateRequiresApproval: d.attendance.lateRequiresApproval,
         openPunchLookbackDays: d.attendance.openPunchLookbackDays,
         manualPunchLatest: d.attendance.manualPunchLatest,
+        punchRemindersOn: d.attendance.punchRemindersOn,
+        punchOutReminderAt: d.attendance.punchOutReminderAt,
         defaultPayrollBasis: d.payroll.defaultPayrollBasis,
         monthDivisor: d.payroll.monthDivisor,
         clPerYear: d.payroll.clPerYear,

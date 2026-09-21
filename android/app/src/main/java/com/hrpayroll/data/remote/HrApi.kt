@@ -133,8 +133,12 @@ interface HrApi {
 
     @GET("admin/attendance/approvals")
     suspend fun attendanceApprovals(): AttendanceApprovalsResponse
+    /** `as` is FULL or HALF — how much of the day the approver decided it is worth. */
     @retrofit2.http.PATCH("admin/attendance/{id}/approve")
-    suspend fun approveAttendance(@retrofit2.http.Path("id") id: String): AttendanceDecisionResponse
+    suspend fun approveAttendance(
+        @retrofit2.http.Path("id") id: String,
+        @retrofit2.http.Body body: Map<String, String>,
+    ): AttendanceDecisionResponse
     @retrofit2.http.PATCH("admin/attendance/{id}/reject")
     suspend fun rejectAttendance(@retrofit2.http.Path("id") id: String): AttendanceDecisionResponse
 

@@ -9,7 +9,7 @@ import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
 import { isS3Enabled, tenantKey, uploadImage } from '../storage/storage.service.js';
 import { notifyAdmins, approverIds } from '../notification.service.js';
 import { pushToEmployee } from '../push.service.js';
-import { resolveAttendanceStatus, isLateArrival } from './attendance-policy.js';
+import { resolveAttendanceStatus, isLateArrival, type ApprovedAs } from './attendance-policy.js';
 import { atCompanyTime, parseHHMM, startOfDay } from '../../utils/time.js';
 import { requireTenantId } from '../../context/tenant-context.js';
 import { defaultPolicy, getTenantPolicy, type ResourcePolicy } from '../settings/tenant-settings.service.js';
@@ -532,6 +532,12 @@ export async function decideAttendanceApproval(
   admin: JwtPayload,
   attendanceId: string,
   approve: boolean,
+  /**
+   * How much of the day an approval is worth. Omitted, the day is derived from
+   * its punch times as it always was — which is what every bulk decision and
+   * every caller written before this option does.
+   */
+  approvedAs?: ApprovedAs,
 ) {
   const adminId = admin.sub;
   const att = await prisma.attendance.findUnique({ where: { id: attendanceId } });
@@ -549,17 +555,24 @@ export async function decideAttendanceApproval(
       approvalStatus: approve ? 'APPROVED' : 'REJECTED',
       approvedBy: adminId,
       approvedAt: new Date(),
-      ...(approve ? {} : { status: rejectStatus }),
+      // Only an approval carries a half/full call; a refusal pays nothing at
+      // all, so recording "half of a day we are not paying for" would be noise
+      // that the next reader would have to work out the meaning of.
+      ...(approve ? { approvedAs: approvedAs ?? null } : { status: rejectStatus }),
     },
   });
 
-  // Tell the employee the outcome (push + in-app).
+  // Tell the employee the outcome (push + in-app). A half day is spelled out:
+  // "approved" and then half the money is the kind of surprise that arrives as
+  // a question on payday, three weeks after anyone remembers the decision.
   await pushToEmployee(
     prisma,
     updated.employeeId,
     approve ? 'Attendance approved ✓' : 'Attendance not approved',
     approve
-      ? 'Your attendance was approved — it will be paid.'
+      ? approvedAs === 'HALF'
+        ? 'Your attendance was approved as a HALF day — half a day’s pay for that date.'
+        : 'Your attendance was approved — it will be paid.'
       : att.punchMode !== 'GEO'
         ? `Your ${att.punchMode === 'SELFIE' ? 'selfie' : 'manual'} punch was not approved — the day is marked absent.`
         : att.status === 'LATE'

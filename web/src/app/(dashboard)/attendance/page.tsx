@@ -227,11 +227,22 @@ function ApprovalsCard() {
     setSelected(allSelected ? new Set() : new Set(visibleIds));
   }
 
-  async function decide(id: string, action: 'approve' | 'reject') {
+  /**
+   * Decide one punch. `as` is the approver's call on how much of the day it is
+   * worth — the reason there are two approve buttons rather than one. It is
+   * sent even for a full day, because "Full day" has to mean a full day: a
+   * 12:45 arrival would otherwise be silently halved by the midday-window rule
+   * after someone had just clicked a button saying otherwise.
+   */
+  async function decide(id: string, action: 'approve' | 'reject', as?: 'FULL' | 'HALF') {
     if (action === 'reject' && !confirm('Reject this punch? The day will not be paid.')) return;
+    if (as === 'HALF' && !confirm('Approve as a HALF day? The employee is paid 0.5 day for that date.')) return;
     setBusyId(id);
     try {
-      await api(`/admin/attendance/${id}/${action}`, { method: 'PATCH' });
+      await api(`/admin/attendance/${id}/${action}`, {
+        method: 'PATCH',
+        ...(action === 'approve' ? { body: JSON.stringify({ as: as ?? 'FULL' }) } : {}),
+      });
       setSelected((prev) => {
         const next = new Set(prev);
         next.delete(id);
@@ -413,8 +424,16 @@ function ApprovalsCard() {
                 <MapPin className="h-4 w-4" /> Map
               </a>
             )}
-            <button onClick={() => decide(a.id, 'approve')} disabled={busyId === a.id} className="flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-              {busyId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve
+            {/* Two ways to approve. A manager looking at someone who turned up
+                at eleven usually does not want either of the answers a single
+                button offers — the day is not an absence, but it is not a whole
+                day's pay either. Half day is the middle one, and it is the one
+                that used to be settled by not approving the punch at all. */}
+            <button onClick={() => decide(a.id, 'approve', 'FULL')} disabled={busyId === a.id} title="Approve and pay the whole day" className="flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+              {busyId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Full day
+            </button>
+            <button onClick={() => decide(a.id, 'approve', 'HALF')} disabled={busyId === a.id} title="Approve, but pay half the day" className="flex h-9 items-center gap-1.5 rounded-lg bg-amber-100 px-3 text-xs font-semibold text-amber-800 hover:bg-amber-200 disabled:opacity-50">
+              <span className="text-sm leading-none">½</span> Half day
             </button>
             <button onClick={() => decide(a.id, 'reject')} disabled={busyId === a.id} className="flex h-9 items-center gap-1.5 rounded-lg bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">
               <X className="h-4 w-4" /> Reject

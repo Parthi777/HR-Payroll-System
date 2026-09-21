@@ -23,6 +23,10 @@ export interface AttendancePolicy {
   openPunchLookbackDays: number;
   /** Latest "HH:MM" an employee may type as a manual check-out. */
   manualPunchLatest: string;
+  /** Whether staff are reminded to punch in and out at all. */
+  punchRemindersOn: boolean;
+  /** "HH:MM" of the evening sweep for people still checked in. */
+  punchOutReminderAt: string;
 }
 
 /** How pay is arrived at. See CLAUDE.md "Payroll Calculation Engine". */
@@ -92,6 +96,8 @@ export function defaultPolicy(): TenantPolicy {
       lateRequiresApproval: process.env.LATE_REQUIRES_APPROVAL !== 'false',
       openPunchLookbackDays: Number(process.env.OPEN_PUNCH_LOOKBACK_DAYS ?? 7),
       manualPunchLatest: process.env.MANUAL_PUNCH_LATEST ?? '20:00',
+      punchRemindersOn: process.env.PUNCH_REMINDERS !== 'off',
+      punchOutReminderAt: process.env.PUNCH_OUT_REMINDER_AT ?? '19:30',
     },
     payroll: {
       defaultPayrollBasis: 'MONTHLY',
@@ -120,6 +126,7 @@ type SettingsRow = {
   timezone: string; halfDayWindowStart: string; halfDayWindowEnd: string;
   lateRequiresApproval: boolean; openPunchLookbackDays: number;
   manualPunchLatest: string;
+  punchRemindersOn: boolean; punchOutReminderAt: string;
   defaultPayrollBasis: string;
   monthDivisor: number; clPerYear: number; otHoursPerDay: number;
   payrollLateShiftAt: number;
@@ -143,6 +150,8 @@ function toPolicy(row: SettingsRow): TenantPolicy {
       lateRequiresApproval: row.lateRequiresApproval,
       openPunchLookbackDays: row.openPunchLookbackDays,
       manualPunchLatest: row.manualPunchLatest,
+      punchRemindersOn: row.punchRemindersOn,
+      punchOutReminderAt: row.punchOutReminderAt,
     },
     payroll: {
       defaultPayrollBasis: row.defaultPayrollBasis === 'PRESENT_DAYS' ? 'PRESENT_DAYS' : 'MONTHLY',

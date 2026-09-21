@@ -14,7 +14,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'Employee', 'Attendance', 'GPSLog', 'Branch', 'Department', 'Designation',
   'Shift', 'Leave', 'Claim', 'ClaimMessage', 'LeaveBalance', 'Payslip',
   'Notification', 'WhatsAppLog', 'GeofenceViolation', 'AdminUser', 'AuditLog',
-  'TenantSettings', 'Holiday', 'KioskDevice',
+  'TenantSettings', 'Holiday', 'KioskDevice', 'AttendanceReminder',
 ]);
 
 /**

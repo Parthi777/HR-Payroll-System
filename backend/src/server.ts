@@ -16,6 +16,7 @@ import { ensureSeedData } from './bootstrap.js';
 import { runInTenant } from './context/tenant-context.js';
 import { closeWhatsAppQueue, isQueueEnabled, startWhatsAppWorker } from './services/queue/whatsapp.queue.js';
 import { runWhatsAppJob } from './services/whatsapp/whatsapp.service.js';
+import { startReminderScheduler } from './services/attendance/reminders.service.js';
 
 /**
  * Who may call this API from a browser.
@@ -143,6 +144,11 @@ function startQueueWorker(app: FastifyInstance) {
 async function start() {
   const app = await buildServer();
 
+  // Punch reminders. Like the queue worker, started here and not in
+  // buildServer() — the tests drive the real app in-process and must not open a
+  // timer that pushes to real phones.
+  const stopReminders = startReminderScheduler(app.prisma);
+
   try {
     await ensureSeedData(app.prisma); // no-op once seeded; makes fresh deploys log-in-ready
     startQueueWorker(app);
@@ -161,6 +167,7 @@ async function start() {
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, async () => {
       logger.info({ signal }, 'shutting down');
+      stopReminders();
       await closeWhatsAppQueue();
       await app.close();
       process.exit(0);

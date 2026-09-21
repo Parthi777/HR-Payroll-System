@@ -261,7 +261,7 @@ suite('working out whose employee sent a message', () => {
       for (const del of [
         p.gPSLog, p.claimMessage, p.claim, p.attendance, p.leave, p.leaveBalance,
         p.payslip, p.notification, p.whatsAppLog, p.geofenceViolation, p.auditLog,
-        p.kioskDevice, p.employee, p.adminUser, p.branch, p.department, p.designation, p.shift,
+        p.kioskDevice, p.attendanceReminder, p.employee, p.adminUser, p.branch, p.department, p.designation, p.shift,
         p.holiday, p.tenantSettings,
       ]) {
         await (del as { deleteMany: (a?: unknown) => Promise<unknown> }).deleteMany({});

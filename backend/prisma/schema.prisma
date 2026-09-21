@@ -84,6 +84,7 @@ model Employee {
   payslips      Payslip[]
   leaveBalances LeaveBalance[]
   claims        Claim[]
+  reminders     AttendanceReminder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -123,6 +124,17 @@ model Attendance {
   approvalStatus String?
   approvedBy     String? // admin id who decided
   approvedAt     DateTime?
+  /// The approver's own call on how much of the day a held punch is worth:
+  /// FULL or HALF. Null means nobody overrode anything and the day is derived
+  /// from its times, as every day was before this column existed.
+  ///
+  /// This is the one status decision that is *stored* rather than derived.
+  /// PRESENT / LATE / HALF_DAY are re-derived from the punch times on every
+  /// read (see attendance-policy.ts), which is why `overrideAttendance` refuses
+  /// them as inputs — but a manager saying "he turned up at 11, pay him half"
+  /// is a judgement the clock cannot reach, so it is recorded here and
+  /// `effectiveStatus()` honours it.
+  approvedAs     String?
   // How the punch was made: GEO (normal selfie + geofence), MANUAL (typed times,
   // no selfie) or SELFIE (selfie only — geofence/face/shift checks skipped).
   // MANUAL/SELFIE punches always start as PENDING and pay only once approved.
@@ -539,6 +551,16 @@ model TenantSettings {
   lateRequiresApproval  Boolean @default(true)
   openPunchLookbackDays Int     @default(7)
 
+  /// Whether this dealer's staff get the punch reminders at all. One switch for
+  /// all four (three before/around the shift start, one in the evening): a
+  /// dealer that finds them nagging turns them off here rather than asking the
+  /// platform to stop pushing.
+  punchRemindersOn      Boolean @default(true)
+  /// Wall-clock time of the evening "did you punch out?" sweep. Before
+  /// `manualPunchLatest` on purpose — after that cut-off an employee can no
+  /// longer settle a forgotten check-out themselves and has to ask HR.
+  punchOutReminderAt    String  @default("19:30")
+
   // ── Payroll policy (was PAYROLL_*, and hardcoded constants) ──
   /// PayrollBasis a new employee gets when their own is not set.
   defaultPayrollBasis     String @default("MONTHLY")
@@ -567,6 +589,34 @@ model TenantSettings {
 
   @@unique([tenantId])
   @@map("CompanySettings")
+}
+
+/// One punch reminder that has been sent, so it is never sent twice.
+///
+/// The scheduler wakes every minute and has no memory of its own: it restarts
+/// on every deploy, and Railway may briefly run two copies of the server during
+/// one. Both of those would re-send this morning's reminders without a ledger.
+/// The row is written BEFORE the push goes out and the unique constraint is the
+/// lock, so a duplicate attempt — from a restart or a second instance — loses
+/// the insert and sends nothing.
+///
+/// Rows are worth keeping: "why did nobody warn me?" is answerable from here.
+model AttendanceReminder {
+  id         String   @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this via the Prisma extension
+  /// in plugins/prisma.ts — see context/tenant-scope.ts for the rule.
+  tenantId   String
+  employeeId String
+  /// The day it is about, at local midnight — the same key attendance uses.
+  date       DateTime
+  /// PUNCH_IN_EARLY | PUNCH_IN_START | PUNCH_IN_LATE | PUNCH_OUT
+  kind       String
+  sentAt     DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([tenantId, employeeId, date, kind])
+  @@index([tenantId, date])
 }
 
 model Holiday {

@@ -109,6 +109,7 @@ fun LiveAttendanceScreen(viewModel: LiveAttendanceViewModel = hiltViewModel()) {
                             approvals = state.approvals,
                             busyId = state.busyApprovalId,
                             onApprove = viewModel::approve,
+                            onApproveHalf = viewModel::approveHalf,
                             onReject = viewModel::reject,
                         )
                     }
@@ -342,6 +343,7 @@ private fun ApprovalsCard(
     approvals: List<com.hrpayroll.data.remote.dto.AttendanceApprovalDto>,
     busyId: String?,
     onApprove: (String) -> Unit,
+    onApproveHalf: (String) -> Unit,
     onReject: (String) -> Unit,
 ) {
     Card(
@@ -356,7 +358,8 @@ private fun ApprovalsCard(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Approve to pay today, or reject (late → marked leave, out-of-zone → absent).",
+                "Full day pays the whole day, Half day pays 0.5. Reject pays nothing " +
+                    "(late → marked leave, out-of-zone → absent).",
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             approvals.forEach { a ->
@@ -377,8 +380,17 @@ private fun ApprovalsCard(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                         ) {
                             if (busy) androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-                            else Text("Approve", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            else Text("Full day", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
+                        // The middle answer. Without it a manager looking at an
+                        // eleven o'clock arrival has only "pay the whole day" or
+                        // "pay nothing", and picks whichever is less unfair.
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { a.id?.let(onApproveHalf) },
+                            enabled = !busy,
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = StatusHalf),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+                        ) { Text("Half day", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
                         androidx.compose.material3.OutlinedButton(
                             onClick = { a.id?.let(onReject) },
                             enabled = !busy,

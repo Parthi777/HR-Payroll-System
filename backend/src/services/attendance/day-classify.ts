@@ -34,6 +34,13 @@ export interface DayAttendance {
   checkIn: Date | null;
   checkOut: Date | null;
   approvalStatus: string | null;
+  /**
+   * FULL / HALF when the approver said how much of a held day to pay for.
+   * Optional so a caller selecting a narrower row still type-checks, but every
+   * surface that counts days must select it: omitting it here would pay a full
+   * day for one a manager cut to half.
+   */
+  approvedAs?: string | null;
 }
 
 export interface DayLeave {

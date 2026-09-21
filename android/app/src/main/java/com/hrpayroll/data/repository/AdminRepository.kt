@@ -20,7 +20,9 @@ class AdminRepository @Inject constructor(
     suspend fun dailyReport(date: String) = api.dailyReport(date)
     suspend fun monthSummary(month: Int, year: Int) = api.monthSummary(month, year)
     suspend fun attendanceApprovals() = api.attendanceApprovals().approvals
-    suspend fun approveAttendance(id: String) = api.approveAttendance(id)
+    /** [half] pays 0.5 for the day instead of the whole of it. */
+    suspend fun approveAttendance(id: String, half: Boolean = false) =
+        api.approveAttendance(id, mapOf("as" to if (half) "HALF" else "FULL"))
     suspend fun rejectAttendance(id: String) = api.rejectAttendance(id)
     suspend fun performance(month: Int? = null, year: Int? = null): List<PerformanceRowDto> = api.performance(month, year)
 
