@@ -75,6 +75,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    // Screen transitions and the staggered card entrance (ui/utils/Motion.kt).
+    // It arrives transitively via navigation-compose, but the app uses it
+    // directly now, and a dependency you rely on should be one you declare.
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material:material-icons-extended")
 
     // Navigation Compose

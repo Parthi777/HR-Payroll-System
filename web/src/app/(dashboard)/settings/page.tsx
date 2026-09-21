@@ -11,6 +11,9 @@ interface Named { id: string; name: string }
 
 interface Company {
   name: string; address: string; phone: string; email: string; gstin: string;
+  /** Shown to every employee in the phone app, under "Contact HR". */
+  hrContactName?: string;
+  hrContactPhone?: string;
   /** What a new employee is paid on unless their own record says otherwise. */
   defaultPayrollBasis?: 'MONTHLY' | 'PRESENT_DAYS';
   // Attendance policy
@@ -304,6 +307,22 @@ function CompanyCard() {
             <option value="MONTHLY">Monthly — weekly offs and approved leave are paid</option>
             <option value="PRESENT_DAYS">Present days — paid only for days worked</option>
           </select>
+        </div>
+
+        <div className="border-t border-border/60 pt-4 sm:col-span-2">
+          <h3 className="text-sm font-semibold">Contact HR</h3>
+          <p className="mb-3 mt-1 text-xs text-muted-foreground">
+            Every employee sees this in the phone app and taps to call. Leave the number empty and
+            the button is hidden rather than dialling the company line.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Name" hint="Who picks up — a person, not a department, reads better on a phone.">
+              <input className={input} placeholder="Latha · HR" value={c.hrContactName ?? ''} onChange={(e) => set('hrContactName', e.target.value)} />
+            </Field>
+            <Field label="Phone" hint="Dialled straight from the app. Include the country code.">
+              <input className={input} placeholder="+91 90000 00000" value={c.hrContactPhone ?? ''} onChange={(e) => set('hrContactPhone', e.target.value)} />
+            </Field>
+          </div>
         </div>
 
         <div className="border-t border-border/60 pt-4 sm:col-span-2">

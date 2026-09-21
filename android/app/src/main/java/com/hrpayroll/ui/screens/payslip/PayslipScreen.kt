@@ -32,6 +32,7 @@ import com.hrpayroll.data.remote.dto.PayslipDto
 import com.hrpayroll.ui.components.BrandHeader
 import com.hrpayroll.ui.theme.DeductRed
 import com.hrpayroll.ui.theme.MoneyGreen
+import com.hrpayroll.ui.theme.StatusPresentBg
 
 private val MONTHS = arrayOf("", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 private fun money(v: Double?) = "₹" + (v ?: 0.0).toInt().toString()
@@ -98,7 +99,7 @@ private fun PayslipContent(slip: PayslipDto) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFE9FBF0)),
+        colors = CardDefaults.cardColors(containerColor = StatusPresentBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.Icon
@@ -44,7 +45,7 @@ import com.hrpayroll.ui.screens.attendance.AttendanceScreen
 import com.hrpayroll.ui.screens.attendance.CameraCaptureScreen
 import com.hrpayroll.ui.screens.leave.LeaveScreen
 import com.hrpayroll.ui.screens.login.LoginScreen
-import com.hrpayroll.ui.screens.payslip.PayslipScreen
+import com.hrpayroll.ui.screens.payroll.PayrollScreen
 import com.hrpayroll.ui.screens.shift.ShiftScreen
 import com.hrpayroll.ui.theme.BrandIndigo
 import com.hrpayroll.ui.theme.BrandLavender
@@ -58,7 +59,7 @@ object Routes {
     const val LEAVE = "leave"
     const val CLAIMS = "claims"
     const val CLAIM_SUBMIT = "claim_submit/{claimId}"
-    const val PAYSLIP = "payslip"
+    const val PAYROLL = "payroll"
 
     // Admin section
     const val ADMIN_DASHBOARD = "admin_dashboard"
@@ -82,7 +83,10 @@ private val employeeTabs = listOf(
     BottomTab(Routes.ATTENDANCE, "Attendance", Icons.Filled.CheckCircle),
     BottomTab(Routes.LEAVE, "Leave", Icons.Filled.CalendarMonth),
     BottomTab(Routes.CLAIMS, "Claims", Icons.Filled.ReceiptLong),
-    // Payslip / salary tab intentionally removed from the app for now — re-add later.
+    // Pay, and the days behind it. This is the "re-add later" the old Payslip
+    // tab left behind: the payslip now lives inside it, with the month's hours,
+    // late days and leave beside it.
+    BottomTab(Routes.PAYROLL, "Payroll", Icons.Filled.Wallet),
 )
 
 private val adminTabs = listOf(
@@ -151,12 +155,26 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
             }
         },
     ) { innerPadding ->
+        // Whether the phone wants animation at all — read once, here, so every
+        // destination below agrees rather than each deciding for itself.
+        val animate = com.hrpayroll.utils.Motion.rememberEnabled()
+
         NavHost(
             navController = navController,
             startDestination = Routes.LOGIN,
             modifier = androidx.compose.ui.Modifier.padding(innerPadding),
+            enterTransition = { com.hrpayroll.utils.Motion.enter(animate) },
+            exitTransition = { com.hrpayroll.utils.Motion.exit(animate) },
+            popEnterTransition = { com.hrpayroll.utils.Motion.popEnter(animate) },
+            popExitTransition = { com.hrpayroll.utils.Motion.popExit(animate) },
         ) {
-            composable(Routes.LOGIN) {
+            // Signing in is not a step sideways through the app; it is the way
+            // in and the way out, so it fades rather than slides.
+            composable(
+                Routes.LOGIN,
+                enterTransition = { com.hrpayroll.utils.Motion.fade(animate) },
+                exitTransition = { com.hrpayroll.utils.Motion.fadeAway(animate) },
+            ) {
                 LoginScreen(onLoggedIn = { isAdmin ->
                     val dest = if (isAdmin) Routes.ADMIN_DASHBOARD else Routes.HOME
                     navController.navigate(dest) {
@@ -169,7 +187,6 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
             composable(Routes.HOME) {
                 HomeScreen(
                     onCheckIn = { navController.navigate(cameraRoute("checkin")) },
-                    onPayslip = { navController.navigate(Routes.PAYSLIP) },
                     onLogout = {
                         navController.navigate(Routes.LOGIN) {
                             popUpTo(0) { inclusive = true } // clear the whole back stack
@@ -186,6 +203,12 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
             composable(
                 Routes.CAMERA,
                 arguments = listOf(navArgument("mode") { type = NavType.StringType }),
+                // The camera takes over the screen; sliding a viewfinder in looks
+                // like a mistake.
+                enterTransition = { com.hrpayroll.utils.Motion.fade(animate) },
+                exitTransition = { com.hrpayroll.utils.Motion.fadeAway(animate) },
+                popEnterTransition = { com.hrpayroll.utils.Motion.fade(animate) },
+                popExitTransition = { com.hrpayroll.utils.Motion.fadeAway(animate) },
             ) {
                 CameraCaptureScreen(
                     onDone = { navController.popBackStack() },
@@ -194,7 +217,7 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
             }
             composable(Routes.SHIFT) { ShiftScreen() }
             composable(Routes.LEAVE) { LeaveScreen() }
-            composable(Routes.PAYSLIP) { PayslipScreen() }
+            composable(Routes.PAYROLL) { PayrollScreen() }
 
             // Claims
             composable(Routes.CLAIMS) {

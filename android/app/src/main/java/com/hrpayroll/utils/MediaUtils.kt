@@ -22,7 +22,24 @@ object MediaUtils {
      * Decode the (already edge-cropped/enhanced) scanner image, scale it down to a
      * sane max dimension, and JPEG-compress it — smaller upload, still crisp to read.
      */
-    fun compressImage(context: Context, uri: Uri, maxDim: Int = 1600, quality: Int = 70): ByteArray {
+    fun compressImage(context: Context, uri: Uri, maxDim: Int = 1600, quality: Int = 70): ByteArray =
+        compressImage(context, uri, maxDim, quality, stamp = null)
+
+    /**
+     * As above, and when `stamp` is given the details are drawn onto the image
+     * before it is encoded.
+     *
+     * The stamp goes on *after* scaling so its text is sized against the image
+     * that is actually uploaded, and before compression so it is part of the
+     * pixels rather than something a viewer has to be trusted to render.
+     */
+    fun compressImage(
+        context: Context,
+        uri: Uri,
+        maxDim: Int = 1600,
+        quality: Int = 70,
+        stamp: SelfieStamp.Details? = null,
+    ): ByteArray {
         val bitmap = context.contentResolver.openInputStream(uri).use { input ->
             BitmapFactory.decodeStream(input)
         } ?: return ByteArray(0)
@@ -30,8 +47,9 @@ object MediaUtils {
         // below drops EXIF, so bake the rotation into the pixels or the upload ends up sideways.
         val upright = applyExifRotation(context, uri, bitmap)
         val scaled = scaleDown(upright, maxDim)
+        val stamped = if (stamp != null) runCatching { SelfieStamp.apply(scaled, stamp) }.getOrDefault(scaled) else scaled
         return ByteArrayOutputStream().use { out ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            stamped.compress(Bitmap.CompressFormat.JPEG, quality, out)
             out.toByteArray()
         }
     }

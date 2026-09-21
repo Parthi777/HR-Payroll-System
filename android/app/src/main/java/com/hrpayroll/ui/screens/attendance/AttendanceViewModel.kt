@@ -26,8 +26,6 @@ data class AttendanceUiState(
     val status: String? = null,
     val error: String? = null,
     val records: List<AttendanceRecordUi> = emptyList(),
-    /** True until the first successful network load; the UI shows sample data meanwhile. */
-    val usingSampleData: Boolean = true,
     /** Today's state — drives which of the Check-In / Check-Out buttons is enabled. */
     val todayCheckIn: String? = null, // "09:02 AM" or null
     val todayCheckOut: String? = null,
@@ -37,6 +35,9 @@ data class AttendanceUiState(
     val calMonth: Int = java.time.LocalDate.now().monthValue,
     val calYear: Int = java.time.LocalDate.now().year,
     val calendar: AttendanceCalendarResponse? = null,
+    /** Whose punch it is, for the stamp burned onto the selfie. */
+    val employeeName: String = "",
+    val employeeCode: String = "",
     /** Manual / selfie punch sheet — the fallback when the normal gate can't be met. */
     val manualOpen: Boolean = false,
     val manualBusy: Boolean = false,
@@ -57,12 +58,23 @@ data class AttendanceUiState(
 @HiltViewModel
 class AttendanceViewModel @Inject constructor(
     private val repository: AttendanceRepository,
+    private val employeeRepo: com.hrpayroll.data.repository.EmployeeDataRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AttendanceUiState())
     val uiState: StateFlow<AttendanceUiState> = _uiState.asStateFlow()
 
     init {
+        // Only for the selfie stamp: a photo that reaches a manager should say
+        // who it is of. Failing here is harmless — the stamp drops that line.
+        viewModelScope.launch {
+            runCatching { employeeRepo.me() }.getOrNull()?.let { me ->
+                _uiState.value = _uiState.value.copy(
+                    employeeName = me.name.orEmpty(),
+                    employeeCode = me.employeeCode.orEmpty(),
+                )
+            }
+        }
         loadHistory()
         loadCalendar()
     }
@@ -91,7 +103,6 @@ class AttendanceViewModel @Inject constructor(
                 .onSuccess { dtos ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        usingSampleData = false,
                         records = dtos.map {
                             AttendanceRecordUi(
                                 date = it.date ?: "—",
@@ -185,6 +196,8 @@ class AttendanceViewModel @Inject constructor(
         checkIn: String?,
         checkOut: String?,
         selfie: ByteArray?,
+        /** Where the phone was when the selfie was taken, when it could say. */
+        fix: com.hrpayroll.utils.Fix? = null,
     ) {
         if (checkIn.isNullOrBlank() && checkOut.isNullOrBlank()) {
             _uiState.value = _uiState.value.copy(manualError = "Enter a check-in time, a check-out time, or both")
@@ -211,6 +224,7 @@ class AttendanceViewModel @Inject constructor(
                     checkIn = checkIn?.takeIf { it.isNotBlank() },
                     checkOut = checkOut?.takeIf { it.isNotBlank() },
                     selfie = selfie,
+                    fix = fix,
                 )
             }
                 .onSuccess {

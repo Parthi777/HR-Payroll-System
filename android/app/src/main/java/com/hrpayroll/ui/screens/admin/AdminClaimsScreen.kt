@@ -423,6 +423,9 @@ private fun FullScreenReceipt(photoUrl: String, authToken: String?, onClose: () 
         Box(
             Modifier
                 .fillMaxSize()
+                // A near-black scrim, not a brand colour: this is the full-screen
+                // bill viewer, and the point is that nothing else competes with
+                // the photograph.
                 .background(Color(0xF2000000))
                 .pointerInput(Unit) {
                     detectTransformGestures { _, pan, zoom, _ ->

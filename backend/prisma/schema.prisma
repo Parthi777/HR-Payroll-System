@@ -517,6 +517,15 @@ model TenantSettings {
   email   String @default("")
   gstin   String @default("")
 
+  /// Who staff ring from the phone app's "Contact HR" button.
+  ///
+  /// Separate from `phone` above, which is the company's own number on a
+  /// payslip: this is a person an employee should call about their attendance
+  /// or their salary. Empty hides the button rather than dialling a dead line;
+  /// a blank number with a name set falls back to the company number.
+  hrContactName  String @default("")
+  hrContactPhone String @default("")
+
   // ── Attendance policy (was COMPANY_TZ, HALF_DAY_WINDOW_*, …) ──
   timezone              String  @default("Asia/Kolkata")
   employeeCodePrefix    String  @default("EMP")

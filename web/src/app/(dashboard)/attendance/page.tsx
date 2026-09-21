@@ -4,7 +4,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileSpreadsheet, FileText, Search, Check, X, Camera, Loader2, MapPinOff, ClipboardPen } from 'lucide-react';
+import { FileSpreadsheet, FileText, Search, Check, X, Camera, Loader2, MapPin, MapPinOff, ClipboardPen } from 'lucide-react';
 import { useLiveAttendance, type LiveAttendanceRow } from '@/hooks/useApi';
 import { fetcher, api, apiBlobUrl, apiUpload } from '@/lib/api';
 
@@ -30,6 +30,9 @@ interface PendingApproval {
   checkOut: string | null;
   reason: string | null;
   punchMode: string;
+  /** Where the phone said it was, on a punch that skipped the geofence. */
+  lat: number | null;
+  lng: number | null;
   punchReason: string | null;
   raisedByHr: boolean;
   hasSelfie: boolean;
@@ -394,6 +397,21 @@ function ApprovalsCard() {
               <button onClick={() => viewSelfie(a.id)} title="View selfie" className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-muted-foreground hover:text-foreground">
                 <Camera className="h-4 w-4" /> Selfie
               </button>
+            )}
+            {/* Where the phone said it was. A selfie punch skips the geofence,
+                so this is the only location there is — and it is the fastest
+                way to tell whether the stated reason holds up. The same
+                coordinates are stamped on the photo itself. */}
+            {a.lat != null && a.lng != null && (
+              <a
+                href={`https://www.google.com/maps?q=${a.lat},${a.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                title={`Where the punch was made — ${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}`}
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-muted-foreground hover:text-foreground"
+              >
+                <MapPin className="h-4 w-4" /> Map
+              </a>
             )}
             <button onClick={() => decide(a.id, 'approve')} disabled={busyId === a.id} className="flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
               {busyId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve

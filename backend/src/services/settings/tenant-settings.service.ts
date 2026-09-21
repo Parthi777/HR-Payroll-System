@@ -52,7 +52,16 @@ export interface ResourcePolicy {
 }
 
 export interface TenantPolicy {
-  company: { name: string; address: string; phone: string; email: string; gstin: string };
+  company: {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    gstin: string;
+    /** Who the phone app's "Contact HR" button rings. */
+    hrContactName: string;
+    hrContactPhone: string;
+  };
   attendance: AttendancePolicy;
   payroll: PayrollPolicy;
   resources: ResourcePolicy;
@@ -73,6 +82,8 @@ export function defaultPolicy(): TenantPolicy {
       phone: '',
       email: '',
       gstin: '',
+      hrContactName: '',
+      hrContactPhone: '',
     },
     attendance: {
       timezone: process.env.COMPANY_TZ ?? 'Asia/Kolkata',
@@ -105,6 +116,7 @@ export function defaultPolicy(): TenantPolicy {
 
 type SettingsRow = {
   name: string; address: string; phone: string; email: string; gstin: string;
+  hrContactName: string; hrContactPhone: string;
   timezone: string; halfDayWindowStart: string; halfDayWindowEnd: string;
   lateRequiresApproval: boolean; openPunchLookbackDays: number;
   manualPunchLatest: string;
@@ -122,6 +134,7 @@ function toPolicy(row: SettingsRow): TenantPolicy {
   return {
     company: {
       name: row.name, address: row.address, phone: row.phone, email: row.email, gstin: row.gstin,
+      hrContactName: row.hrContactName, hrContactPhone: row.hrContactPhone,
     },
     attendance: {
       timezone: row.timezone,

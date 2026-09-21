@@ -365,6 +365,16 @@ export interface ManualPunchInput {
   date?: Date;
   reason: string;
   selfie?: Buffer | null;
+  /**
+   * Where the phone was when the selfie was taken, when it could say.
+   *
+   * Never a gate: this punch exists for the times the geofenced check-in was
+   * impossible, so a phone with no fix still gets to punch. It is evidence for
+   * whoever approves it — and the same figures are stamped onto the photo, so
+   * the two can be read against each other.
+   */
+  lat?: number | null;
+  lng?: number | null;
   /** Set when HR raised the punch on the employee's behalf. */
   raisedByAdminId?: string | null;
 }
@@ -463,11 +473,26 @@ export async function markManualPunch(
   const raisedNote = input.raisedByAdminId ? ' (raised by HR)' : '';
   const flagReason = `${label}${raisedNote} — ${reason.trim()} — awaiting approval`;
 
+  // Where the phone said it was. Reported, not verified — the geofence check is
+  // skipped on this path by design — so it is stored as evidence for the
+  // approver beside the reason, and (0,0) means "no fix", never Null Island.
+  const reported = input.lat != null && input.lng != null && !(input.lat === 0 && input.lng === 0)
+    ? { lat: input.lat, lng: input.lng }
+    : null;
+  const forCheckOut = Boolean(input.checkOut && !input.checkIn);
+
   const data = {
     checkIn,
     ...(checkOut ? { checkOut } : {}),
     ...(workingMinutes != null ? { workingMinutes } : {}),
-    // A manual/selfie punch carries no verified location or face score.
+    // A manual/selfie punch carries no verified location or face score; what
+    // location it has is the phone's own word, attached to the half of the day
+    // this punch is settling.
+    ...(reported
+      ? forCheckOut
+        ? { checkOutLat: reported.lat, checkOutLng: reported.lng }
+        : { checkInLat: reported.lat, checkInLng: reported.lng }
+      : {}),
     ...(selfieUrl ? (input.checkOut && !input.checkIn ? { checkOutSelfie: selfieUrl } : { checkInSelfie: selfieUrl }) : {}),
     status,
     punchMode: mode,

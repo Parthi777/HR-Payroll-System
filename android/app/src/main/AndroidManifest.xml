@@ -16,6 +16,21 @@
 
     <uses-feature android:name="android.hardware.camera.front" android:required="true" />
 
+    <!--
+        What this app may look for on the phone. From Android 11 an app cannot
+        see other apps unless it says which kinds it needs, and without this the
+        "Contact HR" button cannot tell whether a dialler exists.
+
+        DIAL only — the app opens the dialler with the number filled in and lets
+        the person press call, which is why CALL_PHONE is not requested above.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+    </queries>
+
     <application
         android:name=".HrPayrollApp"
         android:allowBackup="false"

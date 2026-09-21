@@ -61,6 +61,8 @@ import com.hrpayroll.ui.theme.StatusOffBg
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.ui.theme.StatusPresentBg
 import java.time.LocalDate
+import com.hrpayroll.ui.theme.StatusMuted
+import com.hrpayroll.ui.theme.StatusMutedBg
 
 private val MONTHS = arrayOf("", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 
@@ -209,7 +211,7 @@ private fun DailyRow(row: DailyRowDto) {
                 if (row.flagged == true) {
                     Spacer(Modifier.height(6.dp))
                     Text("\u26A0 Flagged — check the web Live Attendance for the reason",
-                        fontSize = 12.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Medium)
+                        fontSize = 12.sp, color = StatusHalf, fontWeight = FontWeight.Medium)
                 }
             } else {
                 Spacer(Modifier.height(4.dp))
@@ -291,9 +293,9 @@ private fun MonthCalendar(
                 }
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    LegendDot(Color(0xFFE11D48), "Absentees")
-                    LegendDot(Color(0xFFB45309), "Lates")
-                    LegendDot(Color(0xFF16A34A), "All present")
+                    LegendDot(StatusOff, "Absentees")
+                    LegendDot(StatusHalf, "Lates")
+                    LegendDot(StatusPresent, "All present")
                 }
             }
         }
@@ -301,11 +303,11 @@ private fun MonthCalendar(
 }
 
 private fun dayColors(d: MonthDayDto): Pair<Color, Color> = when {
-    d.future -> Color(0xFFB6B6C3) to Color(0xFFF7F7FA)
-    d.absent > 0 -> Color(0xFFE11D48) to Color(0xFFFFE4E6)
-    d.late > 0 -> Color(0xFFB45309) to Color(0xFFFEF3C7)
-    d.present > 0 -> Color(0xFF16A34A) to Color(0xFFDCFCE7)
-    else -> Color(0xFF64748B) to Color(0xFFF1F5F9) // off / no data
+    d.future -> StatusMuted to StatusMutedBg
+    d.absent > 0 -> StatusOff to StatusOffBg
+    d.late > 0 -> StatusHalf to StatusHalfBg
+    d.present > 0 -> StatusPresent to StatusPresentBg
+    else -> StatusMuted to StatusMutedBg // off / no data
 }
 
 @Composable
@@ -344,13 +346,13 @@ private fun ApprovalsCard(
 ) {
     Card(
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+        colors = CardDefaults.cardColors(containerColor = StatusHalfBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
             Text(
                 "Attendance approvals (${approvals.size})",
-                fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFFB45309),
+                fontWeight = FontWeight.Bold, fontSize = 15.sp, color = StatusHalf,
             )
             Spacer(Modifier.height(4.dp))
             Text(
@@ -364,14 +366,14 @@ private fun ApprovalsCard(
                         color = MaterialTheme.colorScheme.onSurface)
                     Text("${a.employeeCode ?: ""} · ${a.branch ?: ""} · in ${a.checkIn ?: "—"}",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    a.reason?.let { Text(it, fontSize = 12.sp, color = Color(0xFFB45309)) }
+                    a.reason?.let { Text(it, fontSize = 12.sp, color = StatusHalf) }
                     Spacer(Modifier.height(6.dp))
                     val busy = busyId == a.id
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         androidx.compose.material3.Button(
                             onClick = { a.id?.let(onApprove) },
                             enabled = !busy,
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = StatusPresent),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                         ) {
                             if (busy) androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
@@ -380,7 +382,7 @@ private fun ApprovalsCard(
                         androidx.compose.material3.OutlinedButton(
                             onClick = { a.id?.let(onReject) },
                             enabled = !busy,
-                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE11D48)),
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = StatusOff),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                         ) { Text("Reject", fontSize = 13.sp) }
                     }

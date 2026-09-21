@@ -32,6 +32,12 @@ class AttendanceRepository @Inject constructor(
         checkIn: String?,
         checkOut: String?,
         selfie: ByteArray?,
+        /**
+         * Where the phone was, when it could say. Sent so the approver can weigh
+         * the stated reason against a place; the same figures are stamped on the
+         * photo. Null is normal — a punch is never blocked on having a fix.
+         */
+        fix: com.hrpayroll.utils.Fix? = null,
     ): AttendanceDto {
         // Text parts are built by hand rather than via @Part("name") String: the
         // only registered converter is Moshi, which would JSON-quote the values.
@@ -41,6 +47,11 @@ class AttendanceRepository @Inject constructor(
             date?.let { add(MultipartBody.Part.createFormData("date", it)) }
             checkIn?.let { add(MultipartBody.Part.createFormData("checkIn", it)) }
             checkOut?.let { add(MultipartBody.Part.createFormData("checkOut", it)) }
+            fix?.takeIf { it.hasFix }?.let {
+                add(MultipartBody.Part.createFormData("lat", it.lat.toString()))
+                add(MultipartBody.Part.createFormData("lng", it.lng.toString()))
+                add(MultipartBody.Part.createFormData("accuracy", it.accuracy.toString()))
+            }
             selfie?.let {
                 add(
                     MultipartBody.Part.createFormData(

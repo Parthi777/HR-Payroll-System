@@ -28,7 +28,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -59,19 +58,16 @@ import com.hrpayroll.ui.theme.StatusOff
 import com.hrpayroll.ui.theme.StatusOffBg
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.ui.theme.StatusPresentBg
+import com.hrpayroll.ui.theme.StatusMuted
+import com.hrpayroll.ui.theme.StatusMutedBg
+import com.hrpayroll.ui.theme.StatusPaid
+import com.hrpayroll.ui.theme.StatusPaidBg
+import com.hrpayroll.ui.components.TodayStat
+import kotlinx.coroutines.launch
 
 /**
- * Selfie attendance + records. Gradient header, record cards with status chips
- * (mirrors the UI reference). TODO: wire CameraX + ML Kit liveness + FusedLocation.
+ * Selfie attendance + records. Gradient header, record cards with status chips.
  */
-private val sampleRecords = listOf(
-    AttendanceRecordUi("Tue, Feb 10", "09:00 AM", "06:15 PM", "Present"),
-    AttendanceRecordUi("Mon, Feb 09", "—", "—", "Leave"),
-    AttendanceRecordUi("Sun, Feb 08", "—", "—", "Off Day"),
-    AttendanceRecordUi("Sat, Feb 07", "08:55 AM", "06:10 PM", "Present"),
-    AttendanceRecordUi("Fri, Feb 06", "08:55 AM", "01:00 PM", "Half Day"),
-)
-
 @Composable
 fun AttendanceScreen(
     onCheckIn: () -> Unit = {},
@@ -93,6 +89,8 @@ fun AttendanceScreen(
             busy = state.manualBusy,
             error = state.manualError,
             forDay = state.manualForDay,
+            employeeName = state.employeeName,
+            employeeCode = state.employeeCode,
             onDismiss = viewModel::closeManualPunch,
             onSubmit = viewModel::submitManualPunch,
         )
@@ -196,7 +194,7 @@ fun AttendanceScreen(
                         )
                     }
 
-                    val records = if (state.usingSampleData) sampleRecords else state.records
+                    val records = state.records
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxSize(),
@@ -301,19 +299,6 @@ fun AttendanceScreen(
 
 /** One tile of the floating "Today" summary card. */
 @Composable
-private fun TodayStat(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color)
-        Spacer(Modifier.height(2.dp))
-        Text(
-            label,
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-        )
-    }
-}
-
-@Composable
 private fun RecordRow(record: AttendanceRecordUi) {
     val (fg, bg) = when (record.status) {
         "Present" -> StatusPresent to StatusPresentBg
@@ -359,14 +344,14 @@ private fun RecordRow(record: AttendanceRecordUi) {
 private val CAL_MONTHS = arrayOf("", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 
 private fun dayColors(status: String?): Pair<Color, Color> = when (status) {
-    "PRESENT" -> Color(0xFF16A34A) to Color(0xFFDCFCE7)
-    "LATE" -> Color(0xFFB45309) to Color(0xFFFEF3C7)
-    "HALF_DAY" -> Color(0xFF0284C7) to Color(0xFFE0F2FE)
-    "ABSENT" -> Color(0xFFE11D48) to Color(0xFFFFE4E6)
-    "LEAVE" -> Color(0xFF4F46E5) to Color(0xFFE0E7FF)
-    "PENDING_APPROVAL" -> Color(0xFFB45309) to Color(0xFFFFF7ED)
-    "OFF" -> Color(0xFF64748B) to Color(0xFFF1F5F9)
-    else -> Color(0xFFB6B6C3) to Color(0xFFF7F7FA) // FUTURE
+    "PRESENT" -> StatusPresent to StatusPresentBg
+    "LATE" -> StatusHalf to StatusHalfBg
+    "HALF_DAY" -> StatusPaid to StatusPaidBg
+    "ABSENT" -> StatusOff to StatusOffBg
+    "LEAVE" -> StatusLeave to StatusLeaveBg
+    "PENDING_APPROVAL" -> StatusHalf to StatusHalfBg
+    "OFF" -> StatusMuted to StatusMutedBg
+    else -> StatusMuted to StatusMutedBg // FUTURE
 }
 
 /** Month view of the employee's own attendance — present/absent at a glance. */
@@ -439,10 +424,10 @@ private fun MonthCalendar(
             Spacer(Modifier.height(6.dp))
             // Legend + month summary
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LegendDot(Color(0xFF16A34A), "Present ${calendar?.summary?.present ?: 0}")
-                LegendDot(Color(0xFFB45309), "Late ${calendar?.summary?.late ?: 0}")
-                LegendDot(Color(0xFFE11D48), "Absent ${calendar?.summary?.absent ?: 0}")
-                LegendDot(Color(0xFF4F46E5), "Leave ${calendar?.summary?.leave ?: 0}")
+                LegendDot(StatusPresent, "Present ${calendar?.summary?.present ?: 0}")
+                LegendDot(StatusHalf, "Late ${calendar?.summary?.late ?: 0}")
+                LegendDot(StatusOff, "Absent ${calendar?.summary?.absent ?: 0}")
+                LegendDot(StatusLeave, "Leave ${calendar?.summary?.leave ?: 0}")
             }
         }
         Spacer(Modifier.height(4.dp))
@@ -606,26 +591,68 @@ private fun ManualPunchDialog(
     busy: Boolean,
     error: String?,
     forDay: com.hrpayroll.data.remote.dto.MissingCheckoutDto?,
+    employeeName: String,
+    employeeCode: String,
     onDismiss: () -> Unit,
-    onSubmit: (mode: String, reason: String, checkIn: String?, checkOut: String?, selfie: ByteArray?) -> Unit,
+    onSubmit: (
+        mode: String,
+        reason: String,
+        checkIn: String?,
+        checkOut: String?,
+        selfie: ByteArray?,
+        fix: com.hrpayroll.utils.Fix?,
+    ) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var mode by remember { mutableStateOf("MANUAL") }
+    // Today's punch is always a selfie: a photograph taken now is the only thing
+    // that evidences a punch made now, and it is what the approver looks at.
+    // Settling a day already past is different — no selfie taken today says
+    // anything about it — so that stays a typed, manual punch.
+    var mode by remember { mutableStateOf(if (forDay != null) "MANUAL" else "SELFIE") }
     var checkIn by remember { mutableStateOf("") }
     // Settling an open day: default the picker to that shift's closing time.
     var checkOut by remember { mutableStateOf(if (forDay != null) forDay.shiftEnd.orEmpty() else "") }
     var reason by remember { mutableStateOf(if (forDay != null) "Forgot to check out" else "") }
     var selfie by remember { mutableStateOf<ByteArray?>(null) }
     var selfieUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var permissionDenied by remember { mutableStateOf(false) }
+    var stamping by remember { mutableStateOf(false) }
+    var capturedFix by remember { mutableStateOf<com.hrpayroll.utils.Fix?>(null) }
+    var locationMissing by remember { mutableStateOf(false) }
+
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.TakePicture(),
     ) { ok ->
         val uri = selfieUri
-        if (ok && uri != null) selfie = com.hrpayroll.utils.MediaUtils.compressImage(context, uri)
+        if (ok && uri != null) {
+            // Read the location now, while the person is still standing where the
+            // photo was taken — not when they finally press send. The address
+            // lookup is best-effort and the whole thing is time-boxed, because a
+            // punch raised from a basement must not hang on a network call.
+            scope.launch {
+                stamping = true
+                val fix = com.hrpayroll.utils.LocationUtils.current(context)
+                val address = com.hrpayroll.utils.LocationUtils.addressOf(context, fix)
+                capturedFix = fix.takeIf { it.hasFix }
+                locationMissing = !fix.hasFix
+                selfie = com.hrpayroll.utils.MediaUtils.compressImage(
+                    context = context,
+                    uri = uri,
+                    stamp = com.hrpayroll.utils.SelfieStamp.Details(
+                        employeeName = employeeName,
+                        employeeCode = employeeCode,
+                        fix = fix,
+                        address = address,
+                    ),
+                )
+                stamping = false
+            }
+        }
     }
 
-    fun takeSelfie() {
+    fun launchCamera() {
         val file = java.io.File(context.cacheDir, "manual-punch-${System.currentTimeMillis()}.jpg")
         val uri = androidx.core.content.FileProvider.getUriForFile(
             context,
@@ -636,11 +663,35 @@ private fun ManualPunchDialog(
         cameraLauncher.launch(uri)
     }
 
+    /**
+     * Ask for the camera before opening it.
+     *
+     * This used to launch straight into the camera. It happened to work because
+     * people normally reached the CameraX check-in screen first, which asks —
+     * but now that a selfie is the only punch this sheet can raise, an employee
+     * who has never granted the camera would land here and be thrown out by a
+     * SecurityException with nothing explaining why.
+     */
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) launchCamera() else permissionDenied = true
+    }
+
+    fun takeSelfie() {
+        permissionDenied = false
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.CAMERA,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) launchCamera() else permissionLauncher.launch(android.Manifest.permission.CAMERA)
+    }
+
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = {
             Text(
-                if (forDay != null) "Check-out for ${forDay.dateLabel ?: "the missed day"}" else "Manual / selfie punch",
+                if (forDay != null) "Check-out for ${forDay.dateLabel ?: "the missed day"}" else "Selfie punch",
                 fontWeight = FontWeight.Bold,
             )
         },
@@ -651,7 +702,8 @@ private fun ManualPunchDialog(
                         "You checked in at ${forDay.checkIn ?: "—"} that day but never checked out. " +
                             "Set the time you left — your reporting manager has to approve it before it is paid."
                     } else {
-                        "Use this when you could not check in or out normally. Your reporting manager has to approve it " +
+                        "Use this when you could not check in or out normally. Take a selfie — the time and " +
+                            "where you are is recorded on the photo — and your reporting manager approves it " +
                             "before it counts for payroll."
                     },
                     fontSize = 12.sp,
@@ -659,23 +711,6 @@ private fun ManualPunchDialog(
                 )
                 Spacer(Modifier.height(12.dp))
 
-                // A selfie taken today proves nothing about a day already past,
-                // so settling an open day is always a plain manual punch.
-                if (forDay == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = mode == "MANUAL",
-                            onClick = { mode = "MANUAL" },
-                            label = { Text("Manual", fontSize = 13.sp) },
-                        )
-                        FilterChip(
-                            selected = mode == "SELFIE",
-                            onClick = { mode = "SELFIE" },
-                            label = { Text("With selfie", fontSize = 13.sp) },
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (forDay == null) {
@@ -721,6 +756,29 @@ private fun ManualPunchDialog(
                         Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text(if (selfie != null) "  Selfie captured ✓ — retake" else "  Take selfie")
                     }
+                    if (permissionDenied) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "The camera is blocked for this app. Turn it on in Settings → Apps → " +
+                                "HR & Payroll → Permissions, then take the selfie again.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        when {
+                            stamping -> "Reading your location…"
+                            locationMissing ->
+                                "No location fix — the photo says so. Turn on GPS and retake it if you can; " +
+                                    "your manager will see it either way."
+                            capturedFix != null ->
+                                "Time and place are written onto the photo for your manager to check."
+                            else -> "The photo records the time and where you are, for your manager to check."
+                        },
+                        fontSize = 11.sp,
+                        color = if (locationMissing) StatusHalf else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    )
                 }
 
                 if (error != null) {
@@ -731,8 +789,8 @@ private fun ManualPunchDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSubmit(mode, reason, checkIn, checkOut, selfie) },
-                enabled = !busy,
+                onClick = { onSubmit(mode, reason, checkIn, checkOut, selfie, capturedFix) },
+                enabled = !busy && !stamping,
             ) {
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)

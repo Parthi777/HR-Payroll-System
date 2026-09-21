@@ -14,6 +14,20 @@ export async function profileRoutes(app: FastifyInstance) {
       include: { branch: true, designation: true, department: true, shift: true },
     });
     if (!e) throw AppError.notFound('Employee');
+
+    // Who to ring about attendance or salary. The dealer's settings screen is
+    // admin-only, so this is the one slice of it an employee may read — a name
+    // and a number, nothing else from the company profile.
+    //
+    // A name with no HR number falls back to the company's own, because a
+    // dealership that filled in one field meant to be reachable. Both empty
+    // returns null, and the app hides the button rather than dialling nothing.
+    const settings = await app.prisma.tenantSettings.findFirst({
+      select: { hrContactName: true, hrContactPhone: true, phone: true },
+    });
+    const hrPhone = settings?.hrContactPhone?.trim() || settings?.phone?.trim() || '';
+    const hrName = settings?.hrContactName?.trim() || '';
+
     return {
       id: e.id,
       name: e.name,
@@ -23,6 +37,7 @@ export async function profileRoutes(app: FastifyInstance) {
       department: e.department.name,
       branch: e.branch.name,
       shift: e.shift.name,
+      hr: hrPhone ? { name: hrName || 'HR', phone: hrPhone } : null,
     };
   });
 

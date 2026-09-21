@@ -21,6 +21,10 @@ val StatusOffBg = Color(0xFFFFE4E6)
 val StatusHalf = Color(0xFFB45309)
 val StatusHalfBg = Color(0xFFFEF3C7)
 val StatusPaid = Color(0xFF0284C7) // claim disbursed (cashier)
+// Nothing to report: a day still in the future, an off day, a cell with no
+// data. Screens had grown three slightly different greys for this; it is one.
+val StatusMuted = Color(0xFF64748B)
+val StatusMutedBg = Color(0xFFF1F5F9)
 val StatusPaidBg = Color(0xFFE0F2FE)
 
 val MoneyGreen = Color(0xFF16A34A)

@@ -65,6 +65,11 @@ const companySchema = z.object({
   email: z.string().optional(),
   gstin: z.string().optional(),
 
+  // Shown to every employee in the phone app, so the number has to be one a
+  // person actually answers.
+  hrContactName: z.string().max(80).optional(),
+  hrContactPhone: z.string().max(20).optional(),
+
   // NOTE: `timezone` is stored on TenantSettings and set at provisioning, but
   // is deliberately NOT editable yet — nothing reads it. The company timezone
   // is still deployment-wide (utils/time.ts), and threading it touches every

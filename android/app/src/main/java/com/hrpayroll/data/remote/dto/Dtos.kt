@@ -340,6 +340,10 @@ data class CalendarSummaryDto(
     val half: Int? = null,
     val absent: Int? = null,
     val leave: Int? = null,
+    /** Punches still waiting on a manager. Unpaid until approved. */
+    val pending: Int? = null,
+    /** Minutes actually worked across the month, from the punches themselves. */
+    val workedMinutes: Int? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -410,4 +414,12 @@ data class MeDto(
     val department: String? = null,
     val branch: String? = null,
     val shift: String? = null,
+    /** Who to ring about attendance or salary. Null when the dealer set nobody. */
+    val hr: HrContactDto? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class HrContactDto(
+    val name: String? = null,
+    val phone: String? = null,
 )

@@ -52,23 +52,67 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.hrpayroll.ui.theme.BrandGradient
+import com.hrpayroll.ui.components.BrandHeader
 import com.hrpayroll.ui.theme.BrandIndigo
 import com.hrpayroll.ui.theme.MoneyGreen
 import com.hrpayroll.ui.theme.StatusOff
 import com.hrpayroll.ui.theme.StatusPresent
+import com.hrpayroll.ui.theme.StatusHalf
+import com.hrpayroll.ui.theme.StatusLeave
+import com.hrpayroll.ui.components.TodayStat
+import androidx.compose.material3.HorizontalDivider
+import com.hrpayroll.ui.theme.StatusMuted
 
 /** Employee home dashboard (profile, today's attendance, overview, quick actions). */
 @Composable
 fun HomeScreen(
     onCheckIn: () -> Unit,
-    onPayslip: () -> Unit,
     onLogout: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val s by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var locationOn by remember { mutableStateOf(true) }
     var confirmLogout by remember { mutableStateOf(false) }
+    var showHr by remember { mutableStateOf(false) }
+
+    if (showHr) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showHr = false },
+            title = { Text(s.hrName.ifBlank { "Contact HR" }) },
+            text = {
+                Column {
+                    Text(s.hrPhone, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "For anything about your attendance, leave or salary.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showHr = false
+                    // ACTION_DIAL opens the dialer with the number filled in rather
+                    // than placing the call — it needs no permission, and the person
+                    // still decides. A handset with no dialler (a tablet) simply has
+                    // nothing to resolve, so the failure is caught rather than crashing.
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_DIAL,
+                                android.net.Uri.parse("tel:${s.hrPhone}"),
+                            ),
+                        )
+                    }
+                }) { Text("Call") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showHr = false }) { Text("Close") }
+            },
+        )
+    }
 
     if (confirmLogout) {
         androidx.compose.material3.AlertDialog(
@@ -91,64 +135,45 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
 
-            // ── Gradient header with profile ──
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
-                    .background(BrandGradient)
-                    .padding(20.dp),
+            // ── Header: the shared one, with the profile block in its slot ──
+            BrandHeader(
+                leadingIcon = Icons.Filled.Notifications,
+                leadingDescription = "Alerts",
+                onLeading = {},
+                trailingIcon = Icons.AutoMirrored.Filled.Logout,
+                trailingDescription = "Logout",
+                onTrailing = { confirmLogout = true },
             ) {
+                // Profile photo (enrolled face / latest selfie); person icon shows until it loads.
                 Box(
-                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.18f)),
+                    modifier = Modifier.size(86.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Filled.Notifications, contentDescription = "Alerts", tint = Color.White) }
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.18f))
-                        .clickable { confirmLogout = true },
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout", tint = Color.White) }
-
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    // Profile photo (enrolled face / latest selfie); person icon shows until it loads.
-                    Box(
-                        modifier = Modifier.size(86.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(46.dp))
-                        if (s.photoUrl.isNotBlank()) {
-                            coil.compose.AsyncImage(
-                                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                    .data(s.photoUrl)
-                                    .apply { viewModel.authToken?.let { addHeader("Authorization", "Bearer $it") } }
-                                    // Never persist to disk — a wrong photo must not survive a re-login
-                                    // on a shared phone or an employee re-enrollment.
-                                    .diskCachePolicy(coil.request.CachePolicy.DISABLED)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = "Profile photo",
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier.size(86.dp).clip(CircleShape),
-                            )
-                        }
+                    Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(46.dp))
+                    if (s.photoUrl.isNotBlank()) {
+                        coil.compose.AsyncImage(
+                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                .data(s.photoUrl)
+                                .apply { viewModel.authToken?.let { addHeader("Authorization", "Bearer $it") } }
+                                // Never persist to disk — a wrong photo must not survive a re-login
+                                // on a shared phone or an employee re-enrollment.
+                                .diskCachePolicy(coil.request.CachePolicy.DISABLED)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Profile photo",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.size(86.dp).clip(CircleShape),
+                        )
                     }
-                    Spacer(Modifier.height(10.dp))
-                    Text(s.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        s.designation.ifBlank { "Employee" },
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 13.sp,
-                    )
-                    Spacer(Modifier.height(28.dp))
                 }
+                Spacer(Modifier.height(10.dp))
+                Text(s.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    s.designation.ifBlank { "Employee" },
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(20.dp))
             }
 
             // ── Today Attendance card (overlaps the header) ──
@@ -161,7 +186,11 @@ fun HomeScreen(
                 Column(modifier = Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.AccessTime, contentDescription = null, tint = BrandIndigo, modifier = Modifier.size(18.dp))
-                        Text("  Today Attendance", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            if (s.monthLabel.isBlank()) "  This month" else "  ${s.monthLabel}",
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
                         Spacer(Modifier.weight(1f))
                         Text(
                             if (s.employeeCode.isNotBlank()) "ID# ${s.employeeCode}" else "",
@@ -170,10 +199,23 @@ fun HomeScreen(
                         )
                     }
                     Spacer(Modifier.height(16.dp))
+                    // The month's own figures, counted by the same classifier as the
+                    // payslip. They start again on the 1st.
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        TodayStat("Today", s.todayWorked, BrandIndigo)
-                        TodayStat("Present", s.presentDays.toString(), StatusPresent)
-                        TodayStat("Absent", s.absentDays.toString(), StatusOff)
+                        TodayStat("Present", s.presentDays.toString(), StatusPresent, Modifier.weight(1f))
+                        TodayStat("Absent", s.absentDays.toString(), StatusOff, Modifier.weight(1f))
+                        TodayStat("Half day", s.halfDays.toString(), StatusHalf, Modifier.weight(1f))
+                        TodayStat("Leave", s.leaveDays.toString(), StatusLeave, Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    Spacer(Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        TodayStat("Today", s.todayWorked, BrandIndigo, Modifier.weight(1f))
+                        TodayStat("Late", s.lateDays.toString(), StatusHalf, Modifier.weight(1f))
+                        // Punches a manager has not signed off yet. Unpaid until they do,
+                        // so an employee should see them rather than find out on payday.
+                        TodayStat("Awaiting", s.pendingDays.toString(), StatusMuted, Modifier.weight(1f))
                     }
                 }
             }
@@ -203,13 +245,15 @@ fun HomeScreen(
                     }
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        QuickAction(Icons.Filled.AccessTime, "Clock In/Out", Color(0xFF2563EB), Modifier.weight(1f), onCheckIn)
-                        QuickAction(Icons.Filled.Email, "Messages", Color(0xFF7C3AED), Modifier.weight(1f)) {}
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        QuickAction(Icons.Filled.Call, "Contact HR", Color(0xFFEA580C), Modifier.weight(1f)) {}
-                        Spacer(Modifier.weight(1f))
+                        QuickAction(Icons.Filled.AccessTime, "Clock In/Out", BrandIndigo, Modifier.weight(1f), onCheckIn)
+                        // Only offered when the dealership named someone: a button that
+                        // dials nothing is worse than no button. (The one that used to
+                        // sit here, "Messages", did exactly nothing and is gone.)
+                        if (s.hrPhone.isNotBlank()) {
+                            QuickAction(Icons.Filled.Call, "Contact HR", StatusHalf, Modifier.weight(1f)) { showHr = true }
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -237,15 +281,6 @@ fun HomeScreen(
             }
             Spacer(Modifier.height(24.dp))
         }
-    }
-}
-
-@Composable
-private fun TodayStat(label: String, value: String, accent: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = accent)
-        Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
     }
 }
 

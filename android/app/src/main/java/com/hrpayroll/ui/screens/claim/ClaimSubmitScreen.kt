@@ -54,6 +54,7 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.hrpayroll.ui.components.BrandHeader
 import com.hrpayroll.ui.theme.StatusPresent
 import com.hrpayroll.utils.MediaUtils
+import com.hrpayroll.ui.theme.StatusOff
 
 /** Submit a new claim (or resubmit after clarification). Receipt is captured via the
  *  ML Kit Document Scanner (CamScanner-style crop + enhance) then compressed. */
@@ -161,7 +162,7 @@ fun ClaimSubmitScreen(
 
                 state.error?.let {
                     Spacer(Modifier.height(14.dp))
-                    Text(it, color = Color(0xFFE11D48), fontSize = 13.sp)
+                    Text(it, color = StatusOff, fontSize = 13.sp)
                 }
 
                 Spacer(Modifier.height(24.dp))

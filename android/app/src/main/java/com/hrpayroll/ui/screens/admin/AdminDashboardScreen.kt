@@ -41,6 +41,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.hrpayroll.data.remote.dto.DashboardStatsDto
 import com.hrpayroll.ui.components.BrandHeader
 import com.hrpayroll.ui.theme.BrandIndigo
+import com.hrpayroll.ui.theme.StatusHalf
+import com.hrpayroll.ui.theme.StatusLeave
+import com.hrpayroll.ui.theme.StatusOff
+import com.hrpayroll.ui.theme.StatusPresent
+import com.hrpayroll.ui.components.StatTile
 
 /** Admin home: live overview cards (GET /admin/dashboard/stats). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -126,13 +131,13 @@ fun AdminDashboardScreen(
 
                 if (isToday) {
                     StatRow(
-                        StatCardData("Present Now", s.presentNow.toString(), Color(0xFF16A34A)),
-                        StatCardData("Absent", s.absent.toString(), Color(0xFFE11D48)),
+                        StatCardData("Present Now", s.presentNow.toString(), StatusPresent),
+                        StatCardData("Absent", s.absent.toString(), StatusOff),
                     )
                     Spacer(Modifier.height(12.dp))
                     StatRow(
-                        StatCardData("Late Arrivals", s.lateArrivals.toString(), Color(0xFFB45309)),
-                        StatCardData("On Leave", s.onLeave.toString(), Color(0xFF4F46E5)),
+                        StatCardData("Late Arrivals", s.lateArrivals.toString(), StatusHalf),
+                        StatCardData("On Leave", s.onLeave.toString(), StatusLeave),
                     )
                     Spacer(Modifier.height(12.dp))
                     StatRow(
@@ -141,18 +146,18 @@ fun AdminDashboardScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     StatRow(
-                        StatCardData("Pending Approvals", s.pendingApprovals.toString(), Color(0xFFB45309)),
-                        StatCardData("Attendance", "${s.attendanceRate}%", Color(0xFF16A34A)),
+                        StatCardData("Pending Approvals", s.pendingApprovals.toString(), StatusHalf),
+                        StatCardData("Attendance", "${s.attendanceRate}%", StatusPresent),
                     )
                 } else {
                     val d = state.daySummary
                     StatRow(
-                        StatCardData("Present", (d?.present ?: 0).toString(), Color(0xFF16A34A)),
-                        StatCardData("Late", (d?.late ?: 0).toString(), Color(0xFFB45309)),
+                        StatCardData("Present", (d?.present ?: 0).toString(), StatusPresent),
+                        StatCardData("Late", (d?.late ?: 0).toString(), StatusHalf),
                     )
                     Spacer(Modifier.height(12.dp))
                     StatRow(
-                        StatCardData("Absent", (d?.absent ?: 0).toString(), Color(0xFFE11D48)),
+                        StatCardData("Absent", (d?.absent ?: 0).toString(), StatusOff),
                         StatCardData("Total Staff", (d?.total ?: 0).toString(), BrandIndigo),
                     )
                     if (state.dayLoading) {
@@ -163,7 +168,7 @@ fun AdminDashboardScreen(
 
                 state.error?.let {
                     Spacer(Modifier.height(16.dp))
-                    Text(it, color = Color(0xFFE11D48), fontSize = 13.sp)
+                    Text(it, color = StatusOff, fontSize = 13.sp)
                 }
 
                 // ── Monthly attendance analysis (month filter) ──
@@ -194,28 +199,8 @@ private data class StatCardData(val label: String, val value: String, val accent
 @Composable
 private fun StatRow(left: StatCardData, right: StatCardData) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        StatCard(left, Modifier.weight(1f))
-        StatCard(right, Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun StatCard(data: StatCardData, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(data.value, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = data.accent)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                data.label,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-        }
+        StatTile(left.label, left.value, left.accent, Modifier.weight(1f))
+        StatTile(right.label, right.value, right.accent, Modifier.weight(1f))
     }
 }
 
@@ -292,13 +277,13 @@ private fun MonthlyAnalysis(state: AdminDashboardUiState, onShift: (Int) -> Unit
         androidx.compose.material3.CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)
     } else if (m != null) {
         StatRow(
-            StatCardData("Present days", m.present.toString(), Color(0xFF16A34A)),
-            StatCardData("Late days", m.late.toString(), Color(0xFFB45309)),
+            StatCardData("Present days", m.present.toString(), StatusPresent),
+            StatCardData("Late days", m.late.toString(), StatusHalf),
         )
         Spacer(Modifier.height(12.dp))
         StatRow(
-            StatCardData("Absent days", m.absent.toString(), Color(0xFFE11D48)),
-            StatCardData("Leave days", m.leave.toString(), Color(0xFF4F46E5)),
+            StatCardData("Absent days", m.absent.toString(), StatusOff),
+            StatCardData("Leave days", m.leave.toString(), StatusLeave),
         )
     }
 }

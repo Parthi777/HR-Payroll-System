@@ -58,6 +58,7 @@ import com.google.android.gms.location.Priority
 import com.google.mlkit.vision.common.InputImage
 import com.hrpayroll.utils.FaceLivenessAnalyzer
 import java.io.File
+import com.hrpayroll.ui.theme.StatusOff
 
 private val REQUIRED_PERMISSIONS = arrayOf(
     Manifest.permission.CAMERA,
@@ -248,7 +249,7 @@ fun CameraCaptureScreen(
 
                 (localError ?: state.error)?.let {
                     Spacer(Modifier.height(14.dp))
-                    Text(it, color = Color(0xFFFF6B6B), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(it, color = StatusOff, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
                     Text("Tap to retry · or go back", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                 }

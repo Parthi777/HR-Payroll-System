@@ -44,6 +44,14 @@ const manualPunchSchema = z.object({
   checkOut: HHMM.optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   reason: z.string().min(3, 'Tell your manager why this punch is being raised'),
+  // Where the phone was when the selfie was taken. Optional and never enforced:
+  // this punch exists precisely for the times the normal, geofenced check-in
+  // could not be made, so a missing fix must not block it. What it does is give
+  // the approver something to check the stated reason against — the app also
+  // stamps these onto the photo itself.
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  accuracy: z.coerce.number().min(0).optional(),
 });
 
 /**
@@ -160,6 +168,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
       date: fields.date ? new Date(`${fields.date}T00:00:00`) : undefined,
       reason: fields.reason,
       selfie,
+      lat: fields.lat,
+      lng: fields.lng,
     });
   });
 
@@ -182,6 +192,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
         date: fields.date ? new Date(`${fields.date}T00:00:00`) : undefined,
         reason: fields.reason,
         selfie,
+        lat: fields.lat,
+        lng: fields.lng,
         raisedByAdminId: req.user.sub,
       });
       // Times typed by hand, with the geofence and face checks skipped — the
@@ -515,7 +527,11 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const halfDayWindow = { start: attendance.halfDayWindowStart, end: attendance.halfDayWindowEnd };
 
     const days = [];
-    const summary = { present: 0, late: 0, half: 0, absent: 0, leave: 0 };
+    // `pending` and `workedMinutes` are what the phone app's month card and
+    // Payroll tab read. Both come out of rows already loaded above, so this
+    // stays one query — and, more importantly, one place that counts a month.
+    // A second monthly counter is how a payslip and a screen start disagreeing.
+    const summary = { present: 0, late: 0, half: 0, absent: 0, leave: 0, pending: 0, workedMinutes: 0 };
     for (let dn = 1; dn <= daysInMonth; dn++) {
       const d = new Date(year, month - 1, dn);
       const att = attByDay.get(dayKey(d));
@@ -537,6 +553,10 @@ export async function attendanceRoutes(app: FastifyInstance) {
       } else if (day.code === 'HD') summary.half += 1;
       else if (day.code === 'LV' || day.code === 'LOP') summary.leave += 1;
       else if (day.code === 'A') summary.absent += 1;
+      // A punch still waiting for sign-off is unpaid, so it is worth showing
+      // an employee rather than folding it into "absent" as the grid does.
+      else if (day.code === 'PN') summary.pending += 1;
+      summary.workedMinutes += att?.workingMinutes ?? 0;
 
       days.push({ day: dn, weekday: d.getDay(), status, checkIn: fmtTime(att?.checkIn ?? null), checkOut: fmtTime(att?.checkOut ?? null) });
     }
@@ -590,6 +610,11 @@ export async function attendanceRoutes(app: FastifyInstance) {
         punchReason: r.punchReason,
         raisedByHr: !!r.raisedBy,
         hasSelfie: !!r.checkInSelfie,
+        // Where the phone said it was. A selfie punch skips the geofence, so
+        // this is the only location the approver gets — enough to open a map
+        // and see whether it squares with the reason given.
+        lat: r.checkInLat ?? r.checkOutLat,
+        lng: r.checkInLng ?? r.checkOutLng,
         // How late, in minutes past the shift start + its grace. Computed here
         // because this is where the shift is known; the approvals screen would
         // otherwise be asking a person to do the arithmetic against a roster
