@@ -619,6 +619,10 @@ private fun ManualPunchDialog(
     var stamping by remember { mutableStateOf(false) }
     var capturedFix by remember { mutableStateOf<com.hrpayroll.utils.Fix?>(null) }
     var locationMissing by remember { mutableStateOf(false) }
+    /** No fix because this app may not read location — fixed in the app's settings. */
+    var locationBlocked by remember { mutableStateOf(false) }
+    /** No fix because the phone's location is switched off — fixed in the phone's. */
+    var locationOff by remember { mutableStateOf(false) }
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
@@ -637,6 +641,11 @@ private fun ManualPunchDialog(
                 val address = com.hrpayroll.utils.LocationUtils.addressOf(context, fix)
                 capturedFix = fix.takeIf { it.hasFix }
                 locationMissing = !fix.hasFix
+                // Why there is no fix decides what the employee is told, and the
+                // three reasons have three different remedies. Read here rather
+                // than at render time: this is the moment the photo was taken.
+                locationBlocked = !com.hrpayroll.utils.LocationUtils.hasPermission(context)
+                locationOff = !com.hrpayroll.utils.LocationUtils.locationEnabled(context)
                 selfie = com.hrpayroll.utils.MediaUtils.compressImage(
                     context = context,
                     uri = uri,
@@ -664,27 +673,49 @@ private fun ManualPunchDialog(
     }
 
     /**
-     * Ask for the camera before opening it.
+     * Ask for the camera AND location before opening the camera.
      *
      * This used to launch straight into the camera. It happened to work because
      * people normally reached the CameraX check-in screen first, which asks —
      * but now that a selfie is the only punch this sheet can raise, an employee
      * who has never granted the camera would land here and be thrown out by a
      * SecurityException with nothing explaining why.
+     *
+     * Location is asked for here for exactly the same reason, and was the same
+     * oversight one step further on. `LocationUtils.current()` returns no fix
+     * the moment the permission is missing, so a sheet that asked only for the
+     * camera stamped "Location unavailable" on every photo and told the
+     * employee to turn on GPS — advice that cannot work, because GPS was never
+     * the problem. Turning it on and retaking produced the identical message.
+     *
+     * Location is requested but NOT required: the punch goes through without it
+     * and the photograph says so. The camera is the only hard requirement.
      */
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) launchCamera() else permissionDenied = true
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        if (results[android.Manifest.permission.CAMERA] == false) {
+            permissionDenied = true
+        } else {
+            launchCamera()
+        }
     }
 
     fun takeSelfie() {
         permissionDenied = false
-        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.CAMERA,
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (granted) launchCamera() else permissionLauncher.launch(android.Manifest.permission.CAMERA)
+        val wanted = buildList {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.CAMERA,
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                add(android.Manifest.permission.CAMERA)
+            }
+            if (!com.hrpayroll.utils.LocationUtils.hasPermission(context)) {
+                addAll(com.hrpayroll.utils.LocationUtils.PERMISSIONS)
+            }
+        }
+        if (wanted.isEmpty()) launchCamera() else permissionLauncher.launch(wanted.toTypedArray())
     }
 
     AlertDialog(
@@ -766,12 +797,23 @@ private fun ManualPunchDialog(
                         )
                     }
                     Spacer(Modifier.height(6.dp))
+                    // Three reasons for no location, three different remedies —
+                    // and only one of them is "turn on GPS". Saying that to
+                    // someone whose phone was never asked for the permission
+                    // sends them to the one setting that cannot help.
                     Text(
                         when {
                             stamping -> "Reading your location…"
+                            locationMissing && locationBlocked ->
+                                "The photo has no location on it: this app is not allowed to read your " +
+                                    "location. Allow it in Settings → Apps → HR & Payroll → Permissions → " +
+                                    "Location, then retake the selfie."
+                            locationMissing && locationOff ->
+                                "The photo has no location on it: your phone's location is switched off. " +
+                                    "Turn it on, wait a few seconds and retake the selfie."
                             locationMissing ->
-                                "No location fix — the photo says so. Turn on GPS and retake it if you can; " +
-                                    "your manager will see it either way."
+                                "No location fix yet — the photo says so. Step outside or near a window and " +
+                                    "retake it if you can; your manager will see it either way."
                             capturedFix != null ->
                                 "Time and place are written onto the photo for your manager to check."
                             else -> "The photo records the time and where you are, for your manager to check."

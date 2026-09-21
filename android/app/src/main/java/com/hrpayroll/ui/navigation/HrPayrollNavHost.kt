@@ -86,7 +86,12 @@ private val employeeTabs = listOf(
     // Pay, and the days behind it. This is the "re-add later" the old Payslip
     // tab left behind: the payslip now lives inside it, with the month's hours,
     // late days and leave beside it.
-    BottomTab(Routes.PAYROLL, "Payroll", Icons.Filled.Wallet),
+    //
+    // Switched OFF for release, not removed — the screen is finished but has not
+    // been looked at on a real phone, and the first thing it shows an employee
+    // is what they are owed. A wrong figure there is the one mistake nobody
+    // forgives. Put this line back when it has been checked against a payslip.
+    // BottomTab(Routes.PAYROLL, "Payroll", Icons.Filled.Wallet),
 )
 
 private val adminTabs = listOf(

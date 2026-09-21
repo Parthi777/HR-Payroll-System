@@ -31,9 +31,48 @@ data class Fix(
 
 object LocationUtils {
 
-    fun hasPermission(context: Context): Boolean =
-        ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
+    /** Both kinds, so a caller can ask for whichever it is missing. */
+    val PERMISSIONS = arrayOf(
+        android.Manifest.permission.ACCESS_FINE_LOCATION,
+        android.Manifest.permission.ACCESS_COARSE_LOCATION,
+    )
+
+    private fun granted(context: Context, permission: String) =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+    /** Precise location — the only kind the geofence check-in can use. */
+    fun hasPrecise(context: Context): Boolean =
+        granted(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+
+    /**
+     * Any location at all, precise or approximate.
+     *
+     * Deliberately not `hasPrecise`. Android 12 lets a person answer the
+     * permission dialog with "Approximate", which grants COARSE and denies
+     * FINE — and a check for FINE alone then reads that as no permission and
+     * stamps "Location unavailable" on a phone that knows perfectly well which
+     * town it is in. For evidence on a photograph a coarse fix is worth far
+     * more than nothing; the geofence, which needs metres, still asks for
+     * [hasPrecise].
+     */
+    fun hasPermission(context: Context): Boolean = PERMISSIONS.any { granted(context, it) }
+
+    /**
+     * Whether the phone's location services are switched on at all.
+     *
+     * Separate from permission because the two failures need opposite advice:
+     * a permission is fixed inside this app, and this is fixed in the phone's
+     * own settings. Telling someone to turn on GPS when the app never asked for
+     * the permission sends them to the one place that cannot help.
+     */
+    fun locationEnabled(context: Context): Boolean {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+            ?: return false
+        return runCatching {
+            manager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) ||
+                manager.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)
+        }.getOrDefault(false)
+    }
 
     /**
      * A current fix, falling back to the last known one.
@@ -48,6 +87,13 @@ object LocationUtils {
         if (!hasPermission(context)) return Fix(0.0, 0.0, 0f)
         val client = LocationServices.getFusedLocationProviderClient(context)
 
+        // Asking for high accuracy while holding only the coarse permission is
+        // refused rather than downgraded on several devices, which would turn an
+        // approximate fix we are allowed to have into no fix at all.
+        val priority =
+            if (hasPrecise(context)) Priority.PRIORITY_HIGH_ACCURACY
+            else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+
         return withTimeoutOrNull(timeoutMs) {
             suspendCancellableCoroutine { cont ->
                 val cancellation = CancellationTokenSource()
@@ -57,7 +103,7 @@ object LocationUtils {
                     if (!cont.isCompleted) cont.resume(fix)
                 }
 
-                client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellation.token)
+                client.getCurrentLocation(priority, cancellation.token)
                     .addOnSuccessListener { loc ->
                         if (loc != null) {
                             done(Fix(loc.latitude, loc.longitude, loc.accuracy))
