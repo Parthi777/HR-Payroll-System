@@ -90,7 +90,8 @@ export type AuditAction =
   | 'KIOSK_DELETED'
   | 'INTEGRATION_CREATED'
   | 'INTEGRATION_UPDATED'
-  | 'INTEGRATION_ROTATED';
+  | 'INTEGRATION_ROTATED'
+  | 'INTEGRATION_DELETED';
 
 /** The kind of thing acted on. Used to filter the log by area. */
 export type AuditEntity =

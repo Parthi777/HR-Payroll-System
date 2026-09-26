@@ -257,4 +257,25 @@ suite('the accounting ERP connection', () => {
     await asAdmin(HOME.slug, 'PATCH', `/api/admin/integrations/${clientId}`, { isActive: false });
     expect((await asErp(fresh, 'GET', '/api/integration/v1/whoami')).statusCode).toBe(401);
   });
+
+  it('deletes a connection: its key stops, and another dealer cannot delete it', async () => {
+    const made = await asAdmin(HOME.slug, 'POST', '/api/admin/integrations', { name: 'Spare connection' });
+    const spare = made.json();
+    expect((await asErp(spare.token, 'GET', '/api/integration/v1/whoami')).statusCode).toBe(200);
+    const rival = await app.inject({
+      method: 'DELETE', url: `/api/admin/integrations/${spare.client.id}`, remoteAddress: freshIp(),
+      headers: { authorization: `Bearer ${dealer[OTHER.slug].token}`, 'x-tenant-slug': OTHER.slug },
+    });
+    expect(rival.statusCode, 'another dealer cannot see it, let alone delete it').toBe(404);
+    const gone = await app.inject({
+      method: 'DELETE', url: `/api/admin/integrations/${spare.client.id}`, remoteAddress: freshIp(),
+      headers: { authorization: `Bearer ${dealer[HOME.slug].token}`, 'x-tenant-slug': HOME.slug },
+    });
+    expect(gone.statusCode, gone.body).toBe(200);
+    const after = await asErp(spare.token, 'GET', '/api/integration/v1/whoami');
+    expect(after.statusCode).toBe(401);
+    expect(after.json().message).toContain('removed');
+    const listed = (await asAdmin(HOME.slug, 'GET', '/api/admin/integrations')).json().clients as { id: string }[];
+    expect(listed.map((c) => c.id)).not.toContain(spare.client.id);
+  });
 });

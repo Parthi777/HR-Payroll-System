@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Check, Copy, Link2, Loader2, Plus, RotateCcw, Send } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Link2, Loader2, Plus, RotateCcw, Send, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 
@@ -94,6 +94,14 @@ export default function IntegrationsPage() {
     });
   };
 
+  const remove = (c: Connection) => {
+    if (!confirm(`Delete the connection "${c.name}" (connected ${when(c.createdAt)})?\n\nIts key stops working at once and its waiting updates are discarded. Claims already sent to the ERP stay there.`)) return;
+    void run(c.id, async () => {
+      await api(`/admin/integrations/${c.id}`, { method: 'DELETE' });
+      setNotice(`${c.name} deleted.`);
+    });
+  };
+
   const ping = (c: Connection) =>
     run(c.id, async () => {
       const res = await api<{ ok: boolean; error?: string }>(`/admin/integrations/${c.id}/ping`, { method: 'POST' });
@@ -176,6 +184,9 @@ export default function IntegrationsPage() {
                     </button>
                     <button onClick={() => update(c, { isActive: !c.isActive })} className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted">
                       {c.isActive ? 'Switch off' : 'Switch on'}
+                    </button>
+                    <button onClick={() => remove(c)} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/5">
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
                     </button>
                   </>
                 )}

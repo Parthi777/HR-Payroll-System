@@ -361,6 +361,7 @@ suite('cross-tenant isolation', () => {
     'GET /api/admin/integrations',
     'POST /api/admin/integrations',
     'PATCH /api/admin/integrations/:id',
+    'DELETE /api/admin/integrations/:id',
     'POST /api/admin/integrations/:id/rotate',
     'POST /api/admin/integrations/:id/ping',
     'POST /api/admin/integrations/deliver',

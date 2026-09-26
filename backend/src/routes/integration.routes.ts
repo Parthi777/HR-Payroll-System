@@ -82,6 +82,18 @@ export async function integrationRoutes(app: FastifyInstance) {
     return { client };
   });
 
+  // Removing a connection stops its key at once (the guard finds no row) and
+  // discards its undelivered updates. Claims already sent stay in the ERP.
+  app.delete('/admin/integrations/:id', { preHandler: owner }, async (req) => {
+    const { id } = req.params as { id: string };
+    const client = await app.prisma.integrationClient.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!client) throw AppError.notFound('Connection');
+    await app.prisma.integrationEvent.deleteMany({ where: { clientId: id } });
+    await app.prisma.integrationClient.delete({ where: { id } });
+    await recordAudit(req, 'INTEGRATION_DELETED', 'Integration', { entityId: id, metadata: { name: client.name } });
+    return { deleted: true };
+  });
+
   app.post('/admin/integrations/:id/rotate', { preHandler: owner }, async (req) => {
     const { id } = req.params as { id: string };
     const client = await app.prisma.integrationClient.update({ where: { id }, data: { tokenVersion: { increment: 1 } } });
