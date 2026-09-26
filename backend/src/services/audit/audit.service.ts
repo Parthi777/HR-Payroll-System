@@ -87,7 +87,10 @@ export type AuditAction =
   | 'KIOSK_PAIRING_CODE_ISSUED'
   | 'KIOSK_ENABLED'
   | 'KIOSK_DISABLED'
-  | 'KIOSK_DELETED';
+  | 'KIOSK_DELETED'
+  | 'INTEGRATION_CREATED'
+  | 'INTEGRATION_UPDATED'
+  | 'INTEGRATION_ROTATED';
 
 /** The kind of thing acted on. Used to filter the log by area. */
 export type AuditEntity =
@@ -104,7 +107,8 @@ export type AuditEntity =
   | 'Designation'
   | 'Holiday'
   | 'Company'
-  | 'Kiosk';
+  | 'Kiosk'
+  | 'Integration';
 
 interface AuditDetail {
   /** The row acted on, where there is a single one. */

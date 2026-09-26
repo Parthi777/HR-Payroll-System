@@ -1,3 +1,4 @@
+import { claimsPaidInErp } from '../services/integration/integration.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -50,7 +51,7 @@ async function parseClaimParts(req: FastifyRequest): Promise<ParsedClaim> {
 }
 
 /** Stream a stored claim file (Drive proxy / S3 redirect / local), enforcing access. */
-async function serveClaimFile(
+export async function serveClaimFile(
   req: FastifyRequest,
   reply: FastifyReply,
   fileId: string | null,
@@ -210,7 +211,8 @@ export async function claimRoutes(app: FastifyInstance) {
   app.get('/admin/claims', { preHandler: viewGuard }, async (req) => {
     const { status } = req.query as { status?: string };
     const claims = await listClaims(app.prisma, status, req.user.branchId);
-    return { claims };
+    // With the accounting ERP paying claims, the counter here does not.
+    return { claims, paidInErp: await claimsPaidInErp(app.prisma) };
   });
 
   app.get('/admin/claims/stats', { preHandler: viewGuard }, async (req) => {

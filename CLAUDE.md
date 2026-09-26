@@ -585,6 +585,11 @@ PATCH  /api/admin/claims/:id/approve       # Allocates the Voucher No
 PATCH  /api/admin/claims/:id/reject | /clarify | /pay
 ```
 
+### Accounting ERP integration
+See `docs/INTEGRATION.md`. Master Control `/admin/integrations` (SUPER_ADMIN) connects the ERP;
+the ERP's token opens only `/api/integration/v1/*` (claims, employees, attendance, payroll, and
+`POST /claims/:id/paid`). Approvals are announced by signed webhook from the `IntegrationEvent` outbox.
+
 ### Reports
 All report endpoints take `?format=json|xlsx|pdf` (json is the default) and
 cover ACTIVE employees only. `branchId`, `departmentId` and `designationId`

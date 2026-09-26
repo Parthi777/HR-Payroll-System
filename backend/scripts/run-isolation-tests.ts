@@ -45,6 +45,7 @@ run(
     'tests/whatsapp-queue.test.ts', 'tests/refresh-token.test.ts',
     'tests/multipart-upload.test.ts', 'tests/signup.test.ts', 'tests/kiosk.test.ts',
     'tests/employee-month.test.ts', 'tests/punch-reminders.test.ts',
+    'tests/integration.test.ts',
   ],
   {
     DATABASE_URL: url,

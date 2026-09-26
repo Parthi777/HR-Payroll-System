@@ -355,6 +355,24 @@ suite('cross-tenant isolation', () => {
     'POST /api/admin/kiosks/:id/pairing-code',
     'PATCH /api/admin/kiosks/:id',
     'DELETE /api/admin/kiosks/:id',
+    // The accounting ERP connection — tests/integration.test.ts proves its
+    // token reaches only /api/integration/v1 and only its own dealership, and
+    // that rotating or switching it off stops it at once.
+    'GET /api/admin/integrations',
+    'POST /api/admin/integrations',
+    'PATCH /api/admin/integrations/:id',
+    'POST /api/admin/integrations/:id/rotate',
+    'POST /api/admin/integrations/:id/ping',
+    'POST /api/admin/integrations/deliver',
+    'GET /api/integration/v1/whoami',
+    'GET /api/integration/v1/branches',
+    'GET /api/integration/v1/employees',
+    'GET /api/integration/v1/claims',
+    'GET /api/integration/v1/claims/:id',
+    'GET /api/integration/v1/claims/:id/file',
+    'POST /api/integration/v1/claims/:id/paid',
+    'GET /api/integration/v1/attendance',
+    'GET /api/integration/v1/payroll/:year/:month',
   ];
 
   const NO_TENANT_DATA = [

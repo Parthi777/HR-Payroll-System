@@ -102,7 +102,7 @@ export default function ClaimsPage() {
   );
   const claimTypes = typeData?.types ?? [];
   const query = filter === 'ALL' ? '' : `?status=${filter}`;
-  const { data, error, isLoading, mutate } = useSWR<{ claims: Claim[] }>(
+  const { data, error, isLoading, mutate } = useSWR<{ claims: Claim[]; paidInErp?: boolean }>(
     `/admin/claims${query}`,
     fetcher,
     { shouldRetryOnError: false },
@@ -121,7 +121,10 @@ export default function ClaimsPage() {
   // Fail closed. These read `!role || ROLES.includes(role)`, so an absent role
   // — a cleared key, a stale tab — silently enabled approving and paying.
   const canApprove = can(APPROVE_ROLES, role);
-  const canPay = can(PAY_ROLES, role);
+  // Connected to the accounting ERP: approved claims are paid from its cash
+  // book and show here as Paid once they are, so there is no pay button.
+  const paidInErp = data?.paidInErp ?? false;
+  const canPay = can(PAY_ROLES, role) && !paidInErp;
 
   async function act(id: string, action: 'approve' | 'reject' | 'clarify' | 'pay', note?: string) {
     if (action === 'reject' && !note) note = prompt('Reason for rejection?') ?? undefined;
@@ -303,6 +306,11 @@ export default function ClaimsPage() {
                         <X className="h-4 w-4" />
                       </button>
                     </>
+                  )}
+                  {c.status === 'APPROVED' && paidInErp && (
+                    <span title="Paid from the ERP cash book" className="flex h-9 items-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-600">
+                      <Banknote className="h-4 w-4" /> Pay in ERP
+                    </span>
                   )}
                   {c.status === 'APPROVED' && canPay && (
                     <button onClick={() => act(c.id, 'pay')} disabled={busyId === c.id} title="Mark as paid (after verifying the printed voucher)" className="flex h-9 items-center gap-1.5 rounded-lg bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50">

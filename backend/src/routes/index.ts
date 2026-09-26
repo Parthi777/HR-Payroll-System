@@ -18,6 +18,7 @@ import { auditRoutes } from './audit.routes.js';
 import { platformRoutes } from './platform.routes.js';
 import { publicRoutes } from './public.routes.js';
 import { kioskRoutes } from './kiosk.routes.js';
+import { integrationRoutes } from './integration.routes.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
@@ -46,4 +47,7 @@ export async function registerRoutes(app: FastifyInstance) {
   // The branch kiosk: a paired tablet punching for whoever is in front of it,
   // plus the Master Control screens that pair and revoke one.
   await app.register(kioskRoutes, { prefix: '/api' });
+  // The dealer's accounting ERP: Master Control connects it, and its own token
+  // opens /api/integration/v1 and nothing else.
+  await app.register(integrationRoutes, { prefix: '/api' });
 }

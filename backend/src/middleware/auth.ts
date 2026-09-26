@@ -12,6 +12,11 @@ export type JwtRole =
   | 'PAYROLL_ADMIN'
   | 'CASHIER'
   /**
+   * Another system — the dealer's accounting ERP — on /api/integration/v1 only.
+   * Not accepted by any `requireRole(...)` call either.
+   */
+  | 'INTEGRATION'
+  /**
    * Platform staff, above tenancy. Deliberately not accepted by any
    * `requireRole(...)` call, so a platform token cannot reach a tenant's data
    * through a tenant route — the platform API is its own surface.
@@ -34,7 +39,7 @@ export interface JwtPayload {
    * password and a correct second-step code. It opens no route at all; the
    * only thing it is good for is being handed back to the two-step endpoints.
    */
-  scope?: 'TENANT' | 'PLATFORM' | 'PLATFORM_CHALLENGE' | 'KIOSK';
+  scope?: 'TENANT' | 'PLATFORM' | 'PLATFORM_CHALLENGE' | 'KIOSK' | 'INTEGRATION';
   /** On a challenge: whether the holder is confirming a code or enrolling. */
   purpose?: 'verify' | 'enroll';
   /**
@@ -106,6 +111,11 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
     // routes and reach nothing else — no payroll, no employee records, no
     // reports — however long its token lives.
     throw AppError.forbidden('A kiosk device cannot be used to sign in');
+  }
+  if (payload.scope === 'INTEGRATION') {
+    // The ERP's token reads claims, people and payroll through its own narrow
+    // API and settles claims; it is not a way into Master Control.
+    throw AppError.forbidden('An integration token cannot be used to sign in');
   }
   if (!payload.tenantId) {
     // Pre-tenancy token. Nothing can be scoped from it, so it must not be honoured.
@@ -263,6 +273,54 @@ export async function requireKiosk(request: FastifyRequest, _reply: FastifyReply
   }
   // The row wins over the token, the same way it does for a person's account.
   request.user = { ...payload, branchId: device.branchId };
+}
+
+/**
+ * Guard for /api/integration/v1 — the dealer's accounting ERP.
+ *
+ * Built like the kiosk guard: a long-lived token names the tenant and the
+ * client row, the tenant context is entered from the token, and the row is read
+ * inside that context on every request — so switching the client off or
+ * rotating it stops the ERP on its next call, and a token can only ever resolve
+ * a client of the tenant it names. No unscoped lookup is needed.
+ */
+export async function requireIntegration(request: FastifyRequest, _reply: FastifyReply) {
+  try {
+    await request.jwtVerify();
+  } catch {
+    throw AppError.unauthorized('Missing or invalid integration token');
+  }
+
+  const payload = request.user;
+  if (payload.scope !== 'INTEGRATION' || !payload.tenantId) {
+    throw AppError.forbidden('This endpoint is for a connected system');
+  }
+
+  const prisma = request.server.prisma;
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: payload.tenantId },
+    select: { status: true, name: true },
+  });
+  if (!tenant) throw AppError.unauthorized('Workspace no longer exists');
+  if (tenant.status !== 'ACTIVE') {
+    throw new AppError(`The ${tenant.name} workspace is suspended — please contact support.`, 403);
+  }
+
+  enterContext({ kind: 'TENANT', tenantId: payload.tenantId, subjectId: payload.sub, role: 'INTEGRATION' });
+
+  const client = await prisma.integrationClient.findUnique({
+    where: { id: payload.sub },
+    select: { isActive: true, tokenVersion: true, lastUsedAt: true },
+  });
+  if (!client) throw AppError.unauthorized('This connection has been removed');
+  if (!client.isActive) throw AppError.unauthorized('This connection has been switched off in Master Control');
+  if (client.tokenVersion !== payload.deviceVersion) {
+    throw AppError.unauthorized('This connection key has been replaced — use the new one');
+  }
+  // A heartbeat for the Integrations screen, at most once a minute.
+  if (!client.lastUsedAt || Date.now() - client.lastUsedAt.getTime() > 60_000) {
+    await prisma.integrationClient.update({ where: { id: payload.sub }, data: { lastUsedAt: new Date() } });
+  }
 }
 
 /** Role-based access control. SUPER_ADMIN > HR_MANAGER > BRANCH_MANAGER > PAYROLL_ADMIN. */

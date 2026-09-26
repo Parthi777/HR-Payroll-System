@@ -13,6 +13,7 @@ import { isS3Enabled, tenantKey, uploadImage } from '../storage/storage.service.
 import { dispatchWhatsApp } from '../whatsapp/whatsapp.service.js';
 import { withNextNumber, formatDocNo } from './claim-number.js';
 import { claimTypeLabel, isValidClaimType } from './claim-types.js';
+import { claimsPaidInErp, emitClaimEvent } from '../integration/integration.service.js';
 import { requireTenantId } from '../../context/tenant-context.js';
 import { getTenantPolicy, type ResourcePolicy } from '../settings/tenant-settings.service.js';
 
@@ -304,6 +305,11 @@ export async function actOnClaim(
   if (status !== 'APPROVED' && !note?.trim()) {
     throw new AppError('A note is required to reject or request clarification', 400);
   }
+  // Paid money is not un-approved from here: the payment is in the cash book
+  // (ours or the ERP's) and would be left without a claim behind it.
+  if (claim.status === 'PAID') {
+    throw new AppError('This claim has already been paid and can no longer be changed', 409);
+  }
 
   const admin = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { name: true } });
   if (note?.trim()) {
@@ -329,6 +335,14 @@ export async function actOnClaim(
           prisma.claim.update({ where: { id: claimId }, data: { ...decision, voucherNo } }),
         )
       : await prisma.claim.update({ where: { id: claimId }, data: decision });
+
+  // Tell a connected ERP (integration.service.ts): an approval is a claim to
+  // pay; taking an approved claim back must reverse what the ERP posted.
+  if (status === 'APPROVED') {
+    await emitClaimEvent(prisma, claimId, 'claim.approved');
+  } else if (claim.status === 'APPROVED') {
+    await emitClaimEvent(prisma, claimId, 'claim.changed');
+  }
 
   const msg =
     status === 'APPROVED'
@@ -356,14 +370,42 @@ export async function payClaim(
   claimId: string,
   note?: string,
   adminBranchId?: string,
+  /** Set when the ERP reports that it paid the claim from its cash or bank book. */
+  paidInErp?: { voucherNo: string; paidAt?: Date },
 ) {
   const claim = await prisma.claim.findUnique({ where: { id: claimId }, include: { employee: true } });
   if (!claim) throw AppError.notFound('Claim');
   if (adminBranchId && claim.employee.branchId !== adminBranchId) {
     throw new AppError('This claim belongs to another branch', 403);
   }
+  // The ERP repeating its report of the same payment is not an error.
+  if (paidInErp && claim.status === 'PAID' && claim.paidNote?.includes(paidInErp.voucherNo)) {
+    return claim;
+  }
   if (claim.status !== 'APPROVED') {
     throw new AppError('Only approved claims can be marked as paid', 409);
+  }
+  // With the ERP paying claims, paying here as well would pay the same claim twice.
+  if (!paidInErp && (await claimsPaidInErp(prisma))) {
+    throw new AppError('Claims are paid from the ERP cash book. Pay it there — it will show as paid here.', 409);
+  }
+  if (paidInErp) {
+    const updated = await prisma.claim.update({
+      where: { id: claimId },
+      data: {
+        status: 'PAID',
+        paidBy: null,
+        paidAt: paidInErp.paidAt ?? new Date(),
+        paidNote: `Paid in ERP ${paidInErp.voucherNo}${note?.trim() ? ` — ${note.trim()}` : ''}`,
+      },
+    });
+    await dispatchWhatsApp(prisma, {
+      phone: claim.employee.phone,
+      employeeId: claim.employeeId,
+      trigger: 'CLAIM_PAID',
+      message: `💵 *Claim Paid*\n${claim.title} — ₹${claim.amount}\nAmount has been disbursed by the cashier.`,
+    });
+    return updated;
   }
 
   const updated = await prisma.claim.update({

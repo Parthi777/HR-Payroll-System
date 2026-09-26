@@ -667,6 +667,61 @@ model KioskDevice {
   @@index([tenantId, branchId])
 }
 
+/// Another system allowed to read this dealership's data and settle its claims —
+/// the dealer's accounting ERP. Not a person: its token opens only
+/// /api/integration/v1 (see middleware/auth.ts `requireIntegration`), and like a
+/// kiosk the row is read on every request, so switching it off or rotating it
+/// cuts the ERP off at once.
+model IntegrationClient {
+  id           String    @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId     String
+  name         String
+  /// Where approved and changed claims are announced. Null = the ERP only pulls.
+  webhookUrl   String?
+  /// When true, approved claims are paid in the ERP's cash book and the
+  /// "Mark paid" button here is refused, so a claim is never paid twice.
+  paysClaims   Boolean   @default(true)
+  isActive     Boolean   @default(true)
+  /// Bumped to rotate: invalidates the token and the webhook signing secret.
+  tokenVersion Int       @default(1)
+  lastUsedAt   DateTime?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  events IntegrationEvent[]
+
+  @@index([tenantId])
+}
+
+/// Outbox of announcements to an integration client. Written when a claim is
+/// decided, delivered with a signature, retried until acknowledged. The ERP's
+/// own pull repairs anything that never arrives, so a lost event costs a delay,
+/// never a claim.
+model IntegrationEvent {
+  id            String    @id @default(cuid())
+  /// Owning tenant. Every query is filtered by this automatically — see
+  /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
+  tenantId      String
+  clientId      String
+  type          String // claim.approved | claim.changed
+  entityId      String
+  payload       Json
+  status        String    @default("PENDING") // PENDING | DELIVERED | FAILED
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  deliveredAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  client IntegrationClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, nextAttemptAt])
+  @@index([tenantId, createdAt])
+}
+
 // ─────────────────────────────────────────────────────────────
 // Platform layer — above tenancy. Never carries a tenantId, and the
 // tenant-scoping Prisma extension treats both as global models.

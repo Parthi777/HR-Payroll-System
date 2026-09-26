@@ -41,6 +41,8 @@ export const ROUTE_ROLES: Record<string, AdminRole[]> = {
   '/whatsapp': ['SUPER_ADMIN', 'HR_MANAGER'],
   '/reports': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN'],
   '/access': ['SUPER_ADMIN'],
+  // The ERP's key reads every claim, person and payslip. Mirrors /api/admin/integrations.
+  '/integrations': ['SUPER_ADMIN'],
   '/activity': ['SUPER_ADMIN'],
   '/settings': ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'],
 };
