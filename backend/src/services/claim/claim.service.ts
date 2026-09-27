@@ -92,11 +92,11 @@ export async function createClaim(
     where: { employeeId, date: { gte: dayStart, lt: dayEnd }, checkIn: { not: null } },
   });
   if (!todayAtt) {
-    throw new AppError('You can raise a claim only on a day you are on duty. Please check in first.', 403);
+    throw new AppError('You can raise a voucher only on a day you are on duty. Please check in first.', 403);
   }
 
   if (!isValidClaimType(input.type)) {
-    throw new AppError(`"${input.type}" is not a valid claim type`, 400);
+    throw new AppError(`"${input.type}" is not a valid voucher type`, 400);
   }
 
   const { resources } = await getTenantPolicy(prisma);
@@ -137,7 +137,7 @@ export async function resubmitClaim(
   const claim = await prisma.claim.findUnique({ where: { id: claimId }, include: { employee: true } });
   if (!claim || claim.employeeId !== employeeId) throw AppError.notFound('Claim');
   if (claim.status !== 'NEEDS_CLARIFICATION') {
-    throw new AppError('Only claims awaiting clarification can be resubmitted', 409);
+    throw new AppError('Only vouchers awaiting clarification can be resubmitted', 409);
   }
 
   const { resources } = await getTenantPolicy(prisma);
@@ -282,7 +282,7 @@ export async function getClaim(
   if (!claim) throw AppError.notFound('Claim');
   if (viewer.role === 'EMPLOYEE' && claim.employeeId !== viewer.sub) throw new AppError('Forbidden', 403);
   if (viewer.role !== 'EMPLOYEE' && viewer.branchId && claim.employee.branchId !== viewer.branchId) {
-    throw new AppError('This claim belongs to another branch', 403);
+    throw new AppError('This voucher belongs to another branch', 403);
   }
   const [enriched] = await withAdminNames(prisma, [claim]);
   return enriched;
@@ -300,7 +300,7 @@ export async function actOnClaim(
   const claim = await prisma.claim.findUnique({ where: { id: claimId }, include: { employee: true } });
   if (!claim) throw AppError.notFound('Claim');
   if (adminBranchId && claim.employee.branchId !== adminBranchId) {
-    throw new AppError('This claim belongs to another branch', 403);
+    throw new AppError('This voucher belongs to another branch', 403);
   }
   if (status !== 'APPROVED' && !note?.trim()) {
     throw new AppError('A note is required to reject or request clarification', 400);
@@ -308,7 +308,7 @@ export async function actOnClaim(
   // Paid money is not un-approved from here: the payment is in the cash book
   // (ours or the ERP's) and would be left without a claim behind it.
   if (claim.status === 'PAID') {
-    throw new AppError('This claim has already been paid and can no longer be changed', 409);
+    throw new AppError('This voucher has already been paid and can no longer be changed', 409);
   }
 
   const admin = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { name: true } });
@@ -346,10 +346,10 @@ export async function actOnClaim(
 
   const msg =
     status === 'APPROVED'
-      ? `✅ *Claim Approved*\nVoucher No: ${formatDocNo(updated.voucherNo)}\n${claimTypeLabel(claim.type)} — ${claim.title}\nAmount: ₹${claim.amount}\nApproved by: ${admin?.name ?? 'Admin'}\nDownload your claim voucher PDF from the app.`
+      ? `✅ *Voucher Approved*\nVoucher No: ${formatDocNo(updated.voucherNo)}\n${claimTypeLabel(claim.type)} — ${claim.title}\nAmount: ₹${claim.amount}\nApproved by: ${admin?.name ?? 'Admin'}\nDownload your claim voucher PDF from the app.`
       : status === 'REJECTED'
-        ? `❌ *Claim Rejected*\n${claim.title}\nReason: ${note}`
-        : `❓ *Claim — Clarification Needed*\n${claim.title}\n${note}\nPlease reply or resubmit in the app.`;
+        ? `❌ *Voucher Rejected*\n${claim.title}\nReason: ${note}`
+        : `❓ *Voucher — Clarification Needed*\n${claim.title}\n${note}\nPlease reply or resubmit in the app.`;
   await dispatchWhatsApp(prisma, {
     phone: claim.employee.phone,
     employeeId: claim.employeeId,
@@ -376,18 +376,18 @@ export async function payClaim(
   const claim = await prisma.claim.findUnique({ where: { id: claimId }, include: { employee: true } });
   if (!claim) throw AppError.notFound('Claim');
   if (adminBranchId && claim.employee.branchId !== adminBranchId) {
-    throw new AppError('This claim belongs to another branch', 403);
+    throw new AppError('This voucher belongs to another branch', 403);
   }
   // The ERP repeating its report of the same payment is not an error.
   if (paidInErp && claim.status === 'PAID' && claim.paidNote?.includes(paidInErp.voucherNo)) {
     return claim;
   }
   if (claim.status !== 'APPROVED') {
-    throw new AppError('Only approved claims can be marked as paid', 409);
+    throw new AppError('Only approved vouchers can be marked as paid', 409);
   }
   // With the ERP paying claims, paying here as well would pay the same claim twice.
   if (!paidInErp && (await claimsPaidInErp(prisma))) {
-    throw new AppError('Claims are paid from the ERP cash book. Pay it there — it will show as paid here.', 409);
+    throw new AppError('Vouchers are paid from the ERP cash book. Pay it there — it will show as paid here.', 409);
   }
   if (paidInErp) {
     const updated = await prisma.claim.update({
@@ -403,7 +403,7 @@ export async function payClaim(
       phone: claim.employee.phone,
       employeeId: claim.employeeId,
       trigger: 'CLAIM_PAID',
-      message: `💵 *Claim Paid*\n${claim.title} — ₹${claim.amount}\nAmount has been disbursed by the cashier.`,
+      message: `💵 *Voucher Paid*\n${claim.title} — ₹${claim.amount}\nAmount has been disbursed by the cashier.`,
     });
     return updated;
   }
@@ -417,7 +417,7 @@ export async function payClaim(
     phone: claim.employee.phone,
     employeeId: claim.employeeId,
     trigger: 'CLAIM_PAID',
-    message: `💵 *Claim Paid*\n${claim.title} — ₹${claim.amount}\nAmount has been disbursed by the cashier.`,
+    message: `💵 *Voucher Paid*\n${claim.title} — ₹${claim.amount}\nAmount has been disbursed by the cashier.`,
   });
 
   return updated;

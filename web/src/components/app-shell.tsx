@@ -94,7 +94,7 @@ const nav = [
   { href: '/kiosks', label: 'Kiosks', icon: MonitorSmartphone },
   { href: '/shifts', label: 'Shifts', icon: Clock },
   { href: '/leaves', label: 'Leaves', icon: CalendarDays },
-  { href: '/claims', label: 'Claims', icon: ReceiptText },
+  { href: '/claims', label: 'Vouchers', icon: ReceiptText },
   { href: '/payroll', label: 'Payroll', icon: Wallet },
   { href: '/whatsapp', label: 'WhatsApp', icon: MessageSquare },
   { href: '/reports', label: 'Reports', icon: BarChart3 },

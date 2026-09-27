@@ -103,7 +103,7 @@ fun ClaimSubmitScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            BrandHeader(title = if (state.isResubmit) "Resubmit Claim" else "New Claim", onBack = onBack)
+            BrandHeader(title = if (state.isResubmit) "Resubmit Voucher" else "New Voucher", onBack = onBack)
 
             Column(modifier = Modifier.padding(16.dp)) {
                 if (!state.isResubmit) {
@@ -175,7 +175,7 @@ fun ClaimSubmitScreen(
                     if (state.isLoading) {
                         CircularProgressIndicator(modifier = Modifier.height(22.dp), color = Color.White, strokeWidth = 2.dp)
                     } else {
-                        Text(if (state.isResubmit) "Resubmit" else "Submit Claim", fontWeight = FontWeight.Bold)
+                        Text(if (state.isResubmit) "Resubmit" else "Submit Voucher", fontWeight = FontWeight.Bold)
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -200,7 +200,7 @@ private fun ClaimTypeDropdown(selected: String, onSelect: (String) -> Unit) {
             value = claimTypeLabel(selected),
             onValueChange = {},
             readOnly = true,
-            label = { Text("Claim type") },
+            label = { Text("Voucher type") },
             supportingText = { Text("Pick the expense head this bill belongs to") },
             trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier.fillMaxWidth().menuAnchor(),

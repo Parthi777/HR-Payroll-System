@@ -139,7 +139,7 @@ export default function ClaimsPage() {
       });
       await Promise.all([mutate(), mutateStats()]);
     } catch (e) {
-      alert(e instanceof Error ? e.message : `Failed to ${action} claim`);
+      alert(e instanceof Error ? e.message : `Failed to ${action} voucher`);
     } finally {
       setBusyId(null);
     }
@@ -173,8 +173,8 @@ export default function ClaimsPage() {
 
   function exportCsv() {
     downloadCsv(
-      `claims-${filter.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Claim ID', 'Voucher No', 'Employee', 'Code', 'Branch', 'Type', 'Title', 'Amount', 'Status', 'Submitted', 'Reviewed By', 'Reviewed At', 'Paid By', 'Paid At', 'Note'],
+      `vouchers-${filter.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Request No', 'Voucher No', 'Employee', 'Code', 'Branch', 'Type', 'Title', 'Amount', 'Status', 'Submitted', 'Reviewed By', 'Reviewed At', 'Paid By', 'Paid At', 'Note'],
       claims.map((c) => [
         c.claimNoLabel, c.voucherNoLabel,
         c.employee?.name, c.employee?.employeeCode, c.employee?.branch?.name,
@@ -189,11 +189,11 @@ export default function ClaimsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHero title="Claims" subtitle="Monitor, approve & disburse expense claims · live from database">
+      <PageHero title="Vouchers" subtitle="Monitor, approve & disburse expense vouchers · live from database">
         <button
           onClick={exportCsv}
           disabled={claims.length === 0}
-          title="Download the current claim list as a spreadsheet"
+          title="Download the current voucher list as a spreadsheet"
           className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90 disabled:opacity-50"
         >
           <Download className="h-4 w-4" /> Download
@@ -235,12 +235,12 @@ export default function ClaimsPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Claims — click a row for full details</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Vouchers — click a row for full details</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {isLoading && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>}
-          {error && <div className="text-sm text-destructive">Couldn&apos;t load claims. Sign in and ensure the backend is running.</div>}
+          {error && <div className="text-sm text-destructive">Couldn&apos;t load vouchers. Sign in and ensure the backend is running.</div>}
           {!isLoading && !error && claims.length === 0 && (
-            <div className="text-sm text-muted-foreground">No claims in this view.</div>
+            <div className="text-sm text-muted-foreground">No vouchers in this view.</div>
           )}
           {claims.map((c) => {
             const hasPhoto = !!(c.photoFileId || c.photoUrl);
@@ -261,7 +261,7 @@ export default function ClaimsPage() {
                     {typeName(c)} · {fmt(c.createdAt)}{c.employee?.branch?.name ? ` · ${c.employee.branch.name}` : ''}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
-                    Claim ID {c.claimNoLabel ?? c.id.slice(-6).toUpperCase()}
+                    Request No {c.claimNoLabel ?? c.id.slice(-6).toUpperCase()}
                     {c.voucherNoLabel && <> · <span className="font-semibold text-foreground">Voucher No {c.voucherNoLabel}</span></>}
                   </div>
                   {c.status === 'NEEDS_CLARIFICATION' && c.reviewerNote && (
@@ -389,7 +389,7 @@ function ClaimDetailDialog({
           <div>
             <h2 className="text-lg font-bold">{c.title}</h2>
             <div className="text-xs text-muted-foreground">
-              Claim ID: {c.claimNoLabel ?? c.id.slice(-6).toUpperCase()}
+              Request No: {c.claimNoLabel ?? c.id.slice(-6).toUpperCase()}
               {c.voucherNoLabel
                 ? <> · <span className="font-semibold text-foreground">Voucher No: {c.voucherNoLabel}</span></>
                 : <> · <span className="italic">Voucher No issued on approval</span></>}
@@ -401,9 +401,9 @@ function ClaimDetailDialog({
         </div>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          <Field label="Claimed by" value={`${c.employee?.name ?? '—'} (${c.employee?.employeeCode ?? '—'})`} />
+          <Field label="Requested by" value={`${c.employee?.name ?? '—'} (${c.employee?.employeeCode ?? '—'})`} />
           <Field label="Branch" value={c.employee?.branch?.name ?? '—'} />
-          <Field label="Claim Type" value={typeName(c)} />
+          <Field label="Voucher Type" value={typeName(c)} />
           <Field label="Amount" value={inr(c.amount)} strong />
           <Field label="Submitted" value={fmtFull(c.createdAt)} />
           <Field

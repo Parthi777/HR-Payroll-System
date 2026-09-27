@@ -108,19 +108,19 @@ fun MyClaimsScreen(
             ExtendedFloatingActionButton(
                 onClick = onNew,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("New Claim") },
+                text = { Text("New Voucher") },
                 containerColor = MaterialTheme.colorScheme.primary,
             )
         },
     ) { pad ->
         Box(modifier = Modifier.fillMaxSize().padding(pad).background(MaterialTheme.colorScheme.background)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                BrandHeader(title = "My Claims")
+                BrandHeader(title = "My Vouchers")
                 Spacer(Modifier.height(8.dp))
 
                 if (state.claims.isEmpty()) {
                     Text(
-                        state.error ?: "No claims yet. Tap “New Claim” to submit one.",
+                        state.error ?: "No vouchers yet. Tap “New Voucher” to submit one.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                         modifier = Modifier.padding(16.dp),
@@ -203,7 +203,7 @@ private fun ClaimCard(
                 }
                 Spacer(Modifier.size(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(claim.title ?: "Claim", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(claim.title ?: "Voucher", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     Text(
                         "₹${claim.amount ?: 0.0} · ${shortDate(claim.createdAt)}",
                         fontSize = 12.sp,
@@ -262,10 +262,10 @@ private fun ClaimDetailDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
-                Text(claim.title ?: "Claim", fontWeight = FontWeight.Bold)
+                Text(claim.title ?: "Voucher", fontWeight = FontWeight.Bold)
                 Text(
                     buildString {
-                        append("Claim ID: ")
+                        append("Request No: ")
                         append(claim.claimNoLabel ?: (claim.id ?: "").takeLast(6).uppercase())
                         // A voucher number exists only once the claim is approved.
                         claim.voucherNoLabel?.let { append("   ·   Voucher No: $it") }

@@ -95,7 +95,7 @@ export default function IntegrationsPage() {
   };
 
   const remove = (c: Connection) => {
-    if (!confirm(`Delete the connection "${c.name}" (connected ${when(c.createdAt)})?\n\nIts key stops working at once and its waiting updates are discarded. Claims already sent to the ERP stay there.`)) return;
+    if (!confirm(`Delete the connection "${c.name}" (connected ${when(c.createdAt)})?\n\nIts key stops working at once and its waiting updates are discarded. Vouchers already sent to the ERP stay there.`)) return;
     void run(c.id, async () => {
       await api(`/admin/integrations/${c.id}`, { method: 'DELETE' });
       setNotice(`${c.name} deleted.`);
@@ -117,7 +117,7 @@ export default function IntegrationsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHero title="Accounting ERP" subtitle="Approved claims go to the ERP to be paid and booked; the ERP marks them paid here.">
+      <PageHero title="Accounting ERP" subtitle="Approved vouchers go to the ERP to be paid and booked; the ERP marks them paid here.">
         <button
           onClick={() => { setShowForm((v) => !v); setHandover(null); }}
           className="flex h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600"
@@ -145,8 +145,8 @@ export default function IntegrationsPage() {
           <Link2 className="mx-auto h-8 w-8 text-muted-foreground" />
           <h2 className="mt-3 font-semibold">Not connected</h2>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Connect the accounting ERP to have approved claims paid from its cash book and booked to their expense
-            heads. Until then, claims are paid here as today.
+            Connect the accounting ERP to have approved vouchers paid from its cash book and booked to their expense
+            heads. Until then, vouchers are paid here as today.
           </p>
         </div>
       ) : (
@@ -168,7 +168,7 @@ export default function IntegrationsPage() {
               <label className="mt-3 flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={c.paysClaims} disabled={busyId === c.id}
                   onChange={(e) => update(c, { paysClaims: e.target.checked })} />
-                The ERP pays approved claims (the “Mark Paid” button here is removed)
+                The ERP pays approved vouchers (the “Mark Paid” button here is removed)
               </label>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -212,7 +212,7 @@ export default function IntegrationsPage() {
               {events.map((e) => (
                 <tr key={e.id} className="border-t border-border">
                   <td className="py-1.5">{when(e.createdAt)}</td>
-                  <td>{e.type === 'claim.approved' ? 'Claim approved' : e.type === 'claim.changed' ? 'Approval taken back' : e.type}</td>
+                  <td>{e.type === 'claim.approved' ? 'Voucher approved' : e.type === 'claim.changed' ? 'Approval taken back' : e.type}</td>
                   <td>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                       e.status === 'DELIVERED' ? 'bg-emerald-100 text-emerald-700' : e.status === 'FAILED' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'
@@ -225,7 +225,7 @@ export default function IntegrationsPage() {
             </tbody>
           </table>
           <p className="mt-3 text-xs text-muted-foreground">
-            An update that does not get through is retried for several hours; the ERP also checks for approved claims
+            An update that does not get through is retried for several hours; the ERP also checks for approved vouchers
             itself, so nothing is lost if one never arrives.
           </p>
         </div>

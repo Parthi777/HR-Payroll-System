@@ -108,7 +108,7 @@ export default function AccessPage() {
                 <select
                   value={a.branchId ?? ''}
                   disabled={busyId === a.id}
-                  title="Branch scope — this account only sees that branch's claims (re-login to apply)"
+                  title="Branch scope — this account only sees that branch's vouchers (re-login to apply)"
                   onChange={(e) => update(a.id, { branchId: e.target.value || null })}
                   className="h-9 rounded-lg border border-border bg-card px-2 text-xs font-medium text-muted-foreground outline-none"
                 >

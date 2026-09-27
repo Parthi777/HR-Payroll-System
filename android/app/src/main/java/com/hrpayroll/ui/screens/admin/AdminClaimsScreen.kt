@@ -90,7 +90,7 @@ fun AdminClaimsScreen(viewModel: AdminClaimsViewModel = hiltViewModel()) {
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            BrandHeader(title = if (viewModel.role == "CASHIER") "Claims · Cashier" else "Claims")
+            BrandHeader(title = if (viewModel.role == "CASHIER") "Vouchers · Cashier" else "Vouchers")
 
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp, 10.dp),
@@ -107,7 +107,7 @@ fun AdminClaimsScreen(viewModel: AdminClaimsViewModel = hiltViewModel()) {
 
             if (state.claims.isEmpty()) {
                 Text(
-                    state.error ?: "No claims in this view.",
+                    state.error ?: "No vouchers in this view.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                     modifier = Modifier.padding(16.dp),
@@ -140,7 +140,7 @@ fun AdminClaimsScreen(viewModel: AdminClaimsViewModel = hiltViewModel()) {
 
     noteFor?.let { (id, action) ->
         NoteDialog(
-            title = if (action == "reject") "Reject claim" else "Request clarification",
+            title = if (action == "reject") "Reject voucher" else "Request clarification",
             label = if (action == "reject") "Reason" else "What do you need clarified?",
             onConfirm = { note ->
                 if (action == "reject") viewModel.reject(id, note) else viewModel.clarify(id, note)
@@ -188,7 +188,7 @@ private fun AdminClaimCard(
         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(claim.title ?: "Claim", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(claim.title ?: "Voucher", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     Text(
                         listOfNotNull(
                             claim.employee?.name ?: "Employee",
@@ -207,7 +207,7 @@ private fun AdminClaimCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 buildString {
-                    append("Claim ID ")
+                    append("Request No ")
                     append(claim.claimNoLabel ?: (claim.id ?: "").takeLast(6).uppercase())
                     claim.voucherNoLabel?.let { append(" · Voucher No $it") }
                     append(" · ")

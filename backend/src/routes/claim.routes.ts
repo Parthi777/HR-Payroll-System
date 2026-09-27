@@ -99,7 +99,7 @@ export async function claimRoutes(app: FastifyInstance) {
     if (emp) {
       await notifyAdmins(app.prisma, await approverIds(app.prisma, emp), {
         type: 'CLAIM_SUBMITTED',
-        title: 'New claim to approve',
+        title: 'New voucher to approve',
         body: `${emp.name}: ${claimTypeLabel(fields.type)} — Rs.${amount.toLocaleString('en-IN')}`,
         claimId: claim.id,
       });
@@ -140,7 +140,7 @@ export async function claimRoutes(app: FastifyInstance) {
     if (emp) {
       await notifyAdmins(app.prisma, await approverIds(app.prisma, emp), {
         type: 'CLAIM_SUBMITTED',
-        title: 'Claim resubmitted for approval',
+        title: 'Voucher resubmitted for approval',
         body: `${emp.name}: ${claim.title} — Rs.${claim.amount.toLocaleString('en-IN')}`,
         claimId: claim.id,
       });
@@ -193,7 +193,7 @@ export async function claimRoutes(app: FastifyInstance) {
       throw new AppError('Forbidden', 403);
     }
     if (req.user.role !== 'EMPLOYEE' && req.user.branchId && claim.employee.branchId !== req.user.branchId) {
-      throw new AppError('This claim belongs to another branch', 403);
+      throw new AppError('This voucher belongs to another branch', 403);
     }
     return which === 'pdf'
       ? serveClaimFile(req, reply, claim.documentFileId, claim.documentUrl)
@@ -224,7 +224,7 @@ export async function claimRoutes(app: FastifyInstance) {
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'APPROVED', undefined, req.user.branchId);
     // Decision made → clear the "to approve" notification for every approver.
     await app.prisma.notification.deleteMany({ where: { claimId: id, type: 'CLAIM_SUBMITTED' } });
-    await pushToEmployee(app.prisma, claim.employeeId, 'Claim approved \u2713', `${claim.title} \u2014 Rs.${claim.amount.toLocaleString('en-IN')} approved. Cash counter will pay it out.`);
+    await pushToEmployee(app.prisma, claim.employeeId, 'Voucher approved \u2713', `${claim.title} \u2014 Rs.${claim.amount.toLocaleString('en-IN')} approved. Cash counter will pay it out.`);
     // Approved → the branch's cashier(s) take over: check + pay.
     const emp = await app.prisma.employee.findUnique({
       where: { id: claim.employeeId },
@@ -233,7 +233,7 @@ export async function claimRoutes(app: FastifyInstance) {
     if (emp) {
       await notifyAdmins(app.prisma, await cashierIds(app.prisma, emp.branchId), {
         type: 'CLAIM_APPROVED',
-        title: 'Approved claim ready to pay',
+        title: 'Approved voucher ready to pay',
         body: `${emp.name}: ${claim.title} — Rs.${claim.amount.toLocaleString('en-IN')}`,
         claimId: claim.id,
       });
@@ -246,7 +246,7 @@ export async function claimRoutes(app: FastifyInstance) {
     const { note } = (req.body as { note?: string }) ?? {};
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'REJECTED', note, req.user.branchId);
     await app.prisma.notification.deleteMany({ where: { claimId: id, type: 'CLAIM_SUBMITTED' } });
-    await pushToEmployee(app.prisma, claim.employeeId, 'Claim rejected', `${claim.title}${note ? ` \u2014 ${note}` : ''}`);
+    await pushToEmployee(app.prisma, claim.employeeId, 'Voucher rejected', `${claim.title}${note ? ` \u2014 ${note}` : ''}`);
     await recordAudit(req, 'CLAIM_REJECTED', 'Claim', {
       entityId: claim.id,
       metadata: { claimNo: claim.claimNo, title: claim.title, amount: claim.amount, ...(note ? { note } : {}) },
@@ -259,7 +259,7 @@ export async function claimRoutes(app: FastifyInstance) {
     const { note } = (req.body as { note?: string }) ?? {};
     const claim = await actOnClaim(app.prisma, req.user.sub, id, 'NEEDS_CLARIFICATION', note, req.user.branchId);
     await app.prisma.notification.deleteMany({ where: { claimId: id, type: 'CLAIM_SUBMITTED' } });
-    await pushToEmployee(app.prisma, claim.employeeId, 'Clarification needed on your claim', `${claim.title}${note ? ` \u2014 ${note}` : ''}. Open My Claims to reply.`);
+    await pushToEmployee(app.prisma, claim.employeeId, 'Clarification needed on your voucher', `${claim.title}${note ? ` \u2014 ${note}` : ''}. Open My Vouchers to reply.`);
     await recordAudit(req, 'CLAIM_CLARIFICATION_REQUESTED', 'Claim', {
       entityId: claim.id,
       metadata: { claimNo: claim.claimNo, title: claim.title, amount: claim.amount, ...(note ? { note } : {}) },
@@ -273,7 +273,7 @@ export async function claimRoutes(app: FastifyInstance) {
     const claim = await payClaim(app.prisma, req.user.sub, id, note, req.user.branchId);
     // Paid → nothing left to act on; clear all remaining notifications for this claim.
     await app.prisma.notification.deleteMany({ where: { claimId: id } });
-    await pushToEmployee(app.prisma, claim.employeeId, 'Claim paid \u2713', `${claim.title} \u2014 Rs.${claim.amount.toLocaleString('en-IN')} paid. Collect/verify with the cashier.`);
+    await pushToEmployee(app.prisma, claim.employeeId, 'Voucher paid \u2713', `${claim.title} \u2014 Rs.${claim.amount.toLocaleString('en-IN')} paid. Collect/verify with the cashier.`);
     await recordAudit(req, 'CLAIM_PAID', 'Claim', {
       entityId: claim.id,
       metadata: {

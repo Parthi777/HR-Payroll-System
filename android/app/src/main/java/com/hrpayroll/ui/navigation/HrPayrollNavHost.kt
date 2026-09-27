@@ -82,7 +82,7 @@ private val employeeTabs = listOf(
     BottomTab(Routes.HOME, "Home", Icons.Filled.Home),
     BottomTab(Routes.ATTENDANCE, "Attendance", Icons.Filled.CheckCircle),
     BottomTab(Routes.LEAVE, "Leave", Icons.Filled.CalendarMonth),
-    BottomTab(Routes.CLAIMS, "Claims", Icons.Filled.ReceiptLong),
+    BottomTab(Routes.CLAIMS, "Vouchers", Icons.Filled.ReceiptLong),
     // Pay, and the days behind it. This is the "re-add later" the old Payslip
     // tab left behind: the payslip now lives inside it, with the month's hours,
     // late days and leave beside it.
@@ -97,7 +97,7 @@ private val employeeTabs = listOf(
 private val adminTabs = listOf(
     BottomTab(Routes.ADMIN_DASHBOARD, "Dashboard", Icons.Filled.Dashboard),
     BottomTab(Routes.ADMIN_LIVE, "Live", Icons.Filled.Sensors),
-    BottomTab(Routes.ADMIN_CLAIMS, "Claims", Icons.Filled.ReceiptLong),
+    BottomTab(Routes.ADMIN_CLAIMS, "Vouchers", Icons.Filled.ReceiptLong),
     BottomTab(Routes.ADMIN_PERFORMANCE, "Reports", Icons.Filled.Assessment),
     BottomTab(Routes.ADMIN_PEOPLE, "People", Icons.Filled.Groups),
 )

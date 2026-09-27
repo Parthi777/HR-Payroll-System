@@ -149,7 +149,7 @@ export function generateClaimVoucherPdf(c: VoucherData): Promise<Buffer> {
         .text('(issued on approval)', left + 88, y + 3, { width: 90, lineBreak: false });
     }
     doc.font('Helvetica-Bold').fontSize(10)
-      .text(`Claim ID: ${claimNo ?? c.id.slice(-6).toUpperCase()}`, left + 182, y, { width: 130, lineBreak: false });
+      .text(`Request No: ${claimNo ?? c.id.slice(-6).toUpperCase()}`, left + 182, y, { width: 130, lineBreak: false });
     doc.font('Helvetica').fontSize(8)
       .text(`Submitted: ${fmtDateTime(c.createdAt)}`, left, y + 2, { width: right - left, align: 'right', lineBreak: false });
 
@@ -169,15 +169,15 @@ export function generateClaimVoucherPdf(c: VoucherData): Promise<Buffer> {
     const col2 = left + colW + gap;
     const ROW = 27;
 
-    label('Claimed By', left, y, colW);
+    label('Requested By', left, y, colW);
     value(`${c.employee.name} (${c.employee.employeeCode})`, left, y, colW, true);
     label('Branch', col2, y, colW);
     value(c.employee.branch?.name ?? '—', col2, y, colW, true);
     y += ROW;
 
-    label('Claim Type', left, y, colW);
+    label('Voucher Type', left, y, colW);
     value(claimTypeLabel(c.type), left, y, colW, true);
-    label('Claim Title', col2, y, colW);
+    label('Title', col2, y, colW);
     value(c.title, col2, y, colW);
     y += ROW;
 

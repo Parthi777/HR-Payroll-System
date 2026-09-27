@@ -227,7 +227,7 @@ export const DEALER_ROLES = [
   { value: 'HR_MANAGER', label: 'HR Manager', hint: 'Employees, attendance, leave, payroll' },
   { value: 'BRANCH_MANAGER', label: 'Branch Manager', hint: 'Their own branch and reports' },
   { value: 'PAYROLL_ADMIN', label: 'Payroll Admin', hint: 'Payroll runs and payslips' },
-  { value: 'CASHIER', label: 'Cashier', hint: 'Claims and disbursement only' },
+  { value: 'CASHIER', label: 'Cashier', hint: 'Vouchers and disbursement only' },
 ] as const;
 
 export interface NewDealerAdmin {
