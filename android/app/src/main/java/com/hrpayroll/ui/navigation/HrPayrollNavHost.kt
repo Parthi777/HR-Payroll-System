@@ -47,8 +47,8 @@ import com.hrpayroll.ui.screens.leave.LeaveScreen
 import com.hrpayroll.ui.screens.login.LoginScreen
 import com.hrpayroll.ui.screens.payroll.PayrollScreen
 import com.hrpayroll.ui.screens.shift.ShiftScreen
-import com.hrpayroll.ui.theme.BrandIndigo
-import com.hrpayroll.ui.theme.BrandLavender
+import com.hrpayroll.ui.theme.BrandGreen
+import com.hrpayroll.ui.theme.BrandMint
 
 object Routes {
     const val LOGIN = "login"
@@ -148,11 +148,11 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
                             },
                             alwaysShowLabel = false,
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = BrandIndigo,
-                                selectedTextColor = BrandIndigo,
-                                unselectedIconColor = Color(0xFF9B99AE),
-                                unselectedTextColor = Color(0xFF9B99AE),
-                                indicatorColor = BrandLavender,
+                                selectedIconColor = BrandGreen,
+                                selectedTextColor = BrandGreen,
+                                unselectedIconColor = Color(0xFF8E989F),
+                                unselectedTextColor = Color(0xFF8E989F),
+                                indicatorColor = BrandMint,
                             ),
                         )
                     }

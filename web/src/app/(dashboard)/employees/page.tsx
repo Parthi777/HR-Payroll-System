@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher, api, apiUpload } from '@/lib/api';
-import { can, OWNER_ONLY_ROLES } from '@/lib/permissions';
+import { can, CREDENTIAL_ROLES, OWNER_ONLY_ROLES } from '@/lib/permissions';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent } from '@/components/ui/card';
 import { PasswordInput } from '@/components/password-input';
@@ -53,12 +53,13 @@ const chipClass: Record<string, string> = {
 
 export default function EmployeesPage() {
   const isOwner = can(OWNER_ONLY_ROLES);
+  const canIssueCredentials = can(CREDENTIAL_ROLES);
   const { data, error, isLoading, mutate } = useSWR<{ employees: EmployeeRow[] }>('/admin/employees', fetcher, { shouldRetryOnError: false });
   const employees = data?.employees ?? [];
   const [modal, setModal] = useState<{ mode: 'add' } | { mode: 'edit'; employee: EmployeeRow } | null>(null);
   const [showBulk, setShowBulk] = useState(false);
   const [resetting, setResetting] = useState<string | null>(null);
-  const [issued, setIssued] = useState<{ name: string; phone: string; password: string } | null>(null);
+  const [issued, setIssued] = useState<{ name: string; employeeCode: string; phone: string; password: string } | null>(null);
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('ALL');
 
@@ -85,7 +86,7 @@ export default function EmployeesPage() {
         `/admin/employees/${e.id}/reset-password`,
         { method: 'POST' },
       );
-      setIssued({ name: res.employee.name, phone: res.employee.phone, password: res.password });
+      setIssued({ name: res.employee.name, employeeCode: res.employee.employeeCode, phone: res.employee.phone, password: res.password });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not reset the password');
     } finally {
@@ -113,14 +114,15 @@ export default function EmployeesPage() {
             Their old password no longer works.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-white p-4 text-sm">
-            <span className="text-muted-foreground">Phone</span>
-            <span className="font-mono">{issued.phone}</span>
+            <span className="text-muted-foreground">User ID</span>
+            <span className="font-mono">{issued.employeeCode}</span>
+            <span className="text-xs text-muted-foreground">(or {issued.phone})</span>
             <span className="ml-2 text-muted-foreground">Password</span>
             <span className="font-mono text-base font-semibold">{issued.password}</span>
           </div>
           <div className="mt-3 flex gap-2">
             <button
-              onClick={() => navigator.clipboard.writeText(`${issued.phone} / ${issued.password}`)}
+              onClick={() => navigator.clipboard.writeText(`User ID: ${issued.employeeCode}\nPassword: ${issued.password}`)}
               className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
             >
               Copy
@@ -188,7 +190,7 @@ export default function EmployeesPage() {
                   <span className={`chip ${chipClass[e.status] ?? 'chip-leave'}`}>{e.status}</span>
                 </div>
                 <div className="flex gap-2">
-                  {isOwner && <button onClick={() => resetPassword(e)} disabled={resetting === e.id} title="Issue a new app password" className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:opacity-50">
+                  {canIssueCredentials && <button onClick={() => resetPassword(e)} disabled={resetting === e.id} title="Issue a new app password" className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:opacity-50">
                     {resetting === e.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />} Password
                   </button>}
                   <button onClick={() => setModal({ mode: 'edit', employee: e })} className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground">
@@ -221,6 +223,7 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
   // whatever the browser sends; hiding them here just avoids showing a manager
   // inputs that would silently fail to save.
   const isOwner = can(OWNER_ONLY_ROLES);
+  const canIssueCredentials = can(CREDENTIAL_ROLES);
   const { data: br } = useSWR<{ branches: Named[] }>('/admin/branches', fetcher, { shouldRetryOnError: false });
   const { data: dp } = useSWR<{ departments: Named[] }>('/admin/departments', fetcher, { shouldRetryOnError: false });
   const { data: dg } = useSWR<{ designations: Named[] }>('/admin/designations', fetcher, { shouldRetryOnError: false });
@@ -317,7 +320,8 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
           <input className={input} placeholder={editing ? 'Employee code' : `Auto: ${nc?.nextCode ?? '…'} (or type one)`} value={f.employeeCode} onChange={(e) => set('employeeCode', e.target.value)} disabled={editing} />
           <input className={input} placeholder="Phone * (+91…)" value={f.phone} onChange={(e) => set('phone', e.target.value)} />
           <input className={input} placeholder="Email" value={f.email} onChange={(e) => set('email', e.target.value)} />
-          {isOwner && <PasswordInput className={input} placeholder={editing ? 'New password (blank = keep)' : 'App login password *'} value={f.password} onChange={(v) => set('password', v)} />}
+          {/* Adding someone is the owner's (it sets salary); a new password for an existing employee is also HR's. */}
+          {(editing ? canIssueCredentials : isOwner) && <PasswordInput className={input} placeholder={editing ? 'New app password (blank = keep)' : 'App login password *'} value={f.password} onChange={(v) => set('password', v)} />}
           {isOwner && <input className={input} type="number" placeholder="Salary (₹/mo) *" value={f.salary} onChange={(e) => set('salary', e.target.value)} />}
           {isOwner && <select className={input} value={f.payrollBasis} onChange={(e) => set('payrollBasis', e.target.value)}>
             <option value="">Pay basis — dealer default</option>
@@ -368,7 +372,8 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
           </div>}
           {!isOwner && (
             <p className="col-span-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-              Salary, bank details, pay basis, PF/ESI and app access are changed by the owner (Super Admin) only.
+              Salary, bank details, pay basis and PF/ESI are changed by the owner (Super Admin) only.
+              {canIssueCredentials ? ' You can issue a new app password.' : ' App passwords are issued by the owner or HR.'}
             </p>
           )}
         </div>

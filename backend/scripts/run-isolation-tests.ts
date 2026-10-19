@@ -46,6 +46,7 @@ run(
     'tests/multipart-upload.test.ts', 'tests/signup.test.ts', 'tests/kiosk.test.ts',
     'tests/employee-month.test.ts', 'tests/punch-reminders.test.ts',
     'tests/integration.test.ts',
+    'tests/sign-in.test.ts',
   ],
   {
     DATABASE_URL: url,

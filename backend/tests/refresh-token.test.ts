@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
 import { platformSignIn } from './support/platform-session.js';
+import { adminSignIn } from './support/admin-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -81,7 +82,7 @@ suite('refresh tokens', () => {
     });
     expect(made.statusCode, made.body).toBe(201);
 
-    const adminLogin = await post('/api/auth/admin/login', ADMIN, { 'x-tenant-slug': SLUG });
+    const adminLogin = await adminSignIn(app, { slug: SLUG, ...ADMIN }, freshIp);
     expect(adminLogin.statusCode, adminLogin.body).toBe(200);
     const adminToken = adminLogin.json().token;
 

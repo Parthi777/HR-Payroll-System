@@ -9,13 +9,11 @@ data class TenantDto(
 )
 
 @JsonClass(generateAdapter = true)
-data class OtpResponse(
+data class EmployeeLoginResponse(
     val token: String? = null,
     val refreshToken: String? = null,
     /** The workspace this sign-in resolved to. */
     val tenant: TenantDto? = null,
-    val sent: Boolean? = null,
-    val devOtp: String? = null, // dev-only: backend returns the code when no SMS provider is wired
 )
 
 @JsonClass(generateAdapter = true)
@@ -139,6 +137,29 @@ data class AdminLoginResponse(
     val name: String? = null,
     /** The workspace this sign-in resolved to. */
     val tenant: TenantDto? = null,
+    /** Present only when two-step setup just finished: shown once, never again. */
+    val recoveryCodes: List<String>? = null,
+    /** Present when a recovery code was used to sign in — how many remain. */
+    val recoveryCodesLeft: Int? = null,
+)
+
+/**
+ * A correct admin password: half a sign-in. `step` is "verify" (enter the code
+ * from the authenticator) or "enroll" (set one up first); `challenge` is handed
+ * back with the code and opens nothing else.
+ */
+@JsonClass(generateAdapter = true)
+data class AdminPasswordStep(
+    val step: String? = null,
+    val challenge: String? = null,
+    val tenant: TenantDto? = null,
+)
+
+/** A new authenticator secret, during setup. */
+@JsonClass(generateAdapter = true)
+data class TwoStepSetupDto(
+    val secret: String? = null,
+    val otpauthUri: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

@@ -72,10 +72,10 @@ export default function PayPage({ params }: { params: Promise<{ token: string }>
         key: order.keyId,
         amount: order.amountPaise,
         currency: 'INR',
-        name: 'HR & Payroll',
+        name: 'Kayaazh Payroll',
         description: `${subscription.planName} plan — ${subscription.company}`,
         order_id: order.orderId,
-        theme: { color: '#5b4fc4' },
+        theme: { color: '#00835E' },
         modal: { ondismiss: () => setBusy(false) },
         handler: async (response) => {
           try {
@@ -116,7 +116,7 @@ export default function PayPage({ params }: { params: Promise<{ token: string }>
         <Script src="https://checkout.razorpay.com/v1/checkout.js" onReady={() => setCheckoutReady(true)} />
       )}
 
-      <section className="brand-gradient px-6 pb-16 pt-8 text-white sm:px-10">
+      <section className="brand-panel px-6 pb-16 pt-8 text-white sm:px-10">
         <div className="mx-auto max-w-2xl">
           <SiteHeader />
           <div className="py-12">

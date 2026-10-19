@@ -32,7 +32,7 @@ export interface VoucherData {
   company?: { name: string; address: string } | null;
 }
 
-const FALLBACK_COMPANY_NAME = process.env.COMPANY_NAME ?? 'AI HR Payroll';
+const FALLBACK_COMPANY_NAME = process.env.COMPANY_NAME ?? 'Kayaazh Payroll';
 const FALLBACK_COMPANY_ADDRESS = process.env.COMPANY_ADDRESS ?? '';
 
 const fmtDateTime = (d: Date) =>

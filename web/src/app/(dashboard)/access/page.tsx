@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher, api } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ShieldCheck, UserPlus, Loader2, X, KeyRound, Smartphone } from 'lucide-react';
+import { CodeInput, RecoveryCodeList } from '@/components/two-step-forms';
+import { ShieldCheck, UserPlus, Loader2, X, KeyRound, Smartphone, RotateCcw } from 'lucide-react';
 
 interface AdminRow {
   id: string;
@@ -14,6 +15,8 @@ interface AdminRow {
   role: string;
   branchId?: string | null;
   isActive: boolean;
+  /** When two-step verification was set up; null until their first sign-in enrols it. */
+  totpEnabledAt: string | null;
 }
 interface EmployeeRow {
   id: string;
@@ -29,6 +32,17 @@ interface BranchRow {
 
 const ROLES = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN', 'CASHIER'];
 // Shared chip palette from globals.css (dark-mode safe).
+/** The signed-in admin's own id, read from the session token — for "not on your own row". */
+function currentAdminId(): string | null {
+  try {
+    const payload = localStorage.getItem('token')?.split('.')[1];
+    if (!payload) return null;
+    return (JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { sub?: string }).sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const roleChip: Record<string, string> = {
   SUPER_ADMIN: 'chip-off',
   HR_MANAGER: 'chip-leave',
@@ -44,6 +58,8 @@ export default function AccessPage() {
   const admins = data?.admins ?? [];
   const [showAdd, setShowAdd] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [me, setMe] = useState<string | null>(null);
+  useEffect(() => setMe(currentAdminId()), []);
 
   async function update(id: string, body: Record<string, unknown>) {
     setBusyId(id);
@@ -63,6 +79,20 @@ export default function AccessPage() {
     if (pwd.length < 8) { alert('Password must be at least 8 characters.'); return; }
     await update(a.id, { password: pwd });
     alert(`Password updated for ${a.email}. Share it privately and store it in a password manager.`);
+  }
+
+  /** Lost or replaced phone: clear it, and they set it up again at next sign-in. */
+  async function resetTwoStep(a: AdminRow) {
+    if (!confirm(`Reset two-step verification for ${a.email}?\n\nThey will set it up again with their new phone the next time they sign in. Do this only once you are sure it is really them asking.`)) return;
+    setBusyId(a.id);
+    try {
+      await api(`/admin/users/${a.id}/two-step`, { method: 'DELETE' });
+      await mutate();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Reset failed');
+    } finally {
+      setBusyId(null);
+    }
   }
 
   const forbidden = error instanceof Error && /permission|forbidden/i.test(error.message);
@@ -94,6 +124,10 @@ export default function AccessPage() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-semibold">{a.name}</div>
                   <div className="truncate text-xs text-muted-foreground">{a.email}</div>
+                  <div className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium ${a.totpEnabledAt ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    <Smartphone className="h-3 w-3" />
+                    {a.totpEnabledAt ? 'Two-step on' : 'Two-step not set up — sets up at next sign-in'}
+                  </div>
                 </div>
 
                 <select
@@ -120,6 +154,17 @@ export default function AccessPage() {
                   <KeyRound className="h-4 w-4" />
                 </button>
 
+                {a.totpEnabledAt && a.id !== me && (
+                  <button
+                    onClick={() => resetTwoStep(a)}
+                    disabled={busyId === a.id}
+                    title="Reset two-step verification (lost or new phone)"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                )}
+
                 <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
                   <input
                     type="checkbox"
@@ -136,10 +181,71 @@ export default function AccessPage() {
         </Card>
       )}
 
+      {!error && <MyTwoStepCard />}
+
       {!error && <EmployeeAccessCard />}
 
       {showAdd && <AddAdminModal branches={branches} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); mutate(); }} />}
     </div>
+  );
+}
+
+/**
+ * Your own two-step verification: how many recovery codes are left, and a way
+ * to replace them. Replacing needs a live code from the phone — a session alone
+ * must not be able to mint a way back in.
+ */
+function MyTwoStepCard() {
+  const { data, mutate } = useSWR<{ enabledAt: string | null; recoveryCodesLeft: number }>('/admin/me/two-step', fetcher, { shouldRetryOnError: false });
+  const [code, setCode] = useState('');
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function replace(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await api<{ recoveryCodes: string[] }>('/admin/me/recovery-codes', { method: 'POST', body: JSON.stringify({ code }) });
+      setCodes(res.recoveryCodes);
+      setCode('');
+      await mutate();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Could not replace the codes');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!data) return null;
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base flex items-center gap-2"><Smartphone className="h-4 w-4" /> Your two-step verification</CardTitle></CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <p className="text-muted-foreground">
+          On since {data.enabledAt ? new Date(data.enabledAt).toLocaleDateString() : '—'} ·{' '}
+          <strong className={data.recoveryCodesLeft <= 3 ? 'text-amber-600' : 'text-foreground'}>{data.recoveryCodesLeft}</strong> recovery codes left.
+        </p>
+        {codes ? (
+          <div>
+            <RecoveryCodeList codes={codes} />
+            <button onClick={() => setCodes(null)} className="mt-3 h-10 rounded-xl border border-border px-4 text-sm font-medium">I have saved them</button>
+          </div>
+        ) : (
+          <form onSubmit={replace} className="flex flex-wrap items-end gap-3">
+            <div className="w-44">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Code from your app</label>
+              <CodeInput value={code} onChange={setCode} autoFocus={false} />
+            </div>
+            <button type="submit" disabled={busy || code.length !== 6} className="flex h-12 items-center gap-2 rounded-xl brand-gradient px-5 text-sm font-semibold text-white disabled:opacity-60">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Replace recovery codes
+            </button>
+          </form>
+        )}
+        {err && <p className="text-destructive">{err}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -223,7 +329,7 @@ function AddAdminModal({ branches, onClose, onSaved }: { branches: BranchRow[]; 
         </div>
         <div className="space-y-3">
           <input className={input} placeholder="Full name *" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-          <input className={input} type="email" placeholder="Email (their Google login too) *" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+          <input className={input} type="email" placeholder="Email (their sign-in ID) *" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <select className={input} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
             {ROLES.map((r) => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
           </select>

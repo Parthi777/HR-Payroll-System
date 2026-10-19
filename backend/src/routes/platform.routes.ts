@@ -20,7 +20,7 @@ import {
   recoveryCodesLeft,
   startEnrolment,
   type ChallengePurpose,
-} from '../services/platform/two-step.service.js';
+} from '../services/auth/two-step.service.js';
 import {
   addTenantAdmin,
   provisionTenant,
@@ -230,7 +230,7 @@ export async function platformRoutes(app: FastifyInstance) {
    * was the one that tripped it — a lock means someone holds the password.
    */
   async function wrongCode(req: FastifyRequest, staffId: string): Promise<never> {
-    const { locked } = await recordFailure(app.prisma, { id: staffId });
+    const { locked } = await recordFailure(app.prisma, 'platform', { id: staffId });
     if (locked) await audit(req, 'PLATFORM_TWO_STEP_LOCKED', { actorId: staffId, targetId: staffId });
     throw AppError.unauthorized('That code is not right');
   }
@@ -247,11 +247,11 @@ export async function platformRoutes(app: FastifyInstance) {
       assertNotLocked(staff);
 
       if (looksLikeTotp(code)) {
-        if (!(await acceptTotp(app.prisma, staff, staff.totpSecret, code))) return wrongCode(req, staff.id);
+        if (!(await acceptTotp(app.prisma, 'platform', staff, staff.totpSecret, code))) return wrongCode(req, staff.id);
         return signSession(staff);
       }
 
-      const left = await consumeRecoveryCode(app.prisma, staff, code);
+      const left = await consumeRecoveryCode(app.prisma, 'platform', staff, code);
       if (left === null) return wrongCode(req, staff.id);
       // Worth a line in the log every time: either the phone is lost, or the
       // codes are no longer only in the owner's hands.
@@ -267,7 +267,7 @@ export async function platformRoutes(app: FastifyInstance) {
     async (req) => {
       const { challenge } = challengeSchema.parse(req.body);
       const staff = await readChallenge(challenge, 'enroll');
-      return startEnrolment(app.prisma, staff);
+      return startEnrolment(app.prisma, 'platform', staff, staff.email);
     },
   );
 
@@ -282,7 +282,7 @@ export async function platformRoutes(app: FastifyInstance) {
       const staff = await readChallenge(challenge, 'enroll');
       assertNotLocked(staff);
 
-      const recoveryCodes = await completeEnrolment(app.prisma, staff, code);
+      const recoveryCodes = await completeEnrolment(app.prisma, 'platform', staff, code);
       if (!recoveryCodes) return wrongCode(req, staff.id);
 
       await audit(req, 'PLATFORM_TWO_STEP_ENABLED', { actorId: staff.id, targetId: staff.id });
@@ -319,7 +319,7 @@ export async function platformRoutes(app: FastifyInstance) {
       if (!staff.totpSecret) throw new AppError('Set up two-step verification first — sign out and in again', 400);
       assertNotLocked(staff);
 
-      if (!(await acceptTotp(app.prisma, staff, staff.totpSecret, code))) return wrongCode(req, staff.id);
+      if (!(await acceptTotp(app.prisma, 'platform', staff, staff.totpSecret, code))) return wrongCode(req, staff.id);
 
       const { codes, stored } = generateRecoveryCodes();
       await app.prisma.platformUser.update({ where: { id: staff.id }, data: { recoveryCodes: stored } });
@@ -629,7 +629,7 @@ export async function platformRoutes(app: FastifyInstance) {
     // dealers; they have no business reading a dealer's payroll.
     const admins = await app.prisma.adminUser.findMany({
       where: { tenantId: id },
-      select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true, totpEnabledAt: true },
       orderBy: { createdAt: 'asc' },
     });
     const employees = await app.prisma.employee.count({ where: { tenantId: id, status: 'ACTIVE' } });
@@ -691,6 +691,22 @@ export async function platformRoutes(app: FastifyInstance) {
     });
 
     return reply.code(201).send({ admin, loginUrl: tenantLoginUrl(tenant.slug) });
+  });
+
+  /**
+   * Clear a dealer administrator's two-step verification. The dealer's own
+   * Super Admins do this for each other from User Access; this is for the
+   * dealer whose only Super Admin has lost both their phone and their recovery
+   * codes, and so cannot sign in to do it.
+   */
+  app.delete('/platform/tenants/:id/admins/:adminId/two-step', { preHandler: requirePlatform }, async (req) => {
+    const { id, adminId } = req.params as { id: string; adminId: string };
+    const admin = await app.prisma.adminUser.findFirst({ where: { id: adminId, tenantId: id }, select: { id: true, email: true } });
+    if (!admin) throw AppError.notFound('Admin');
+
+    await app.prisma.adminUser.update({ where: { id: admin.id }, data: TWO_STEP_CLEARED });
+    await audit(req, 'TENANT_ADMIN_TWO_STEP_RESET', { targetTenantId: id, targetId: admin.id, metadata: { email: admin.email } });
+    return { ok: true };
   });
 
   /**

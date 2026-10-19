@@ -45,6 +45,11 @@ export type AuditAction =
   // Admin accounts
   | 'ADMIN_CREATED'
   | 'ADMIN_UPDATED'
+  | 'ADMIN_TWO_STEP_ENABLED'
+  | 'ADMIN_TWO_STEP_LOCKED'
+  | 'ADMIN_TWO_STEP_RESET'
+  | 'ADMIN_RECOVERY_CODE_USED'
+  | 'ADMIN_RECOVERY_CODES_REGENERATED'
   // Attendance
   | 'ATTENDANCE_OVERRIDDEN'
   | 'ATTENDANCE_APPROVED'
@@ -119,6 +124,12 @@ interface AuditDetail {
    * old and new value of what changed. Written by hand; see the header.
    */
   metadata?: Record<string, unknown>;
+  /**
+   * The administrator acting, when there is no session yet to read it from —
+   * the second step of sign-in, where the person is identified by a challenge
+   * rather than by `req.user`. Everywhere else it is left out.
+   */
+  actorId?: string;
 }
 
 /**
@@ -172,7 +183,7 @@ export async function recordAudit(
   detail: AuditDetail = {},
 ): Promise<void> {
   try {
-    const actor = req.user;
+    const actor = detail.actorId ? { sub: detail.actorId, role: undefined } : req.user;
     if (!actor?.sub || actor.role === 'EMPLOYEE') {
       // Nothing to hang the row on. An employee acting on their own record is
       // not an administrative action, and the FK would reject the write.

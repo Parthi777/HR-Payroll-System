@@ -14,7 +14,7 @@
  * holding it and setting up their own authenticator on the account.
  */
 import { PrismaClient } from '@prisma/client';
-import { TWO_STEP_CLEARED } from '../src/services/platform/two-step.service.js';
+import { TWO_STEP_CLEARED } from '../src/services/auth/two-step.service.js';
 
 const prisma = new PrismaClient();
 

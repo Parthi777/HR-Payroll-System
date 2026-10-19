@@ -11,7 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
 import { currentCode, platformSignIn } from './support/platform-session.js';
-import { codeForStep, stepAt } from '../src/services/platform/totp.js';
+import { codeForStep, stepAt } from '../src/services/auth/totp.js';
+import { adminSignIn } from './support/admin-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -46,11 +47,7 @@ suite('dealer onboarding', () => {
     const key = `${slug}:${email}`;
     const cached = tokens.get(key);
     if (cached) return cached;
-    const res = await app.inject({
-      method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-      headers: { 'x-tenant-slug': slug },
-      payload: { email, password: DEALER_ADMIN_PASSWORD },
-    });
+    const res = await adminSignIn(app, { slug, email, password: DEALER_ADMIN_PASSWORD }, freshIp);
     expect(res.statusCode, `login ${key}: ${res.body}`).toBe(200);
     tokens.set(key, res.json().token);
     return res.json().token;
@@ -147,11 +144,7 @@ suite('dealer onboarding', () => {
     });
 
     it('the dealer’s administrator can sign in immediately', async () => {
-      const res = await app.inject({
-        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-        headers: { 'x-tenant-slug': 'abc-motors' },
-        payload: { email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD },
-      });
+      const res = await adminSignIn(app, { slug: 'abc-motors', email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD }, freshIp);
       expect(res.statusCode, res.body).toBe(200);
       expect(res.json().role).toBe('SUPER_ADMIN');
       expect(res.json().tenant.name).toBe('ABC Motors');
@@ -218,11 +211,7 @@ suite('dealer onboarding', () => {
       });
       expect(res.statusCode, res.body).toBe(201);
 
-      const res2 = await app.inject({
-        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-        headers: { 'x-tenant-slug': 'xyz-autos' },
-        payload: { email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD },
-      });
+      const res2 = await adminSignIn(app, { slug: 'xyz-autos', email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD }, freshIp);
       expect(res2.statusCode, res2.body).toBe(200);
       expect(res2.json().tenant.name).toBe('XYZ Autos');
       tokens.set('xyz-autos:owner@abc.test', res2.json().token);
@@ -429,11 +418,7 @@ suite('dealer onboarding', () => {
 
       // The token is still valid and unexpired; the tenant's status is what stops it.
       expect((await app.inject({ method: 'GET', url: '/api/admin/branches', headers })).statusCode).toBe(403);
-      const blocked = await app.inject({
-        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-        headers: { 'x-tenant-slug': 'xyz-autos' },
-        payload: { email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD },
-      });
+      const blocked = await adminSignIn(app, { slug: 'xyz-autos', email: 'owner@abc.test', password: DEALER_ADMIN_PASSWORD }, freshIp);
       expect(blocked.statusCode).toBe(403);
 
       await asPlatform('PATCH', `/api/platform/tenants/${id}/status`, { status: 'ACTIVE' });

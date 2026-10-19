@@ -8,7 +8,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { expect } from 'vitest';
-import { codeForStep, stepAt } from '../../src/services/platform/totp.js';
+import { codeForStep, stepAt } from '../../src/services/auth/totp.js';
 
 /**
  * The code for right now, for an account that is already enrolled.

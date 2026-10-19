@@ -15,7 +15,7 @@ import {
   matchStep,
   otpauthUri,
   stepAt,
-} from '../src/services/platform/totp.js';
+} from '../src/services/auth/totp.js';
 
 // RFC 6238's SHA-1 seed is the ASCII string "12345678901234567890".
 const RFC_SECRET = base32Encode(Buffer.from('12345678901234567890', 'ascii'));

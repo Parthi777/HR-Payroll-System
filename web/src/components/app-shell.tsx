@@ -16,7 +16,6 @@ import {
   Settings,
   Bell,
   Search,
-  UserCheck,
   ReceiptText,
   ShieldCheck,
   MonitorSmartphone,
@@ -27,6 +26,7 @@ import {
 import useSWR from 'swr';
 import { fetcher, api } from '@/lib/api';
 import { LogoutButton } from '@/components/logout-button';
+import { BrandLogo } from '@/components/brand-logo';
 import { canAccess, currentRole, type AdminRole } from '@/lib/permissions';
 import { tenantName } from '@/lib/tenant';
 
@@ -153,12 +153,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }`}
       >
         <div className="mb-6 flex items-center gap-3 px-2 pt-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-            <UserCheck className="h-5 w-5" />
+          {/* The coloured symbol only ever sits on white or charcoal — so on
+              the green sidebar it gets a white tile, as an app icon would. */}
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white p-1.5 shadow-sm">
+            <BrandLogo variant="symbol" height={28} className="h-7 w-7" />
           </div>
-          <div className="leading-tight">
-            <div className="text-base font-bold tracking-tight">{workspace ?? 'HR & Payroll'}</div>
-            <div className="text-[11px] text-white/70">Master Control</div>
+          <div className="min-w-0 leading-tight">
+            <div className="truncate text-base font-bold tracking-tight">{workspace ?? 'Kayaazh Payroll'}</div>
+            <div className="text-[11px] text-white/70">{workspace ? 'Kayaazh Payroll' : 'Master Control'}</div>
           </div>
           <button
             onClick={() => setOpen(false)}
@@ -190,7 +192,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="mt-4 hidden rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 md:block">
-          <div className="text-xs font-semibold">Smart Solutions</div>
+          <div className="text-xs font-semibold">Kayaazh Payroll</div>
           <div className="mt-1 text-[11px] text-white/70">
             Selfie attendance · GPS · WhatsApp · Payroll
           </div>

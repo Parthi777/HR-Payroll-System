@@ -28,7 +28,10 @@ class HrFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, HrPayrollApp.PUSH_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            // A white silhouette, as Android requires of a notification icon — the
+            // full-colour launcher icon shows as a grey square there.
+            .setSmallIcon(R.drawable.ic_stat_kayaazh)
+            .setColor(0xFF00A174.toInt())
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

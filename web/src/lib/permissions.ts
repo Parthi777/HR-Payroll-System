@@ -57,6 +57,13 @@ export const ROUTE_ROLES: Record<string, AdminRole[]> = {
  */
 export const OWNER_ONLY_ROLES: AdminRole[] = ['SUPER_ADMIN'];
 
+/**
+ * Who may issue an employee's app password — reset it, or type one into the
+ * edit form. Mirrors CREDENTIAL_ROLES in employee.routes.ts. Adding an
+ * employee stays owner-only, because that also sets their salary.
+ */
+export const CREDENTIAL_ROLES: AdminRole[] = ['SUPER_ADMIN', 'HR_MANAGER'];
+
 /** Claims actions, mirroring approveGuard / payGuard on the server. */
 export const APPROVE_ROLES: AdminRole[] = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN'];
 export const PAY_ROLES: AdminRole[] = ['SUPER_ADMIN', 'PAYROLL_ADMIN', 'CASHIER'];

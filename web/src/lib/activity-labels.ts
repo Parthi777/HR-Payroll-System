@@ -133,6 +133,36 @@ const SHAPES: Record<string, Shape> = {
         m.passwordReset ? 'password reset' : '',
       ),
   },
+  ADMIN_TWO_STEP_ENABLED: {
+    title: 'Two-step verification set up',
+    kind: 'access',
+    tone: 'grant',
+    detail: (m) => text(m.account),
+  },
+  ADMIN_TWO_STEP_LOCKED: {
+    title: 'Two-step locked after wrong codes',
+    kind: 'access',
+    tone: 'revoke',
+    detail: (m) => join(text(m.account), 'someone with the password tried five wrong codes'),
+  },
+  ADMIN_TWO_STEP_RESET: {
+    title: 'Two-step verification reset',
+    kind: 'access',
+    tone: 'revoke',
+    detail: (m) => join(text(m.account), 'sets it up again at next sign-in'),
+  },
+  ADMIN_RECOVERY_CODE_USED: {
+    title: 'Signed in with a recovery code',
+    kind: 'access',
+    tone: 'neutral',
+    detail: (m) => join(text(m.account), `${text(m.left)} codes left`),
+  },
+  ADMIN_RECOVERY_CODES_REGENERATED: {
+    title: 'Recovery codes replaced',
+    kind: 'access',
+    tone: 'neutral',
+    detail: (m) => text(m.account),
+  },
 
   // Attendance
   ATTENDANCE_OVERRIDDEN: {

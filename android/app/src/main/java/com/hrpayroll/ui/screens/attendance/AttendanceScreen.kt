@@ -787,11 +787,14 @@ private fun ManualPunchDialog(
                         Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text(if (selfie != null) "  Selfie captured ✓ — retake" else "  Take selfie")
                     }
+                    // The app's own name, as Settings lists it — read from the
+                    // resource so this cannot drift from the launcher label again.
+                    val appName = androidx.compose.ui.res.stringResource(com.hrpayroll.R.string.app_name)
                     if (permissionDenied) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "The camera is blocked for this app. Turn it on in Settings → Apps → " +
-                                "HR & Payroll → Permissions, then take the selfie again.",
+                                "$appName → Permissions, then take the selfie again.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -806,7 +809,7 @@ private fun ManualPunchDialog(
                             stamping -> "Reading your location…"
                             locationMissing && locationBlocked ->
                                 "The photo has no location on it: this app is not allowed to read your " +
-                                    "location. Allow it in Settings → Apps → HR & Payroll → Permissions → " +
+                                    "location. Allow it in Settings → Apps → $appName → Permissions → " +
                                     "Location, then retake the selfie."
                             locationMissing && locationOff ->
                                 "The photo has no location on it: your phone's location is switched off. " +

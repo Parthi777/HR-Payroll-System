@@ -14,7 +14,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const feature = featureBySlug((await params).slug);
   if (!feature) return { title: 'Not found' };
-  return { title: `${feature.name} — HR & Payroll`, description: feature.summary };
+  return { title: `${feature.name} — Kayaazh Payroll`, description: feature.summary };
 }
 
 export default async function FeaturePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -25,10 +25,10 @@ export default async function FeaturePage({ params }: { params: Promise<{ slug: 
 
   return (
     <main className="min-h-screen bg-background">
-      <section className="brand-gradient relative isolate overflow-hidden px-6 pb-20 pt-8 text-white sm:px-10">
+      <section className="brand-panel relative isolate overflow-hidden px-6 pb-20 pt-8 text-white sm:px-10">
         <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute -left-40 -top-40 h-[30rem] w-[30rem] animate-drift rounded-full bg-white/20 blur-3xl" />
-          <div className="absolute -bottom-48 right-0 h-[26rem] w-[26rem] animate-drift-slow rounded-full bg-indigo-300/20 blur-3xl" />
+          <div className="absolute -left-40 -top-40 h-[30rem] w-[30rem] animate-drift rounded-full bg-brand-500/25 blur-3xl" />
+          <div className="absolute -bottom-48 right-0 h-[26rem] w-[26rem] animate-drift-slow rounded-full bg-gold-500/15 blur-3xl" />
         </div>
 
         <div className="mx-auto max-w-4xl">

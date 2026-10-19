@@ -1,9 +1,11 @@
 /**
- * Two-step verification for the platform console.
+ * Two-step verification, for the two kinds of account that administer data:
+ * platform console staff (`PlatformUser`) and every dealer's Master Control
+ * administrators and managers (`AdminUser`).
  *
- * The console account creates, suspends and reads across every dealer, so a
- * password alone must never be enough to open it — a reused or phished
- * password would otherwise hand over every customer at once. Sign-in is two
+ * Either account can reach salaries, bank details and payroll — the console
+ * across every dealer at once — so a password alone must never be enough: a
+ * reused or phished password would otherwise hand all of it over. Sign-in is two
  * requests: the password earns a short-lived challenge, and only the challenge
  * plus a code from the person's authenticator app earns a console session.
  *
@@ -19,12 +21,45 @@
  *   - recovery codes are stored only as hashes, and each works once.
  */
 import { createHash, randomInt } from 'node:crypto';
-import type { PrismaClient, PlatformUser } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { AppError } from '../../utils/AppError.js';
 import { generateSecret, matchStep, otpauthUri } from './totp.js';
 
+/**
+ * Which table the account lives in. The two carry identical two-step columns;
+ * `AdminUser` rows are tenant-scoped, so for 'admin' every call must run inside
+ * that dealer's `runInTenant`, and the Prisma extension scopes the writes.
+ */
+export type TwoStepAccountKind = 'platform' | 'admin';
+
 /** How the account is labelled in the authenticator app. */
-export const TWO_STEP_ISSUER = 'HR Payroll Platform';
+export const TWO_STEP_ISSUER: Record<TwoStepAccountKind, string> = {
+  platform: 'Kayaazh Payroll Platform',
+  admin: 'Kayaazh Payroll',
+};
+
+/** The two-step columns, as both account tables hold them. */
+interface TwoStepFields {
+  id: string;
+  totpSecret: string | null;
+  totpPendingSecret: string | null;
+  recoveryCodes: string | null;
+  mfaLockedUntil: Date | null;
+}
+
+/**
+ * The account's table, typed as the narrow shape the functions below use. The
+ * two Prisma delegates have the same columns but distinct generated types,
+ * which TypeScript cannot unify on its own.
+ */
+interface TwoStepTable {
+  update(args: { where: { id: string }; data: Record<string, unknown>; select?: Record<string, true> }): Promise<Record<string, unknown>>;
+  updateMany(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<{ count: number }>;
+}
+
+function table(prisma: PrismaClient, kind: TwoStepAccountKind): TwoStepTable {
+  return (kind === 'platform' ? prisma.platformUser : prisma.adminUser) as unknown as TwoStepTable;
+}
 
 export type ChallengePurpose = 'verify' | 'enroll';
 
@@ -68,12 +103,12 @@ export function generateRecoveryCodes(): { codes: string[]; stored: string } {
   return { codes, stored: JSON.stringify(codes.map((c) => hashRecoveryCode(normaliseRecoveryCode(c)!))) };
 }
 
-export function recoveryCodesLeft(staff: Pick<PlatformUser, 'recoveryCodes'>): number {
+export function recoveryCodesLeft(staff: Pick<TwoStepFields, 'recoveryCodes'>): number {
   return staff.recoveryCodes ? (JSON.parse(staff.recoveryCodes) as string[]).length : 0;
 }
 
 /** Refuse outright while the account is locked from too many wrong codes. */
-export function assertNotLocked(staff: Pick<PlatformUser, 'mfaLockedUntil'>, now = new Date()): void {
+export function assertNotLocked(staff: Pick<TwoStepFields, 'mfaLockedUntil'>, now = new Date()): void {
   if (staff.mfaLockedUntil && staff.mfaLockedUntil > now) {
     const minutes = Math.ceil((staff.mfaLockedUntil.getTime() - now.getTime()) / 60_000);
     throw new AppError(
@@ -88,15 +123,19 @@ export function assertNotLocked(staff: Pick<PlatformUser, 'mfaLockedUntil'>, now
  * Returns whether this failure is the one that locked it, so the caller can
  * record the lock in the activity log.
  */
-export async function recordFailure(prisma: PrismaClient, staff: Pick<PlatformUser, 'id'>): Promise<{ locked: boolean }> {
-  const updated = await prisma.platformUser.update({
+export async function recordFailure(
+  prisma: PrismaClient,
+  kind: TwoStepAccountKind,
+  staff: Pick<TwoStepFields, 'id'>,
+): Promise<{ locked: boolean }> {
+  const updated = await table(prisma, kind).update({
     where: { id: staff.id },
     data: { mfaFailures: { increment: 1 } },
     select: { mfaFailures: true },
   });
-  if (updated.mfaFailures < MAX_FAILURES) return { locked: false };
+  if ((updated.mfaFailures as number) < MAX_FAILURES) return { locked: false };
 
-  await prisma.platformUser.update({
+  await table(prisma, kind).update({
     where: { id: staff.id },
     data: { mfaFailures: 0, mfaLockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) },
   });
@@ -111,13 +150,14 @@ export async function recordFailure(prisma: PrismaClient, staff: Pick<PlatformUs
  */
 export async function acceptTotp(
   prisma: PrismaClient,
-  staff: Pick<PlatformUser, 'id'>,
+  kind: TwoStepAccountKind,
+  staff: Pick<TwoStepFields, 'id'>,
   secret: string,
   code: string,
 ): Promise<boolean> {
   const step = matchStep(secret, code.trim());
   if (step === null) return false;
-  const { count } = await prisma.platformUser.updateMany({
+  const { count } = await table(prisma, kind).updateMany({
     where: { id: staff.id, OR: [{ totpLastStep: null }, { totpLastStep: { lt: step } }] },
     data: { totpLastStep: step, mfaFailures: 0, mfaLockedUntil: null },
   });
@@ -133,7 +173,8 @@ export async function acceptTotp(
  */
 export async function consumeRecoveryCode(
   prisma: PrismaClient,
-  staff: Pick<PlatformUser, 'id' | 'recoveryCodes'>,
+  kind: TwoStepAccountKind,
+  staff: Pick<TwoStepFields, 'id' | 'recoveryCodes'>,
   input: string,
 ): Promise<number | null> {
   const normalised = normaliseRecoveryCode(input);
@@ -144,7 +185,7 @@ export async function consumeRecoveryCode(
   if (!hashes.includes(hash)) return null;
 
   const remaining = hashes.filter((h) => h !== hash);
-  const { count } = await prisma.platformUser.updateMany({
+  const { count } = await table(prisma, kind).updateMany({
     where: { id: staff.id, recoveryCodes: staff.recoveryCodes },
     data: { recoveryCodes: JSON.stringify(remaining), mfaFailures: 0, mfaLockedUntil: null },
   });
@@ -163,12 +204,15 @@ export function looksLikeTotp(code: string): boolean {
  */
 export async function startEnrolment(
   prisma: PrismaClient,
-  staff: Pick<PlatformUser, 'id' | 'email' | 'totpSecret'>,
+  kind: TwoStepAccountKind,
+  staff: Pick<TwoStepFields, 'id' | 'totpSecret'>,
+  /** What the authenticator app lists the entry as — an email, plus the workspace for a dealer account. */
+  accountLabel: string,
 ): Promise<{ secret: string; otpauthUri: string }> {
   if (staff.totpSecret) throw new AppError('Two-step verification is already set up — sign in again', 409);
   const secret = generateSecret();
-  await prisma.platformUser.update({ where: { id: staff.id }, data: { totpPendingSecret: secret } });
-  return { secret, otpauthUri: otpauthUri(secret, staff.email, TWO_STEP_ISSUER) };
+  await table(prisma, kind).update({ where: { id: staff.id }, data: { totpPendingSecret: secret } });
+  return { secret, otpauthUri: otpauthUri(secret, accountLabel, TWO_STEP_ISSUER[kind]) };
 }
 
 /**
@@ -180,7 +224,8 @@ export async function startEnrolment(
  */
 export async function completeEnrolment(
   prisma: PrismaClient,
-  staff: Pick<PlatformUser, 'id' | 'totpSecret' | 'totpPendingSecret'>,
+  kind: TwoStepAccountKind,
+  staff: Pick<TwoStepFields, 'id' | 'totpSecret' | 'totpPendingSecret'>,
   code: string,
 ): Promise<string[] | null> {
   if (staff.totpSecret) throw new AppError('Two-step verification is already set up — sign in again', 409);
@@ -191,7 +236,7 @@ export async function completeEnrolment(
   if (step === null) return null;
 
   const { codes, stored } = generateRecoveryCodes();
-  const { count } = await prisma.platformUser.updateMany({
+  const { count } = await table(prisma, kind).updateMany({
     where: { id: staff.id, totpSecret: null, totpPendingSecret: pending },
     data: {
       totpSecret: pending,

@@ -10,26 +10,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 private val LightColors = lightColorScheme(
-    primary = BrandIndigo,
+    primary = BrandGreen,
     onPrimary = Color.White,
-    secondary = BrandViolet,
+    secondary = BrandGreenLight,
     onSecondary = Color.White,
-    primaryContainer = BrandLavender,
-    onPrimaryContainer = BrandIndigoDark,
+    primaryContainer = BrandMint,
+    onPrimaryContainer = BrandGreenDark,
     background = BrandSurface,
-    onBackground = Color(0xFF1C1B2E),
+    onBackground = Ink,
     surface = Color.White,
-    onSurface = Color(0xFF1C1B2E),
-    surfaceVariant = BrandLavender,
+    onSurface = Ink,
+    surfaceVariant = BrandMint,
     error = StatusOff,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF9D90F0),
-    onPrimary = Color(0xFF1C1633),
-    secondary = BrandViolet,
-    background = Color(0xFF13111F),
-    surface = Color(0xFF1C1A2B),
+    primary = Color(0xFF2DBE8E),
+    onPrimary = CharcoalDeep,
+    secondary = BrandGreenLight,
+    background = CharcoalDeep,
+    surface = Color(0xFF1C2328),
     error = StatusOff,
 )
 

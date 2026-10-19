@@ -1,6 +1,8 @@
 package com.hrpayroll.data.remote
 
 import com.hrpayroll.data.remote.dto.AdminLoginResponse
+import com.hrpayroll.data.remote.dto.AdminPasswordStep
+import com.hrpayroll.data.remote.dto.TwoStepSetupDto
 import com.hrpayroll.data.remote.dto.AppVersionResponse
 import com.hrpayroll.data.remote.dto.AttendanceCalendarResponse
 import com.hrpayroll.data.remote.dto.ManagerListResponse
@@ -31,7 +33,7 @@ import com.hrpayroll.data.remote.dto.AttendanceDecisionResponse
 import com.hrpayroll.data.remote.dto.AttendanceApprovalsResponse
 import com.hrpayroll.data.remote.dto.DailyReportResponse
 import com.hrpayroll.data.remote.dto.MeDto
-import com.hrpayroll.data.remote.dto.OtpResponse
+import com.hrpayroll.data.remote.dto.EmployeeLoginResponse
 import com.hrpayroll.data.remote.dto.PayslipListResponse
 import com.hrpayroll.data.remote.dto.PerformanceRowDto
 import com.hrpayroll.data.remote.dto.ScheduleResponse
@@ -53,7 +55,7 @@ import retrofit2.http.Streaming
 interface HrApi {
 
     @POST("auth/employee-login")
-    suspend fun employeeLogin(@Body body: Map<String, String>): OtpResponse
+    suspend fun employeeLogin(@Body body: Map<String, String>): EmployeeLoginResponse
 
     @Multipart
     @POST("attendance/checkin")
@@ -119,8 +121,18 @@ interface HrApi {
     suspend fun mySchedule(): ScheduleResponse
 
     // ── Admin (reports + monitoring) ──
+    /** Password only — returns a challenge for the second step, never a session. */
     @POST("auth/admin/login")
-    suspend fun adminLogin(@Body body: Map<String, String>): AdminLoginResponse
+    suspend fun adminLogin(@Body body: Map<String, String>): AdminPasswordStep
+
+    @POST("auth/admin/two-step/verify")
+    suspend fun adminTwoStepVerify(@Body body: Map<String, String>): AdminLoginResponse
+
+    @POST("auth/admin/two-step/setup")
+    suspend fun adminTwoStepSetup(@Body body: Map<String, String>): TwoStepSetupDto
+
+    @POST("auth/admin/two-step/enable")
+    suspend fun adminTwoStepEnable(@Body body: Map<String, String>): AdminLoginResponse
 
     @GET("admin/dashboard/stats")
     suspend fun dashboardStats(): DashboardStatsDto

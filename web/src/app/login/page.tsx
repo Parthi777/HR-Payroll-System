@@ -1,24 +1,54 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Script from 'next/script';
 import { ShieldCheck, ScanFace, MapPin, Wallet, Loader2, AlertCircle, ArrowRight } from 'lucide-react';
 import { ApiError, api } from '@/lib/api';
 import { PasswordInput } from '@/components/password-input';
+import { BrandLogo } from '@/components/brand-logo';
+import { EnrolForm, RecoveryCodes, RecoveryUsed, VerifyForm, type TwoStepCopy } from '@/components/two-step-forms';
 import { forgetTenant, rememberTenant, tenantSlug } from '@/lib/tenant';
 import { landingFor, type AdminRole } from '@/lib/permissions';
 
+/** A correct password: the second step still to come. */
+interface PasswordStep {
+  step: 'verify' | 'enroll';
+  challenge: string;
+  /** Which workspace the sign-in resolved to. */
+  tenant?: { slug: string; name: string };
+}
+
+/** The session, once the second step is passed. */
 interface LoginResponse {
   token: string;
   role: string;
   email: string;
   name: string;
-  /** Which workspace the sign-in resolved to. */
   tenant?: { slug: string; name: string };
+  recoveryCodesLeft?: number;
+  recoveryCodes?: string[];
 }
 
-const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+type Stage =
+  | { kind: 'password' }
+  | { kind: 'verify'; challenge: string }
+  | { kind: 'enroll'; challenge: string }
+  | { kind: 'recovery-codes'; codes: string[]; next: string }
+  | { kind: 'recovery-used'; left: number; next: string };
+
+/** Master Control's two-step endpoints, under /api/auth/admin. */
+const twoStepPost = <T,>(path: string, body: object) =>
+  api<T>(`/auth/admin${path}`, { method: 'POST', body: JSON.stringify(body) });
+
+const TWO_STEP_COPY: TwoStepCopy = {
+  appName: 'Kayaazh Payroll',
+  enrolReason: 'Every Master Control account signs in with a code from a phone as well as a password.',
+  continueLabel: 'Continue to Master Control',
+  lostPhoneHelp:
+    'If your phone is lost, ask your Super Admin to reset your two-step verification from User Access, then sign in again to set it up on your new phone.',
+  buttonClass:
+    'mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-brand transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60',
+};
 
 /**
  * What this product actually does, in the order someone uses it.
@@ -33,28 +63,14 @@ const FEATURES = [
   { icon: Wallet, title: 'Payroll & payslips', copy: 'Attendance straight through to net salary and the bank file.' },
 ];
 
-// Minimal typing for the Google Identity Services global.
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: { client_id: string; callback: (r: { credential: string }) => void }) => void;
-          renderButton: (el: HTMLElement, options: Record<string, unknown>) => void;
-        };
-      };
-    };
-  }
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const googleDiv = useRef<HTMLDivElement>(null);
-  const [gsiReady, setGsiReady] = useState(false);
+  /** Password first, then a code from the authenticator — enrolling one if there is none yet. */
+  const [stage, setStage] = useState<Stage>({ kind: 'password' });
   const [workspace, setWorkspace] = useState<string | null>(null);
   /** Ask which dealer this is, before asking for a password. */
   const [askWorkspace, setAskWorkspace] = useState(false);
@@ -124,7 +140,11 @@ export default function LoginPage() {
     // names it explicitly instead of relying on the single-tenant fallback.
     if (res.tenant) rememberTenant(res.tenant.slug, res.tenant.name);
     // Not everyone can open the dashboard — a cashier lands on Claims.
-    router.push(landingFor(res.role as AdminRole));
+    const next = landingFor(res.role as AdminRole);
+    // Recovery codes are shown once, before anything else; a used one is worth saying.
+    if (res.recoveryCodes) setStage({ kind: 'recovery-codes', codes: res.recoveryCodes, next });
+    else if (res.recoveryCodesLeft !== undefined) setStage({ kind: 'recovery-used', left: res.recoveryCodesLeft, next });
+    else router.push(next);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -132,12 +152,14 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      finishLogin(
-        await api<LoginResponse>('/auth/admin/login', {
-          method: 'POST',
-          body: JSON.stringify({ email, password }),
-        }),
-      );
+      // A correct password earns a challenge, never a session.
+      const res = await api<PasswordStep>('/auth/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      if (res.tenant) rememberTenant(res.tenant.slug, res.tenant.name);
+      setPassword('');
+      setStage({ kind: res.step, challenge: res.challenge });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed';
       // The server could not tell which dealer this is — ask, rather than
@@ -149,59 +171,29 @@ export default function LoginPage() {
     }
   }
 
-  // Render the official Google button once the GIS script is ready.
-  useEffect(() => {
-    if (!gsiReady || !GOOGLE_CLIENT_ID || !window.google || !googleDiv.current) return;
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: async ({ credential }) => {
-        setError(null);
-        try {
-          finishLogin(
-            await api<LoginResponse>('/auth/admin/google', {
-              method: 'POST',
-              body: JSON.stringify({ credential }),
-            }),
-          );
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Google sign-in failed');
-        }
-      },
-    });
-    window.google.accounts.id.renderButton(googleDiv.current, {
-      theme: 'outline',
-      size: 'large',
-      width: 320,
-      text: 'signin_with',
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gsiReady]);
-
   const field =
     'h-12 w-full rounded-xl border border-border bg-background px-4 text-sm outline-none transition ' +
     'placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-4 focus:ring-ring/15';
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      {GOOGLE_CLIENT_ID && (
-        <Script src="https://accounts.google.com/gsi/client" onReady={() => setGsiReady(true)} />
-      )}
-
       {/*
         Brand panel. Full height beside the form on a desktop, a compact banner
         above it on a phone — the feature list is the first thing to go, since
         someone on a phone is signing in, not being introduced to the product.
+        Charcoal, because the brand's coloured logo belongs on charcoal or
+        white, never on a green field.
       */}
-      <section className="brand-gradient relative isolate overflow-hidden px-6 py-10 text-white lg:w-[46%] lg:px-14 lg:py-16 xl:px-20">
+      <section className="brand-panel relative isolate overflow-hidden px-6 py-10 text-white lg:w-[46%] lg:px-14 lg:py-16 xl:px-20">
         {/* Depth, in two cheap layers: a soft light source top-left, and a fine
             grid that catches it. Both masked so they fade rather than stop. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -left-24 -top-32 h-[28rem] w-[28rem] animate-drift rounded-full bg-white/20 blur-3xl"
+          className="pointer-events-none absolute -left-24 -top-32 h-[28rem] w-[28rem] animate-drift rounded-full bg-brand-500/25 blur-3xl"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -bottom-40 -right-24 h-[26rem] w-[26rem] animate-drift-slow rounded-full bg-indigo-300/20 blur-3xl"
+          className="pointer-events-none absolute -bottom-40 -right-24 h-[26rem] w-[26rem] animate-drift-slow rounded-full bg-gold-500/15 blur-3xl"
         />
         <div
           aria-hidden
@@ -212,15 +204,9 @@ export default function LoginPage() {
         />
 
         <div className="relative flex h-full flex-col">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-              <span aria-hidden className="absolute inset-0 animate-halo rounded-2xl bg-white/20 blur-md" />
-              <ShieldCheck className="relative h-6 w-6" />
-            </div>
-            <div className="leading-tight">
-              <div className="text-sm font-semibold tracking-wide">HR &amp; Payroll</div>
-              <div className="text-xs text-white/75">Master Control</div>
-            </div>
+          <div>
+            <BrandLogo tone="dark" height={52} className="-ml-2 h-[52px] w-auto" />
+            <div className="mt-1 text-xs font-medium uppercase tracking-[0.18em] text-white/60">Master Control</div>
           </div>
 
           <div className="mt-10 lg:mt-auto lg:pt-16" style={rise(120)}>
@@ -251,6 +237,19 @@ export default function LoginPage() {
       {/* Form side */}
       <section className="flex flex-1 items-center justify-center bg-background px-6 py-12 sm:px-10">
         <div className="w-full max-w-[26rem]" style={rise(200)}>
+          {stage.kind === 'verify' && (
+            <VerifyForm<LoginResponse> challenge={stage.challenge} post={twoStepPost} copy={TWO_STEP_COPY} onSignedIn={finishLogin} onRestart={() => setStage({ kind: 'password' })} />
+          )}
+          {stage.kind === 'enroll' && (
+            <EnrolForm<LoginResponse> challenge={stage.challenge} post={twoStepPost} copy={TWO_STEP_COPY} onSignedIn={finishLogin} onRestart={() => setStage({ kind: 'password' })} />
+          )}
+          {stage.kind === 'recovery-codes' && (
+            <RecoveryCodes codes={stage.codes} copy={TWO_STEP_COPY} onDone={() => router.push(stage.next)} />
+          )}
+          {stage.kind === 'recovery-used' && (
+            <RecoveryUsed left={stage.left} copy={TWO_STEP_COPY} onDone={() => router.push(stage.next)} />
+          )}
+          {stage.kind === 'password' && (<>
           {/* The dealer this link belongs to, when the URL names one. Shown
               before the password field so someone on a branded link can tell
               they are in the right workspace first. */}
@@ -270,21 +269,7 @@ export default function LoginPage() {
               : `Sign in to your ${workspace ? 'workspace' : 'admin account'} to continue.`}
           </p>
 
-          {GOOGLE_CLIENT_ID && !askWorkspace && (
-            <>
-              <div ref={googleDiv} className="mt-7 flex justify-center [color-scheme:light]" />
-              <div className="my-6 flex items-center gap-4 text-xs font-medium text-muted-foreground">
-                <div className="h-px flex-1 bg-border" />
-                or continue with email
-                <div className="h-px flex-1 bg-border" />
-              </div>
-            </>
-          )}
-
-          <form
-            onSubmit={askWorkspace ? chooseWorkspace : onSubmit}
-            className={GOOGLE_CLIENT_ID && !askWorkspace ? '' : 'mt-7'}
-          >
+          <form onSubmit={askWorkspace ? chooseWorkspace : onSubmit} className="mt-7">
             {askWorkspace ? (
               <>
                 <label htmlFor="workspace" className="mb-1.5 block text-xs font-semibold text-foreground/80">
@@ -351,7 +336,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl brand-gradient text-sm font-semibold text-white shadow-brand
+              className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-brand
                 transition hover:brightness-110 focus:outline-none focus:ring-4 focus:ring-ring/25
                 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:brightness-100"
             >
@@ -388,8 +373,9 @@ export default function LoginPage() {
 
           <p className="mt-8 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
             <ShieldCheck className="h-3.5 w-3.5" />
-            Access is limited to registered admin accounts.
+            Accounts are issued by your administrator. Sign-in needs your password and a code from your phone.
           </p>
+          </>)}
         </div>
       </section>
     </div>

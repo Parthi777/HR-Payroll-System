@@ -1,5 +1,5 @@
 /** Typed fetch wrapper for the backend API. */
-import { tenantSlug } from './tenant';
+import { clearSession, tenantSlug } from './tenant';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -27,6 +27,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A dealer session the server no longer accepts — expired, disabled, or from
+ * before two-step verification was required. Inside Master Control that means
+ * signing in again, not a screen full of errors. Not on the sign-in page itself
+ * (a wrong password or code is a 401 too), the console or the kiosk, which have
+ * sessions of their own.
+ */
+function endRejectedSession(status: number): void {
+  if (status !== 401 || typeof window === 'undefined' || !localStorage.getItem('token')) return;
+  if (/^\/(login|platform|kiosk)(\/|$)/.test(window.location.pathname)) return;
+  clearSession();
+  window.location.assign('/login');
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
@@ -40,6 +54,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   });
 
   if (!res.ok) {
+    endRejectedSession(res.status);
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.message ?? res.statusText);
   }

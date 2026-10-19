@@ -38,8 +38,10 @@ export interface JwtPayload {
    * PLATFORM_CHALLENGE is the half-way token between a correct platform
    * password and a correct second-step code. It opens no route at all; the
    * only thing it is good for is being handed back to the two-step endpoints.
+   * ADMIN_CHALLENGE is the same half-way token for a dealer's Master Control
+   * account, and carries the tenant it was issued in.
    */
-  scope?: 'TENANT' | 'PLATFORM' | 'PLATFORM_CHALLENGE' | 'KIOSK' | 'INTEGRATION';
+  scope?: 'TENANT' | 'PLATFORM' | 'PLATFORM_CHALLENGE' | 'ADMIN_CHALLENGE' | 'KIOSK' | 'INTEGRATION';
   /** On a challenge: whether the holder is confirming a code or enrolling. */
   purpose?: 'verify' | 'enroll';
   /**
@@ -49,9 +51,10 @@ export interface JwtPayload {
    */
   deviceVersion?: number;
   /**
-   * On a platform token: the second step was passed. Tokens issued before
-   * two-step verification existed lack it, and are refused — so deploying it
-   * ends every password-only session rather than letting them run for 8 hours.
+   * On a platform token, and on a Master Control (admin-role) token or refresh
+   * token: the second step was passed. Tokens issued before two-step
+   * verification existed lack it, and are refused — so deploying it ends every
+   * password-only session rather than letting them run on.
    */
   twoStep?: true;
   branchId?: string;
@@ -116,6 +119,15 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
     // The ERP's token reads claims, people and payroll through its own narrow
     // API and settles claims; it is not a way into Master Control.
     throw AppError.forbidden('An integration token cannot be used to sign in');
+  }
+  if (payload.scope === 'ADMIN_CHALLENGE') {
+    // A correct password with the second step still to come. It opens nothing.
+    throw AppError.unauthorized('Finish signing in — enter the code from your authenticator app');
+  }
+  if (payload.role !== 'EMPLOYEE' && payload.twoStep !== true) {
+    // Every Master Control account signs in with a code as well as a password.
+    // A session from before that was required has no claim and is ended here.
+    throw AppError.unauthorized('Please sign in again — two-step verification is now required');
   }
   if (!payload.tenantId) {
     // Pre-tenancy token. Nothing can be scoped from it, so it must not be honoured.

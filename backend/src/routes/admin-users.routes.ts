@@ -23,7 +23,8 @@ const updateSchema = z.object({
   branchId: z.string().nullable().optional(),
 });
 
-const safeSelect = { id: true, name: true, email: true, role: true, branchId: true, isActive: true, createdAt: true };
+// totpEnabledAt is a date, not a secret: it is how the access page shows who has two-step set up.
+const safeSelect = { id: true, name: true, email: true, role: true, branchId: true, isActive: true, createdAt: true, totpEnabledAt: true };
 
 /**
  * User-access management: admin/manager accounts that can sign in to the web app

@@ -1,22 +1,44 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { OAuth2Client } from 'google-auth-library';
 import { adminLogin, employeeLogin } from '../services/auth/auth.service.js';
-import type { JwtRole } from '../middleware/auth.js';
+import type { JwtPayload, JwtRole } from '../middleware/auth.js';
 import { runInTenant } from '../context/tenant-context.js';
 import { requireTenantFromRequest, resolveTenant, tenantSlugFromRequest } from '../context/tenant-resolve.js';
-import { env } from '../config/env.js';
 import { AppError } from '../utils/AppError.js';
+import { recordAudit } from '../services/audit/audit.service.js';
+import {
+  CHALLENGE_TTL,
+  acceptTotp,
+  assertNotLocked,
+  completeEnrolment,
+  consumeRecoveryCode,
+  looksLikeTotp,
+  recordFailure,
+  startEnrolment,
+  type ChallengePurpose,
+} from '../services/auth/two-step.service.js';
 
 const adminLoginSchema = z.object({ email: z.string().email(), password: z.string().min(6) });
-const employeeLoginSchema = z.object({ phone: z.string().min(10), password: z.string().min(1) });
+/**
+ * `userId` is the employee code or the phone number. `phone` is what app
+ * versions before employee-code sign-in send, and is still accepted so an
+ * installed app keeps working until it updates.
+ */
+const employeeLoginSchema = z
+  .object({ userId: z.string().trim().min(1).optional(), phone: z.string().trim().min(1).optional(), password: z.string().min(1) })
+  .refine((b) => b.userId || b.phone, { message: 'Enter your employee ID or phone number', path: ['userId'] });
+const challengeSchema = z.object({ challenge: z.string().min(1) });
+const challengeCodeSchema = z.object({ challenge: z.string().min(1), code: z.string().trim().min(1).max(32) });
 
 const TOKEN_TTL = '7d'; // employee sessions (field staff shouldn't re-login daily)
 const ADMIN_TOKEN_TTL = '12h'; // admin sessions are more sensitive — expire same day
 const REFRESH_TTL = '30d';
 
 /**
- * Auth routes — phone+password for employees, email+password (or Google) for admins.
+ * Auth routes — employee code (or phone) + password for employees; email +
+ * password + a code from an authenticator app for every Master Control account.
+ * Credentials are only ever issued by an administrator: there is no self sign-up
+ * and no third-party sign-in.
  * Issues JWTs via @fastify/jwt (payload: { sub, role, tenantId, branchId }).
  *
  * Every login resolves the tenant FIRST — from the subdomain, or the
@@ -50,7 +72,7 @@ export async function authRoutes(app: FastifyInstance) {
     async (req) => {
     const { refreshToken } = z.object({ refreshToken: z.string() }).parse(req.body);
 
-    type Refresh = { sub: string; role: JwtRole; tenantId?: string; typ?: string };
+    type Refresh = { sub: string; role: JwtRole; tenantId?: string; typ?: string; twoStep?: true };
     let decoded: Refresh;
     try {
       decoded = app.jwt.refresh.verify<Refresh>(refreshToken);
@@ -96,6 +118,11 @@ export async function authRoutes(app: FastifyInstance) {
         return { token, refreshToken };
       }
 
+      // An admin session is only ever minted after the second step, so a
+      // refresh token without that proof cannot be turned into one either.
+      if (decoded.twoStep !== true) {
+        throw AppError.unauthorized('Please sign in again — two-step verification is now required');
+      }
       const admin = await app.prisma.adminUser.findUnique({ where: { id: decoded.sub } });
       if (!admin || !admin.isActive) throw AppError.unauthorized('Account disabled');
       const token = app.jwt.sign(
@@ -104,6 +131,7 @@ export async function authRoutes(app: FastifyInstance) {
           role: admin.role as JwtRole,
           tenantId: tenant.id,
           branchId: admin.branchId ?? undefined,
+          twoStep: true,
         },
         { expiresIn: ADMIN_TOKEN_TTL },
       );
@@ -114,11 +142,11 @@ export async function authRoutes(app: FastifyInstance) {
   // Password endpoints are brute-forceable — throttle per client IP (needs trustProxy
   // behind Railway's proxy, set in server.ts, or every user shares one bucket).
   app.post('/employee-login', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
-    const { phone, password } = employeeLoginSchema.parse(req.body);
+    const body = employeeLoginSchema.parse(req.body);
     const tenant = await tenantFor(req);
 
     return runInTenant({ tenantId: tenant.id, subjectId: 'login', role: 'EMPLOYEE' }, async () => {
-      const employee = await employeeLogin(app.prisma, phone, password);
+      const employee = await employeeLogin(app.prisma, (body.userId ?? body.phone)!, body.password);
       const role: JwtRole = 'EMPLOYEE';
       const token = app.jwt.sign(
         { sub: employee.id, role, tenantId: tenant.id, branchId: employee.branchId },
@@ -138,73 +166,159 @@ export async function authRoutes(app: FastifyInstance) {
     });
   });
 
-  // "Sign in with Google": the web app sends a Google ID token; we verify it against
-  // our Web OAuth client id, then authorize ONLY emails that already exist as active
-  // AdminUsers *in this workspace*. Google proves identity; our AdminUser table
-  // decides access + role.
-  app.post('/admin/google', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
-    if (!env.GOOGLE_WEB_CLIENT_ID) throw new AppError('Google login is not configured', 503);
-    const { credential } = z.object({ credential: z.string().min(10) }).parse(req.body);
-    const tenant = await tenantFor(req);
-
-    const client = new OAuth2Client(env.GOOGLE_WEB_CLIENT_ID);
-    let email: string | undefined;
-    try {
-      const ticket = await client.verifyIdToken({ idToken: credential, audience: env.GOOGLE_WEB_CLIENT_ID });
-      const payload = ticket.getPayload();
-      if (payload?.email_verified) email = payload.email;
-    } catch {
-      throw AppError.unauthorized('Invalid Google credential');
-    }
-    if (!email) throw AppError.unauthorized('Google account has no verified email');
-
-    return runInTenant({ tenantId: tenant.id, subjectId: 'login', role: 'SUPER_ADMIN' }, async () => {
-      // findFirst, not findUnique: email is unique per tenant now, not globally.
-      const admin = await app.prisma.adminUser.findFirst({ where: { email } });
-      if (!admin || !admin.isActive) {
-        throw new AppError(`${email} is not an authorized admin for ${tenant.name}`, 403);
-      }
-      const token = app.jwt.sign(
-        {
-          sub: admin.id,
-          role: admin.role as JwtRole,
-          tenantId: tenant.id,
-          branchId: admin.branchId ?? undefined,
-        },
-        { expiresIn: ADMIN_TOKEN_TTL },
-      );
-      return {
-        token,
-        role: admin.role,
-        email: admin.email,
-        name: admin.name,
-        tenant: { slug: tenant.slug, name: tenant.name },
-      };
-    });
-  });
-
+  // A correct password is half a sign-in. It earns a challenge — good for
+  // nothing but the second step — and never a session. Which step comes next
+  // depends on whether this person has an authenticator set up yet; an account
+  // that has never enrolled (every account from before this, and every one a
+  // Super Admin creates) is walked through enrolment instead of being let in.
   app.post('/admin/login', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (req) => {
     const { email, password } = adminLoginSchema.parse(req.body);
     const tenant = await tenantFor(req);
 
     return runInTenant({ tenantId: tenant.id, subjectId: 'login', role: 'SUPER_ADMIN' }, async () => {
       const admin = await adminLogin(app.prisma, email, password);
-      const token = app.jwt.sign(
-        {
-          sub: admin.id,
-          role: admin.role as JwtRole,
-          tenantId: tenant.id,
-          branchId: admin.branchId ?? undefined,
-        },
-        { expiresIn: ADMIN_TOKEN_TTL },
-      );
+      const step: ChallengePurpose = admin.totpSecret ? 'verify' : 'enroll';
       return {
-        token,
-        role: admin.role,
-        email: admin.email,
-        name: admin.name,
+        step,
+        challenge: signChallenge(admin.id, tenant.id, step),
         tenant: { slug: tenant.slug, name: tenant.name },
       };
+    });
+  });
+
+  function signChallenge(adminId: string, tenantId: string, purpose: ChallengePurpose): string {
+    return app.jwt.sign(
+      { sub: adminId, role: 'SUPER_ADMIN' as JwtRole, tenantId, scope: 'ADMIN_CHALLENGE' as const, purpose },
+      { expiresIn: CHALLENGE_TTL[purpose] },
+    );
+  }
+
+  /**
+   * Run `fn` as the account a challenge was issued to, inside the tenant it was
+   * issued in. The tenant comes from the challenge, not the request — but a
+   * request that names a workspace must name that one, as everywhere else.
+   */
+  async function withChallenge<T>(
+    req: FastifyRequest,
+    challenge: string,
+    purpose: ChallengePurpose,
+    fn: (ctx: {
+      tenant: { id: string; slug: string; name: string };
+      admin: NonNullable<Awaited<ReturnType<typeof app.prisma.adminUser.findUnique>>>;
+    }) => Promise<T>,
+  ): Promise<T> {
+    const expired = () => AppError.unauthorized('This sign-in has expired — enter your password again');
+    let payload: JwtPayload;
+    try {
+      payload = app.jwt.verify<JwtPayload>(challenge);
+    } catch {
+      throw expired();
+    }
+    if (payload.scope !== 'ADMIN_CHALLENGE' || payload.purpose !== purpose || !payload.tenantId) throw expired();
+
+    const tenant = await app.prisma.tenant.findUnique({
+      where: { id: payload.tenantId },
+      select: { id: true, slug: true, name: true, status: true },
+    });
+    if (!tenant) throw expired();
+    if (tenant.status !== 'ACTIVE') {
+      throw new AppError(`The ${tenant.name} workspace is suspended — please contact support.`, 403);
+    }
+    const named = tenantSlugFromRequest(req);
+    if (named && named !== tenant.slug) throw expired();
+
+    return runInTenant({ tenantId: tenant.id, subjectId: payload.sub, role: 'SUPER_ADMIN' }, async () => {
+      const admin = await app.prisma.adminUser.findUnique({ where: { id: payload.sub } });
+      // Deactivated between the two steps counts as not signing in.
+      if (!admin || !admin.isActive) throw AppError.unauthorized('Invalid email or password');
+      return fn({ tenant, admin });
+    });
+  }
+
+  /** The session — the same token admin sign-in always returned, now proven by a second step. */
+  function signAdminSession(
+    tenant: { id: string; slug: string; name: string },
+    admin: { id: string; role: string; branchId: string | null; email: string; name: string },
+  ) {
+    const token = app.jwt.sign(
+      {
+        sub: admin.id,
+        role: admin.role as JwtRole,
+        tenantId: tenant.id,
+        branchId: admin.branchId ?? undefined,
+        twoStep: true,
+      },
+      { expiresIn: ADMIN_TOKEN_TTL },
+    );
+    return {
+      token,
+      role: admin.role,
+      email: admin.email,
+      name: admin.name,
+      tenant: { slug: tenant.slug, name: tenant.name },
+    };
+  }
+
+  /**
+   * A wrong code: counted against the account, and the lock recorded if this
+   * was the one that tripped it — a lock means someone holds the password.
+   */
+  async function wrongCode(req: FastifyRequest, admin: { id: string; email: string }): Promise<never> {
+    const { locked } = await recordFailure(app.prisma, 'admin', admin);
+    if (locked) {
+      await recordAudit(req, 'ADMIN_TWO_STEP_LOCKED', 'AdminUser', {
+        actorId: admin.id, entityId: admin.id, metadata: { account: admin.email },
+      });
+    }
+    throw AppError.unauthorized('That code is not right');
+  }
+
+  // Second step, for an account that is already enrolled. Takes either the six
+  // digits from the authenticator app or one of the recovery codes.
+  app.post('/admin/two-step/verify', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
+    const { challenge, code } = challengeCodeSchema.parse(req.body);
+    return withChallenge(req, challenge, 'verify', async ({ tenant, admin }) => {
+      if (!admin.totpSecret) throw AppError.unauthorized('This sign-in has expired — enter your password again');
+      assertNotLocked(admin);
+
+      if (looksLikeTotp(code)) {
+        if (!(await acceptTotp(app.prisma, 'admin', admin, admin.totpSecret, code))) return wrongCode(req, admin);
+        return signAdminSession(tenant, admin);
+      }
+
+      const left = await consumeRecoveryCode(app.prisma, 'admin', admin, code);
+      if (left === null) return wrongCode(req, admin);
+      // Worth a line every time: either the phone is lost, or the codes are no
+      // longer only in the owner's hands.
+      await recordAudit(req, 'ADMIN_RECOVERY_CODE_USED', 'AdminUser', {
+        actorId: admin.id, entityId: admin.id, metadata: { account: admin.email, left },
+      });
+      return { ...signAdminSession(tenant, admin), recoveryCodesLeft: left };
+    });
+  });
+
+  // Enrolment, step one: a secret to scan. Replaces any half-finished attempt.
+  app.post('/admin/two-step/setup', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
+    const { challenge } = challengeSchema.parse(req.body);
+    return withChallenge(req, challenge, 'enroll', ({ tenant, admin }) =>
+      startEnrolment(app.prisma, 'admin', admin, `${admin.email} (${tenant.name})`),
+    );
+  });
+
+  // Enrolment, step two: a code from the new authenticator proves the scan
+  // worked. Only then is the secret live, and the recovery codes are returned
+  // — once, never again.
+  app.post('/admin/two-step/enable', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
+    const { challenge, code } = challengeCodeSchema.parse(req.body);
+    return withChallenge(req, challenge, 'enroll', async ({ tenant, admin }) => {
+      assertNotLocked(admin);
+      const recoveryCodes = await completeEnrolment(app.prisma, 'admin', admin, code);
+      if (!recoveryCodes) return wrongCode(req, admin);
+
+      await recordAudit(req, 'ADMIN_TWO_STEP_ENABLED', 'AdminUser', {
+        actorId: admin.id, entityId: admin.id, metadata: { account: admin.email },
+      });
+      return { ...signAdminSession(tenant, admin), recoveryCodes };
     });
   });
 

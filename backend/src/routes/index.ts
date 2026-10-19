@@ -11,6 +11,7 @@ import { masterRoutes } from './master.routes.js';
 import { claimRoutes } from './claim.routes.js';
 import { profileRoutes } from './profile.routes.js';
 import { adminUsersRoutes } from './admin-users.routes.js';
+import { adminTwoStepRoutes } from './admin-two-step.routes.js';
 import { reportsRoutes } from './reports.routes.js';
 import { appRoutes } from './app.routes.js';
 import { notificationRoutes } from './notification.routes.js';
@@ -35,6 +36,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(claimRoutes, { prefix: '/api' });
   await app.register(profileRoutes, { prefix: '/api' });
   await app.register(adminUsersRoutes, { prefix: '/api' });
+  await app.register(adminTwoStepRoutes, { prefix: '/api' });
   await app.register(reportsRoutes, { prefix: '/api' });
   await app.register(appRoutes, { prefix: '/api' });
   await app.register(notificationRoutes, { prefix: '/api' });

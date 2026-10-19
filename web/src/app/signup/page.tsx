@@ -20,7 +20,7 @@ import { SiteFooter } from '@/components/site-footer';
 export default function SignupPage() {
   return (
     <main className="min-h-screen bg-background">
-      <section className="brand-gradient px-6 pb-16 pt-8 text-white sm:px-10">
+      <section className="brand-panel px-6 pb-16 pt-8 text-white sm:px-10">
         <div className="mx-auto max-w-3xl">
           <SiteHeader />
           <div className="py-12">

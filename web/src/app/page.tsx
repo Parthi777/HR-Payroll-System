@@ -44,13 +44,13 @@ export default function HomePage() {
   });
 
   return (
-    <main className="brand-gradient relative isolate min-h-screen overflow-hidden text-white">
+    <main className="brand-panel relative isolate min-h-screen overflow-hidden text-white">
       {/* Ambient depth: two drifting light sources and a masked grid. Decorative
           only, and all of it stops under prefers-reduced-motion. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -left-40 -top-40 h-[34rem] w-[34rem] animate-drift rounded-full bg-white/20 blur-3xl" />
-        <div className="absolute -bottom-52 -right-32 h-[32rem] w-[32rem] animate-drift-slow rounded-full bg-indigo-300/20 blur-3xl" />
-        <div className="absolute left-1/2 top-1/3 h-[24rem] w-[24rem] -translate-x-1/2 animate-drift-slow rounded-full bg-violet-400/10 blur-3xl" />
+        <div className="absolute -left-40 -top-40 h-[34rem] w-[34rem] animate-drift rounded-full bg-brand-500/25 blur-3xl" />
+        <div className="absolute -bottom-52 -right-32 h-[32rem] w-[32rem] animate-drift-slow rounded-full bg-gold-500/15 blur-3xl" />
+        <div className="absolute left-1/2 top-1/3 h-[24rem] w-[24rem] -translate-x-1/2 animate-drift-slow rounded-full bg-brand-300/15 blur-3xl" />
         <div
           className="absolute inset-0 opacity-[0.16]
             [background-image:linear-gradient(to_right,rgba(255,255,255,.7)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,.7)_1px,transparent_1px)]

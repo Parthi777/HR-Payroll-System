@@ -13,6 +13,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { API_URL } from './config';
 import { BUSY_DEALER } from './seed';
+import { dealerToken, signInToDealer } from './dealer-session';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -39,6 +40,7 @@ test.afterAll(async () => {
 });
 
 const DEALER_PASSWORD = 'dealer-owner-password';
+const OWNER = { slug: BUSY_DEALER.slug, email: `owner@${BUSY_DEALER.slug}.test`, password: DEALER_PASSWORD };
 const STAFF = { name: 'Kiosk Staffer', phone: '+919000077777' };
 
 let pairingCode = '';
@@ -47,12 +49,7 @@ let staffCode = '';
 /** Set up what the kiosk needs that the seed does not create: a placed branch and an employee. */
 test('a branch with a location, and someone to punch', async ({ request }) => {
   const headers = { 'x-tenant-slug': BUSY_DEALER.slug, 'X-Forwarded-For': '10.20.0.1' };
-  const login = await request.post(`${API_URL}/auth/admin/login`, {
-    headers,
-    data: { email: `owner@${BUSY_DEALER.slug}.test`, password: DEALER_PASSWORD },
-  });
-  expect(login.status(), await login.text()).toBe(200);
-  const auth = { ...headers, authorization: `Bearer ${(await login.json()).token}` };
+  const auth = { ...headers, authorization: `Bearer ${await dealerToken(request, OWNER, headers['X-Forwarded-For'])}` };
 
   const branches = await (await request.get(`${API_URL}/admin/branches`, { headers: auth })).json();
   const branchId = branches.branches[0].id;
@@ -87,10 +84,7 @@ test('a branch with a location, and someone to punch', async ({ request }) => {
 });
 
 test('an administrator adds a kiosk and gets a pairing code', async ({ page }) => {
-  await page.goto(`/login?tenant=${BUSY_DEALER.slug}`);
-  await page.getByPlaceholder('you@company.com').fill(`owner@${BUSY_DEALER.slug}.test`);
-  await page.locator('input[type="password"]').fill(DEALER_PASSWORD);
-  await page.getByRole('button', { name: /sign in/i }).click();
+  await signInToDealer(page, OWNER);
   await expect(page).toHaveURL(/\/dashboard/);
 
   await page.goto('/kiosks');
@@ -165,10 +159,7 @@ test('someone punches in, then out', async () => {
 });
 
 test('switching the tablet off stops it', async ({ page }) => {
-  await page.goto(`/login?tenant=${BUSY_DEALER.slug}`);
-  await page.getByPlaceholder('you@company.com').fill(`owner@${BUSY_DEALER.slug}.test`);
-  await page.locator('input[type="password"]').fill(DEALER_PASSWORD);
-  await page.getByRole('button', { name: /sign in/i }).click();
+  await signInToDealer(page, OWNER);
   // Wait for the session to land: navigating straight away races it, and the
   // guard bounces back to the sign-in page.
   await expect(page).toHaveURL(/\/dashboard/);

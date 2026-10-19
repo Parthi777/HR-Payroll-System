@@ -121,3 +121,9 @@ does not exist, so the sign-in page loads but sign-in fails with "not found".
   them: an office IP is shared by everyone in the office.
 
 Unset the variable to allow any address again.
+
+---
+
+Dealer administrators sign in with two-step verification too, on the same
+design — see `docs/TWO-STEP.md`. A dealer whose only Super Admin is locked out
+is reset from the console.

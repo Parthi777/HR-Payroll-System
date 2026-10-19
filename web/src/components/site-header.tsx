@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { ShieldCheck, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
+import { BrandLogo } from '@/components/brand-logo';
 import { masterControlHref } from '@/lib/hosts';
 
 /**
- * The public site's header, on the brand gradient.
+ * The public site's header, on the charcoal brand panel.
  *
  * One sign-in link and one way to start — deliberately. Two buttons that both
  * opened the sign-in page made the landing page look like it had two front
@@ -12,15 +13,11 @@ import { masterControlHref } from '@/lib/hosts';
 export function SiteHeader() {
   return (
     <header className="flex items-center justify-between gap-4">
-      <Link href="/" className="flex items-center gap-3">
-        <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-          <span aria-hidden className="absolute inset-0 animate-halo rounded-2xl bg-white/20 blur-md" />
-          <ShieldCheck className="relative h-6 w-6" />
-        </div>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold tracking-wide">HR &amp; Payroll</div>
-          <div className="text-xs text-white/75">Master Control</div>
-        </div>
+      <Link href="/" className="flex items-center gap-3" aria-label="Kayaazh Payroll — home">
+        {/* Reversed lockup on the charcoal hero; the symbol alone on a phone,
+            where the lockup would be narrower than the brand minimum. */}
+        <BrandLogo tone="dark" height={48} className="-ml-2 hidden h-12 w-auto sm:block" />
+        <BrandLogo variant="symbol" height={40} className="h-10 w-10 sm:hidden" />
       </Link>
 
       <nav className="flex items-center gap-1 sm:gap-2">

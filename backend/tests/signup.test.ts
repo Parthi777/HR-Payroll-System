@@ -13,6 +13,7 @@ import { createHmac } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
+import { adminSignIn } from './support/admin-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -165,11 +166,7 @@ suite('signing up without being invited', () => {
     let workspaceId: string;
 
     const dealerLogin = () =>
-      app.inject({
-        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-        headers: { 'x-tenant-slug': APPLICANT.slug },
-        payload: { email: APPLICANT.email, password: DEALER_ADMIN_PASSWORD },
-      });
+      adminSignIn(app, { slug: APPLICANT.slug, email: APPLICANT.email, password: DEALER_ADMIN_PASSWORD }, freshIp);
 
     beforeAll(async () => {
       const signup = await app.prisma.signupRequest.findFirstOrThrow({ where: { email: APPLICANT.email } });

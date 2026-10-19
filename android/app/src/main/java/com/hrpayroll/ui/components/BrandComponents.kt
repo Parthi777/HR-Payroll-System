@@ -32,7 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hrpayroll.ui.theme.BrandGradient
-import com.hrpayroll.ui.theme.BrandIndigo
+import com.hrpayroll.ui.theme.BrandGreen
 import com.hrpayroll.ui.theme.Ink
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -192,7 +192,7 @@ fun SectionCard(
 fun StatTile(
     label: String,
     value: String,
-    accent: Color = BrandIndigo,
+    accent: Color = BrandGreen,
     modifier: Modifier = Modifier,
     caption: String? = null,
 ) {
@@ -308,7 +308,7 @@ fun StatPill(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(50))
-            .background(if (filled) BrandIndigo else Color.White)
+            .background(if (filled) BrandGreen else Color.White)
             .padding(horizontal = 22.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {

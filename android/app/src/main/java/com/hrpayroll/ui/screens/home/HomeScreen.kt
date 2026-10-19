@@ -53,7 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hrpayroll.ui.components.BrandHeader
-import com.hrpayroll.ui.theme.BrandIndigo
+import com.hrpayroll.ui.theme.BrandGreen
 import com.hrpayroll.ui.theme.MoneyGreen
 import com.hrpayroll.ui.theme.StatusOff
 import com.hrpayroll.ui.theme.StatusPresent
@@ -185,7 +185,7 @@ fun HomeScreen(
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.AccessTime, contentDescription = null, tint = BrandIndigo, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.AccessTime, contentDescription = null, tint = BrandGreen, modifier = Modifier.size(18.dp))
                         Text(
                             if (s.monthLabel.isBlank()) "  This month" else "  ${s.monthLabel}",
                             fontWeight = FontWeight.SemiBold,
@@ -211,7 +211,7 @@ fun HomeScreen(
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                     Spacer(Modifier.height(12.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        TodayStat("Today", s.todayWorked, BrandIndigo, Modifier.weight(1f))
+                        TodayStat("Today", s.todayWorked, BrandGreen, Modifier.weight(1f))
                         TodayStat("Late", s.lateDays.toString(), StatusHalf, Modifier.weight(1f))
                         // Punches a manager has not signed off yet. Unpaid until they do,
                         // so an employee should see them rather than find out on payday.
@@ -240,12 +240,12 @@ fun HomeScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Bolt, contentDescription = null, tint = BrandIndigo)
+                        Icon(Icons.Filled.Bolt, contentDescription = null, tint = BrandGreen)
                         Text("  Quick Actions", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     }
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        QuickAction(Icons.Filled.AccessTime, "Clock In/Out", BrandIndigo, Modifier.weight(1f), onCheckIn)
+                        QuickAction(Icons.Filled.AccessTime, "Clock In/Out", BrandGreen, Modifier.weight(1f), onCheckIn)
                         // Only offered when the dealership named someone: a button that
                         // dials nothing is worse than no button. (The one that used to
                         // sit here, "Messages", did exactly nothing and is gone.)
@@ -307,9 +307,9 @@ private fun StatCard(label: String, value: String, caption: String, progress: Fl
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
                 Box(
-                    modifier = Modifier.size(26.dp).clip(CircleShape).background(BrandIndigo.copy(alpha = 0.12f)),
+                    modifier = Modifier.size(26.dp).clip(CircleShape).background(BrandGreen.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Filled.NorthEast, contentDescription = null, tint = BrandIndigo, modifier = Modifier.size(15.dp)) }
+                ) { Icon(Icons.Filled.NorthEast, contentDescription = null, tint = BrandGreen, modifier = Modifier.size(15.dp)) }
             }
             Spacer(Modifier.height(10.dp))
             Text(value, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
@@ -319,8 +319,8 @@ private fun StatCard(label: String, value: String, caption: String, progress: Fl
                 LinearProgressIndicator(
                     progress = { progress.coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                    color = BrandIndigo,
-                    trackColor = BrandIndigo.copy(alpha = 0.15f),
+                    color = BrandGreen,
+                    trackColor = BrandGreen.copy(alpha = 0.15f),
                 )
             }
         }

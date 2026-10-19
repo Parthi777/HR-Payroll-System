@@ -39,7 +39,7 @@ import com.hrpayroll.ui.components.BrandHeader
 import com.hrpayroll.ui.components.AnimatedEntrance
 import com.hrpayroll.ui.components.SectionCard
 import com.hrpayroll.ui.components.TodayStat
-import com.hrpayroll.ui.theme.BrandIndigo
+import com.hrpayroll.ui.theme.BrandGreen
 import com.hrpayroll.ui.theme.MoneyGreen
 import com.hrpayroll.ui.theme.StatusHalf
 import com.hrpayroll.ui.theme.StatusLeave
@@ -94,7 +94,7 @@ fun PayrollScreen(viewModel: PayrollViewModel = hiltViewModel()) {
                             val sum = s.summary
                             val worked = sum?.workedMinutes ?: 0
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                TodayStat("Hours worked", "%d:%02d".format(worked / 60, worked % 60), BrandIndigo, Modifier.weight(1f))
+                                TodayStat("Hours worked", "%d:%02d".format(worked / 60, worked % 60), BrandGreen, Modifier.weight(1f))
                                 TodayStat("Present", (sum?.present ?: 0).toString(), StatusPresent, Modifier.weight(1f))
                                 TodayStat("Absent", (sum?.absent ?: 0).toString(), StatusOff, Modifier.weight(1f))
                             }

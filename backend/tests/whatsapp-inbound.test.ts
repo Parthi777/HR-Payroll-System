@@ -18,6 +18,7 @@ import {
   verifyMetaSignature,
   verifyTwilioSignature,
 } from '../src/services/whatsapp/inbound.service.js';
+import { adminSignIn } from './support/admin-session.js';
 
 const SECRET = 'test-app-secret';
 const sign = (body: string) => `sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`;
@@ -220,11 +221,7 @@ suite('working out whose employee sent a message', () => {
     });
     expect(made.statusCode, made.body).toBe(201);
 
-    const signIn = await app.inject({
-      method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-      headers: { 'x-tenant-slug': slug },
-      payload: { email, password: DEALER_PASSWORD },
-    });
+    const signIn = await adminSignIn(app, { slug, email, password: DEALER_PASSWORD }, freshIp);
     expect(signIn.statusCode, signIn.body).toBe(200);
     tokens[slug] = signIn.json().token;
   }

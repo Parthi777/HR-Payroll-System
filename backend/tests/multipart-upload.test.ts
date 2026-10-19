@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
 import { platformSignIn } from './support/platform-session.js';
+import { adminSignIn } from './support/admin-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -84,10 +85,7 @@ suite('multipart upload', () => {
     });
     expect(made.statusCode, made.body).toBe(201);
 
-    const login = await app.inject({
-      method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-      headers: { 'x-tenant-slug': SLUG }, payload: ADMIN,
-    });
+    const login = await adminSignIn(app, { slug: SLUG, ...ADMIN }, freshIp);
     expect(login.statusCode, login.body).toBe(200);
     adminToken = login.json().token;
   }, 90_000);

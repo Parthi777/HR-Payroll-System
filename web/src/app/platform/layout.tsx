@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LogOut, ShieldCheck } from 'lucide-react';
+import { LogOut } from 'lucide-react';
+import { BrandLogo } from '@/components/brand-logo';
 import { ApiError } from '@/lib/api';
 import { clearPlatformSession, platformApi, platformName, platformToken } from '@/lib/platform-api';
 
@@ -60,13 +61,12 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="flex items-center gap-3 bg-slate-900 px-6 py-4 text-white">
+      <header className="flex items-center gap-3 bg-ink-900 px-6 py-4 text-white">
         <Link href="/platform" className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
+          {/* The parent brand: the console belongs to Kayaazh, not one product. */}
+          <BrandLogo product="parent" variant="symbol" tone="dark" height={32} className="h-8 w-8" />
           <div className="leading-tight">
-            <div className="text-sm font-bold">Platform Console</div>
+            <div className="text-sm font-bold">Kayaazh · Platform Console</div>
             <div className="text-[11px] text-white/60">Dealer onboarding</div>
           </div>
         </Link>

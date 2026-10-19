@@ -4,51 +4,53 @@
 
 @layer base {
   :root {
-    /* Brand: indigo/violet gradient HR & Payroll theme (see UI reference) */
-    --background: 248 40% 98%;
-    --foreground: 248 30% 14%;
+    /* Kayaazh Payroll: brand green #00A174 (primary fills use the deeper
+       #00835E so white text on them passes contrast), charcoal #171C20 ink,
+       yellow #F0B323 as an accent only. See tailwind.config.ts `brand`. */
+    --background: 160 20% 98%;
+    --foreground: 207 16% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 248 30% 14%;
-    --primary: 247 51% 55%;
+    --card-foreground: 207 16% 11%;
+    --primary: 163 100% 26%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 248 45% 96%;
-    --secondary-foreground: 247 40% 30%;
-    --muted: 248 30% 95%;
-    --muted-foreground: 248 12% 48%;
-    --accent: 247 60% 96%;
-    --accent-foreground: 247 51% 45%;
+    --secondary: 158 40% 95%;
+    --secondary-foreground: 163 80% 20%;
+    --muted: 160 15% 95%;
+    --muted-foreground: 205 10% 42%;
+    --accent: 158 45% 95%;
+    --accent-foreground: 163 100% 24%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     --success: 142 71% 40%;
     --warning: 38 92% 50%;
     --info: 199 89% 40%; /* paid / informational (sky) */
-    --border: 248 25% 91%;
-    --input: 248 25% 91%;
-    --ring: 247 51% 55%;
+    --border: 160 14% 90%;
+    --input: 160 14% 90%;
+    --ring: 163 100% 32%;
     --radius: 1rem;
   }
 
   .dark {
-    --background: 248 30% 8%;
-    --foreground: 248 20% 96%;
-    --card: 248 28% 12%;
-    --card-foreground: 248 20% 96%;
-    --primary: 247 60% 68%;
-    --primary-foreground: 248 30% 10%;
-    --secondary: 248 25% 18%;
-    --secondary-foreground: 248 20% 96%;
-    --muted: 248 22% 18%;
-    --muted-foreground: 248 12% 65%;
-    --accent: 248 25% 20%;
-    --accent-foreground: 248 20% 96%;
+    --background: 212 25% 8%;
+    --foreground: 160 15% 95%;
+    --card: 212 20% 12%;
+    --card-foreground: 160 15% 95%;
+    --primary: 162 62% 46%;
+    --primary-foreground: 207 16% 9%;
+    --secondary: 210 16% 17%;
+    --secondary-foreground: 160 15% 95%;
+    --muted: 210 14% 17%;
+    --muted-foreground: 210 8% 64%;
+    --accent: 165 25% 17%;
+    --accent-foreground: 160 15% 95%;
     --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 100%;
     --success: 142 60% 50%;
     --warning: 38 92% 55%;
     --info: 199 80% 55%;
-    --border: 248 20% 22%;
-    --input: 248 20% 22%;
-    --ring: 247 60% 68%;
+    --border: 210 14% 21%;
+    --input: 210 14% 21%;
+    --ring: 162 62% 46%;
   }
 }
 
@@ -109,12 +111,17 @@
 }
 
 @layer components {
-  /* Signature brand gradient used on headers, hero panels and the sidebar */
+  /* Signature brand gradient used on headers, hero panels and the sidebar.
+     White text and white icons only on it — never the coloured logo. */
   .brand-gradient {
-    background-image: linear-gradient(155deg, #6c5ce7 0%, #5b4fc4 45%, #463aa8 100%);
+    background-image: linear-gradient(155deg, #008F67 0%, #00835E 45%, #00654A 100%);
   }
   .brand-gradient-soft {
-    background-image: linear-gradient(155deg, #efeefb 0%, #e7e4fa 100%);
+    background-image: linear-gradient(155deg, #F1FAF6 0%, #E8F7F2 100%);
+  }
+  /* Charcoal panel — where the coloured logo goes (reversed lockup). */
+  .brand-panel {
+    background-image: linear-gradient(160deg, #1C2328 0%, #171C20 45%, #11161D 100%);
   }
   /* Status pills — one palette for attendance, claims and roles.
      Color roles: present/approved = emerald · leave/clarify = indigo ·
@@ -139,6 +146,6 @@
     @apply bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300;
   }
   .card-soft {
-    @apply rounded-2xl border border-border/60 bg-card shadow-[0_8px_30px_-12px_rgba(91,79,196,0.25)];
+    @apply rounded-2xl border border-border/60 bg-card shadow-[0_8px_30px_-12px_rgba(0,131,94,0.22)];
   }
 }

@@ -20,14 +20,38 @@ const config: Config = {
         card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
         success: 'hsl(var(--success))',
         warning: 'hsl(var(--warning))',
+        /*
+         * Kayaazh Payroll green. 500 is the exact brand colour (#00A174) — the
+         * logo, highlights, focus. Anything carrying white text uses 600 or
+         * darker: white on #00A174 is only 3.3:1, on #00835E it is 4.6:1.
+         */
         brand: {
-          DEFAULT: '#5b4fc4',
-          50: '#f1f0fb',
-          100: '#e7e4fa',
-          400: '#8479e0',
-          500: '#6c5ce7',
-          600: '#5b4fc4',
-          700: '#463aa8',
+          DEFAULT: '#00835E',
+          50: '#E8F7F2',
+          100: '#D0EFE5',
+          200: '#A3DFCB',
+          300: '#66C9A8',
+          400: '#2FB58A',
+          500: '#00A174',
+          600: '#00835E',
+          700: '#006A4C',
+          800: '#00523B',
+          900: '#0B3D2E',
+        },
+        /* Brand yellow — an accent only, never behind white text. */
+        gold: {
+          DEFAULT: '#F0B323',
+          50: '#FEF7E6',
+          100: '#FCEBC2',
+          500: '#F0B323',
+          600: '#C98F0B',
+          700: '#9A6C06',
+        },
+        /* Brand charcoal: ink, and the reversed-logo surfaces. */
+        ink: {
+          DEFAULT: '#171C20',
+          900: '#171C20',
+          950: '#11161D',
         },
       },
       borderRadius: {
@@ -38,8 +62,8 @@ const config: Config = {
         sm: 'calc(var(--radius) - 8px)',
       },
       boxShadow: {
-        soft: '0 8px 30px -12px rgba(91,79,196,0.25)',
-        brand: '0 12px 32px -8px rgba(91,79,196,0.45)',
+        soft: '0 8px 30px -12px rgba(0,131,94,0.22)',
+        brand: '0 12px 32px -8px rgba(0,131,94,0.40)',
       },
       /*
        * Ambient motion for the brand surfaces.

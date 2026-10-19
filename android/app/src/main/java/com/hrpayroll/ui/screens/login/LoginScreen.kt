@@ -11,36 +11,41 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.Image
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PersonOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.hrpayroll.ui.theme.BrandGradient
-import com.hrpayroll.ui.theme.BrandIndigo
+import com.hrpayroll.R
+import com.hrpayroll.ui.theme.BrandGreen
+import com.hrpayroll.ui.theme.CharcoalGradient
 
-/** Phone (employee) or email+password (admin) login. Wired to /api/auth via LoginViewModel. */
+/**
+ * Sign-in with credentials an administrator issued: an employee's user ID
+ * (employee code or phone) + password, or an admin's email + password and then
+ * a code from an authenticator app. Wired to /api/auth via LoginViewModel.
+ */
 @Composable
 fun LoginScreen(
     onLoggedIn: (isAdmin: Boolean) -> Unit,
@@ -52,22 +57,28 @@ fun LoginScreen(
         if (state.loggedIn) onLoggedIn(state.isAdmin)
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(BrandGradient)) {
+    // Charcoal, not the green gradient: the brand's coloured logo belongs on
+    // charcoal or white, never on a green field.
+    Box(modifier = Modifier.fillMaxSize().background(CharcoalGradient)) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(28.dp),
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Box(
-                modifier = Modifier.size(96.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.PersonOutline, contentDescription = null, tint = Color.White, modifier = Modifier.size(52.dp))
-            }
-            Spacer(Modifier.height(20.dp))
-            Text("HR & PAYROLL", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-            Text("Smart Solutions for Employees", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
+            Image(
+                painter = painterResource(R.drawable.brand_payroll_lockup_dark),
+                contentDescription = "Kayaazh Payroll",
+                modifier = Modifier.fillMaxWidth(0.8f),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text("Smart Solutions for Employees", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
             Spacer(Modifier.height(28.dp))
+
+            val twoStep = state.twoStep
+            if (twoStep != null) {
+                TwoStepCard(stage = twoStep, state = state, viewModel = viewModel)
+                return@Column
+            }
 
             // Sign-in card — white panel over the gradient, like the reference mockups.
             androidx.compose.material3.Card(
@@ -104,13 +115,17 @@ fun LoginScreen(
                         )
                     } else {
                         OutlinedTextField(
-                            value = state.phone,
-                            onValueChange = viewModel::onPhoneChange,
-                            label = { Text("Phone number") },
-                            placeholder = { Text("+919000000001") },
+                            value = state.userId,
+                            onValueChange = viewModel::onUserIdChange,
+                            label = { Text("Employee ID or phone") },
+                            placeholder = { Text("EMP001 or 9000000001") },
+                            supportingText = { Text("Your login is issued by your HR team") },
                             singleLine = true,
                             shape = MaterialTheme.shapes.small,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Ascii,
+                                capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Characters,
+                            ),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -168,14 +183,14 @@ private fun LoginTab(
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .background(if (selected) BrandIndigo else Color.Transparent)
+            .background(if (selected) BrandGreen else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
-            color = if (selected) Color.White else BrandIndigo,
+            color = if (selected) Color.White else BrandGreen,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -183,7 +198,7 @@ private fun LoginTab(
 }
 
 @Composable
-private fun PrimaryButton(text: String, loading: Boolean, onClick: () -> Unit) {
+internal fun PrimaryButton(text: String, loading: Boolean, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         enabled = !loading,

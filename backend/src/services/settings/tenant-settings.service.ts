@@ -224,7 +224,7 @@ export async function getCompanyProfile(
 ): Promise<{ name: string; address: string }> {
   const policy = await getTenantPolicy(prisma);
   return {
-    name: policy.company.name || process.env.COMPANY_NAME || 'AI HR Payroll',
+    name: policy.company.name || process.env.COMPANY_NAME || 'Kayaazh Payroll',
     address: policy.company.address,
   };
 }

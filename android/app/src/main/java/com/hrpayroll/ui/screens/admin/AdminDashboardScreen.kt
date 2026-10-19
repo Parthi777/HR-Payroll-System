@@ -40,7 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hrpayroll.data.remote.dto.DashboardStatsDto
 import com.hrpayroll.ui.components.BrandHeader
-import com.hrpayroll.ui.theme.BrandIndigo
+import com.hrpayroll.ui.theme.BrandGreen
 import com.hrpayroll.ui.theme.StatusHalf
 import com.hrpayroll.ui.theme.StatusLeave
 import com.hrpayroll.ui.theme.StatusOff
@@ -141,8 +141,8 @@ fun AdminDashboardScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     StatRow(
-                        StatCardData("Total Staff", s.totalStaff.toString(), BrandIndigo),
-                        StatCardData("Branches", s.branches.toString(), BrandIndigo),
+                        StatCardData("Total Staff", s.totalStaff.toString(), BrandGreen),
+                        StatCardData("Branches", s.branches.toString(), BrandGreen),
                     )
                     Spacer(Modifier.height(12.dp))
                     StatRow(
@@ -158,7 +158,7 @@ fun AdminDashboardScreen(
                     Spacer(Modifier.height(12.dp))
                     StatRow(
                         StatCardData("Absent", (d?.absent ?: 0).toString(), StatusOff),
-                        StatCardData("Total Staff", (d?.total ?: 0).toString(), BrandIndigo),
+                        StatCardData("Total Staff", (d?.total ?: 0).toString(), BrandGreen),
                     )
                     if (state.dayLoading) {
                         Spacer(Modifier.height(8.dp))
@@ -181,7 +181,7 @@ fun AdminDashboardScreen(
                     .removePrefix("https://").removePrefix("http://").trimEnd('/')
                     .removeSuffix("/api").removeSuffix("api")
                 Text(
-                    "HR & Payroll · v${com.hrpayroll.BuildConfig.VERSION_NAME}\nServer: $server",
+                    "Kayaazh Payroll · v${com.hrpayroll.BuildConfig.VERSION_NAME}\nServer: $server",
                     fontSize = 11.sp,
                     lineHeight = 16.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,

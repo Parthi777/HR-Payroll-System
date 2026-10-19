@@ -274,7 +274,7 @@ export async function buildMusterReport(
     label: `${MONTHS[month]}-${year}`,
     daysInMonth,
     company: {
-      name: settings?.name || process.env.COMPANY_NAME || 'AI HR Payroll',
+      name: settings?.name || process.env.COMPANY_NAME || 'Kayaazh Payroll',
       address: settings?.address ?? '',
     },
     employees: out,

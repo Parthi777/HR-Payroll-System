@@ -66,6 +66,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Pages only: never static assets, or a host could not load its own scripts.
-  matcher: ['/((?!_next/|favicon.ico|.*\\.[a-zA-Z0-9]+$).*)'],
+  // Pages only: never static assets, or a host could not load its own scripts —
+  // nor the generated icon and social-preview routes, which have no extension
+  // and must load on whichever address the page itself is on.
+  matcher: ['/((?!_next/|favicon.ico|icon|apple-icon|opengraph-image|.*\\.[a-zA-Z0-9]+$).*)'],
 };

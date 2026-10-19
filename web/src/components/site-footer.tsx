@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { FEATURES } from '@/lib/features';
+import { BrandLogo } from '@/components/brand-logo';
 import { masterControlHref } from '@/lib/hosts';
 
 /** The public site's footer. Same links on every page, including the landing. */
@@ -8,7 +9,8 @@ export function SiteFooter() {
     <footer className="border-t border-border bg-secondary/40">
       <div className="mx-auto grid max-w-5xl gap-8 px-6 py-12 sm:grid-cols-3">
         <div>
-          <div className="text-sm font-semibold">HR &amp; Payroll · Master Control</div>
+          <BrandLogo height={44} className="-ml-2 h-11 w-auto dark:hidden" />
+          <BrandLogo tone="dark" height={44} className="-ml-2 hidden h-11 w-auto dark:block" />
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
             Attendance, people and payroll for multi-branch dealerships. Every check-in verified by
             face and location; every salary traced back to the days behind it.

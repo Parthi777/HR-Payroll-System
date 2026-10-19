@@ -52,12 +52,12 @@ export function generateSalaryRegisterPdf(month: number, year: number, rows: Reg
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const brand = '#2F55F4';
+    const brand = '#00835E';
     const left = 28;
-    const companyName = company?.name || process.env.COMPANY_NAME || 'AI HR Payroll';
+    const companyName = company?.name || process.env.COMPANY_NAME || 'Kayaazh Payroll';
 
     const drawHeader = () => {
-      doc.fillColor('#1c1b2e').fontSize(15).font('Helvetica-Bold').text(companyName, left, 22);
+      doc.fillColor('#171C20').fontSize(15).font('Helvetica-Bold').text(companyName, left, 22);
       if (company?.address) doc.fontSize(8).font('Helvetica').fillColor('#777').text(company.address, left, 40);
       doc.fontSize(10).font('Helvetica').fillColor('#555')
         .text(`Salary Register — ${MONTHS[month]} ${year} · ${rows.length} employee(s) · amounts in Rs.`, left, company?.address ? 52 : 46);
@@ -93,8 +93,8 @@ export function generateSalaryRegisterPdf(month: number, year: number, rows: Reg
         doc.addPage();
         y = drawHeader();
       }
-      if (i % 2 === 1) doc.rect(left, y, COLS.reduce((s, c) => s + c.w, 0), rowH).fill('#f3f5fb');
-      doc.fillColor('#1c1b2e').fontSize(7.5);
+      if (i % 2 === 1) doc.rect(left, y, COLS.reduce((s, c) => s + c.w, 0), rowH).fill('#F4F7F6');
+      doc.fillColor('#171C20').fontSize(7.5);
       let x = left;
       for (const c of COLS) {
         doc.text(cell(r, c.key), x + 3, y + 4, { width: c.w - 6, align: c.align ?? 'left', lineBreak: false });
@@ -105,8 +105,8 @@ export function generateSalaryRegisterPdf(month: number, year: number, rows: Reg
 
     // Totals row
     const sum = (f: (r: RegisterRow) => number) => rows.reduce((s, r) => s + f(r), 0);
-    doc.rect(left, y, COLS.reduce((s, c) => s + c.w, 0), rowH + 2).fill('#e8edff');
-    doc.fillColor('#1c1b2e').font('Helvetica-Bold').fontSize(7.5);
+    doc.rect(left, y, COLS.reduce((s, c) => s + c.w, 0), rowH + 2).fill('#E8F7F2');
+    doc.fillColor('#171C20').font('Helvetica-Bold').fontSize(7.5);
     let x = left;
     const totals: Record<string, string> = {
       emp: `TOTAL (${rows.length})`,

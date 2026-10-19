@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto';
 import path from 'path';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, type JwtRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { enrollFace, removeFace, verifyFace, isFaceMatchEnabled } from '../services/ai/face.service.js';
 import { env } from '../config/env.js';
@@ -15,6 +15,13 @@ import { getTenantPolicy } from '../services/settings/tenant-settings.service.js
 import { changed, recordAudit } from '../services/audit/audit.service.js';
 
 const CODE_PAD = 3;
+
+/**
+ * Who may issue an employee's app credentials — a new password by reset, or one
+ * typed into the edit form. Creating the employee (and bulk import) stays with
+ * the Super Admin, because those also set the salary.
+ */
+const CREDENTIAL_ROLES: JwtRole[] = ['SUPER_ADMIN', 'HR_MANAGER'];
 
 /**
  * Next free code in the series — max existing number + 1, zero-padded.
@@ -319,7 +326,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
     // Setting a password through the edit form is the same authority as the
     // reset-password route, and is gated the same way.
-    const mayResetPassword = req.user.role === 'SUPER_ADMIN';
+    const mayResetPassword = CREDENTIAL_ROLES.includes(req.user.role);
     const data = {
       ...rest,
       ...(password && mayResetPassword ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
@@ -343,7 +350,7 @@ export async function employeeRoutes(app: FastifyInstance) {
         ...changed('reportingManagerId', before.reportingManagerId, employee.reportingManagerId),
         ...changed('pfEnabled', before.pfEnabled, employee.pfEnabled),
         ...changed('esiEnabled', before.esiEnabled, employee.esiEnabled),
-        ...(password ? { passwordReset: true } : {}),
+        ...(password && mayResetPassword ? { passwordReset: true } : {}),
       },
     });
     return { employee: safeEmployee(employee) };
@@ -358,7 +365,7 @@ export async function employeeRoutes(app: FastifyInstance) {
    * by looking the old one up — the same job, without a database full of
    * usable credentials.
    */
-  app.post('/:id/reset-password', { preHandler: requireRole('SUPER_ADMIN') }, async (req) => {
+  app.post('/:id/reset-password', { preHandler: requireRole(...CREDENTIAL_ROLES) }, async (req) => {
     const { id } = req.params as { id: string };
     const employee = await app.prisma.employee.findUnique({
       where: { id },

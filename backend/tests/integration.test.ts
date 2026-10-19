@@ -18,6 +18,7 @@ import type { FastifyInstance } from 'fastify';
 import { platformSignIn } from './support/platform-session.js';
 import { runInTenant } from '../src/context/tenant-context.js';
 import { verifySignature } from '../src/services/integration/integration.service.js';
+import { adminSignIn } from './support/admin-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -119,11 +120,7 @@ suite('the accounting ERP connection', () => {
         payload: { slug, name: slug, admin: { name: 'Owner', email: owner, password: DEALER_PASSWORD } },
       });
       expect(made.statusCode, made.body).toBe(201);
-      const signIn = await app.inject({
-        method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-        headers: { 'x-tenant-slug': slug },
-        payload: { email: owner, password: DEALER_PASSWORD },
-      });
+      const signIn = await adminSignIn(app, { slug, email: owner, password: DEALER_PASSWORD }, freshIp);
       expect(signIn.statusCode, signIn.body).toBe(200);
       dealer[slug] = { tenantId: made.json().tenant.id, token: signIn.json().token, employeeId: '' };
 

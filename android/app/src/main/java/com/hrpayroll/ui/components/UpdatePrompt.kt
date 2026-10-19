@@ -77,7 +77,7 @@ class UpdateViewModel @Inject constructor(
         error = null
 
         if (!AppUpdater.canInstall(context)) {
-            error = "Turn on \"Allow from this source\" for HR Payroll, then tap Update again."
+            error = "Turn on \"Allow from this source\" for Kayaazh Payroll, then tap Update again."
             AppUpdater.requestInstallPermission(context)
             return
         }
@@ -150,7 +150,7 @@ fun UpdatePrompt(viewModel: UpdateViewModel = hiltViewModel()) {
         text = {
             Column {
                 Text(
-                    "A new version${v.versionName?.let { " ($it)" } ?: ""} of HR Payroll is ready. " +
+                    "A new version${v.versionName?.let { " ($it)" } ?: ""} of Kayaazh Payroll is ready. " +
                         "Please update to get the latest features and fixes.",
                 )
                 if (downloading) {

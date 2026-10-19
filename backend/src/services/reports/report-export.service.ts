@@ -11,9 +11,9 @@ import PDFDocument from 'pdfkit';
 import type { PayrollReport, PayrollReportRow } from './payroll-report.service.js';
 import type { MusterCode, MusterReport } from './muster-report.service.js';
 
-const BRAND = 'FF2F55F4';
-const BRAND_HEX = '#2F55F4';
-const INK = '#1c1b2e';
+const BRAND = 'FF00835E';
+const BRAND_HEX = '#00835E';
+const INK = '#171C20';
 
 const rs = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 /** Fractional day counts read better as "2.5" / "20" than "20.00". */
@@ -43,7 +43,7 @@ export interface TableExport {
 
 export async function tableXlsx(t: TableExport): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = t.company?.name ?? 'AI HR Payroll';
+  wb.creator = t.company?.name ?? 'Kayaazh Payroll';
   wb.created = new Date();
   const ws = wb.addWorksheet(t.title.slice(0, 30).replace(/[\\/*?:[\]]/g, '-'), {
     views: [{ state: 'frozen', ySplit: 4 }],
@@ -127,7 +127,7 @@ export function tablePdf(t: TableExport): Promise<Buffer> {
         doc.addPage();
         y = drawHeader();
       }
-      if (ri % 2 === 1) doc.rect(left, y, tableW, rowH).fill('#f3f5fb');
+      if (ri % 2 === 1) doc.rect(left, y, tableW, rowH).fill('#F4F7F6');
       doc.fillColor(INK).font('Helvetica').fontSize(7.5);
       let x = left;
       t.columns.forEach((c, i) => {
@@ -227,7 +227,7 @@ export async function payrollReportXlsx(report: PayrollReport): Promise<Buffer> 
     const col = PAYROLL_COLS[i - 1];
     if (col?.money) cell.numFmt = '#,##0.00';
     if (col?.numeric) cell.alignment = { horizontal: 'right' };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EDFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F7F2' } };
   });
 
   ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: lastCol } };
@@ -296,7 +296,7 @@ export function payrollReportPdf(report: PayrollReport): Promise<Buffer> {
         doc.addPage();
         y = drawHeader();
       }
-      if (i % 2 === 1) doc.rect(left, y, tableW, rowH).fill('#f3f5fb');
+      if (i % 2 === 1) doc.rect(left, y, tableW, rowH).fill('#F4F7F6');
       doc.fillColor(INK).font('Helvetica').fontSize(7);
       let x = left;
       for (const c of cols) {
@@ -321,7 +321,7 @@ export function payrollReportPdf(report: PayrollReport): Promise<Buffer> {
       'OT Salary': rs(t.otSalary),
       Payable: rs(t.payable),
     };
-    doc.rect(left, y, tableW, rowH + 2).fill('#e8edff');
+    doc.rect(left, y, tableW, rowH + 2).fill('#E8F7F2');
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(7);
     let x = left;
     for (const c of cols) {
@@ -360,7 +360,7 @@ const CODE_COLOR: Record<string, { pdf: string; argb: string }> = {
   HL: { pdf: '#7c3aed', argb: 'FF7C3AED' },
   LV: { pdf: '#7c3aed', argb: 'FF7C3AED' },
 };
-const codeColor = (c: MusterCode) => CODE_COLOR[c] ?? { pdf: INK, argb: 'FF1C1B2E' };
+const codeColor = (c: MusterCode) => CODE_COLOR[c] ?? { pdf: INK, argb: 'FF171C20' };
 
 const LEGEND =
   'P = Present · HD = Half day (0.5) · A = Absent · WO = Weekly off (Sunday, paid) · WO* = Sunday duty (pays one extra full day) · ' +

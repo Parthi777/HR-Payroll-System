@@ -93,7 +93,7 @@ export default function AttendancePage() {
     ).join('');
     w.document.write(`<!doctype html><html><head><title>Live Attendance ${today}</title>
       <style>body{font-family:Arial,sans-serif;padding:24px;color:#1c1b2e}h2{margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:13px}
-      table{width:100%;border-collapse:collapse;font-size:13px}th{background:#2F55F4;color:#fff;text-align:left;padding:8px}td{padding:8px;border-bottom:1px solid #eee}</style>
+      table{width:100%;border-collapse:collapse;font-size:13px}th{background:#00835E;color:#fff;text-align:left;padding:8px}td{padding:8px;border-bottom:1px solid #eee}</style>
       </head><body><h2>Live Attendance</h2><p>${today} · ${filtered.length} record(s)</p>
       <table><thead><tr><th>Employee</th><th>Branch</th><th>Department</th><th>Designation</th><th>Check-In</th><th>Check-Out</th><th>Status</th></tr></thead>
       <tbody>${body || '<tr><td colspan="7">No records</td></tr>'}</tbody></table>

@@ -2,23 +2,32 @@ package com.hrpayroll.data.repository
 
 import com.hrpayroll.data.local.TokenStore
 import com.hrpayroll.data.remote.HrApi
+import com.hrpayroll.data.remote.dto.AdminLoginResponse
+import com.hrpayroll.data.remote.dto.AdminPasswordStep
+import com.hrpayroll.data.remote.dto.TwoStepSetupDto
 import javax.inject.Inject
 
-/** Phone + password auth. Persists the issued JWT so the OkHttp interceptor can attach it. */
+/**
+ * Sign-in with credentials an administrator issued: an employee's user ID
+ * (employee code or phone) + password, or an admin's email + password + a code
+ * from an authenticator app. Persists the issued JWT so the OkHttp interceptor
+ * can attach it.
+ */
 class AuthRepository @Inject constructor(
     private val api: HrApi,
     private val tokenStore: TokenStore,
 ) {
     /**
-     * Employee login with phone + password (password set by admin at creation).
+     * Employee login with their user ID — employee code (EMP001) or phone
+     * number — and the password the admin issued.
      *
      * `companyCode` names the workspace. It is only needed once — it is stored
      * and sent on every later request — and only at all when more than one
      * workspace exists, since the backend resolves the single one on its own.
      */
-    suspend fun employeeLogin(phone: String, password: String, companyCode: String? = null): Boolean {
+    suspend fun employeeLogin(userId: String, password: String, companyCode: String? = null): Boolean {
         rememberCompanyCode(companyCode)
-        val res = api.employeeLogin(mapOf("phone" to normalizePhone(phone), "password" to password))
+        val res = api.employeeLogin(mapOf("userId" to normalizeUserId(userId), "password" to password))
         val token = res.token
         return if (!token.isNullOrBlank()) {
             tokenStore.saveToken(token)
@@ -34,18 +43,34 @@ class AuthRepository @Inject constructor(
         api.registerFcmToken(mapOf("token" to token))
     }
 
-    /** Admin login (email + password). Stores the JWT + role; reports if a token was issued. */
-    suspend fun adminLogin(email: String, password: String, companyCode: String? = null): Boolean {
+    /**
+     * Admin login, first step: email + password. Returns the challenge for the
+     * second step — no session is stored until a code from the authenticator
+     * app has been accepted.
+     */
+    suspend fun adminLogin(email: String, password: String, companyCode: String? = null): AdminPasswordStep {
         rememberCompanyCode(companyCode)
         val res = api.adminLogin(mapOf("email" to email.trim(), "password" to password))
-        val token = res.token
-        return if (!token.isNullOrBlank()) {
-            tokenStore.saveToken(token, res.role ?: "ADMIN")
-            saveResolvedTenant(res.tenant?.slug, res.tenant?.name)
-            true
-        } else {
-            false
-        }
+        saveResolvedTenant(res.tenant?.slug, res.tenant?.name)
+        return res
+    }
+
+    /** Second step for an enrolled account: the 6-digit code, or a recovery code. */
+    suspend fun verifyTwoStep(challenge: String, code: String): AdminLoginResponse =
+        api.adminTwoStepVerify(mapOf("challenge" to challenge, "code" to code.trim())).also(::storeAdminSession)
+
+    /** First sign-in: a new authenticator secret to add to the phone's app. */
+    suspend fun setupTwoStep(challenge: String): TwoStepSetupDto =
+        api.adminTwoStepSetup(mapOf("challenge" to challenge))
+
+    /** Confirm setup with a code from the new entry; returns the recovery codes, once. */
+    suspend fun enableTwoStep(challenge: String, code: String): AdminLoginResponse =
+        api.adminTwoStepEnable(mapOf("challenge" to challenge, "code" to code.trim())).also(::storeAdminSession)
+
+    private fun storeAdminSession(res: AdminLoginResponse) {
+        val token = res.token ?: throw IllegalStateException("Sign-in did not return a session")
+        tokenStore.saveToken(token, res.role ?: "ADMIN")
+        saveResolvedTenant(res.tenant?.slug, res.tenant?.name)
     }
 
     /** The workspace this device is signed in to, for the app header. */
@@ -71,9 +96,16 @@ class AuthRepository @Inject constructor(
 
     fun logout() = tokenStore.clear()
 
-    /** Normalize to "+91…": strip spaces/dashes, and prefix +91 for a bare 10-digit number. */
-    private fun normalizePhone(phone: String): String {
-        val cleaned = phone.filter { it.isDigit() || it == '+' }
+    /**
+     * A phone number is normalised to "+91…" (spaces and dashes stripped, +91
+     * added to a bare 10-digit number); anything else is an employee code and
+     * goes as typed, trimmed — the server matches codes in either case.
+     */
+    private fun normalizeUserId(userId: String): String {
+        val trimmed = userId.trim()
+        val looksLikePhone = trimmed.isNotEmpty() && trimmed.all { it.isDigit() || it in "+ -" }
+        if (!looksLikePhone) return trimmed
+        val cleaned = trimmed.filter { it.isDigit() || it == '+' }
         return if (!cleaned.startsWith("+") && cleaned.length == 10) "+91$cleaned" else cleaned
     }
 }

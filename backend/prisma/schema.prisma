@@ -473,6 +473,21 @@ model AdminUser {
   branchId     String? // null = all branches (for super admin)
   isActive     Boolean @default(true)
 
+  /// Two-step verification, mandatory for every Master Control account — the
+  /// same design as PlatformUser (see services/auth/two-step.service.ts).
+  /// Base32 TOTP secret; null until the person has enrolled at their next sign-in.
+  totpSecret        String?
+  /// Shown during enrolment, promoted to totpSecret only once a code from it is confirmed.
+  totpPendingSecret String?
+  totpEnabledAt     DateTime?
+  /// The 30-second step of the last accepted code; earlier or equal steps are refused.
+  totpLastStep      Int?
+  /// JSON array of SHA-256 hashes of the unused recovery codes.
+  recoveryCodes     String?
+  /// Wrong codes since the last correct one; five lock the second step.
+  mfaFailures       Int       @default(0)
+  mfaLockedUntil    DateTime?
+
   auditLogs AuditLog[]
 
   createdAt DateTime @default(now())
@@ -741,7 +756,7 @@ model Tenant {
 /// members of any tenant, and AdminUser is itself tenant-scoped.
 ///
 /// Two-step verification is mandatory: a password alone never yields a console
-/// session. See services/platform/two-step.service.ts.
+/// session. See services/auth/two-step.service.ts.
 model PlatformUser {
   id                String    @id @default(cuid())
   email             String    @unique

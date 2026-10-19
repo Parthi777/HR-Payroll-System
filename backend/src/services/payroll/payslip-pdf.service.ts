@@ -33,20 +33,20 @@ export function generatePayslipPdf(p: PayslipPdfData): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const brand = '#5b4fc4';
+    const brand = '#00835E';
     const left = 50;
     const right = 545;
 
     // Header band
     doc.rect(0, 0, doc.page.width, 90).fill(brand);
-    doc.fillColor('#ffffff').fontSize(20).text(p.company?.name || 'AI HR Payroll', left, 22);
-    if (p.company?.address) doc.fontSize(8).fillColor('#d9d5f5').text(p.company.address, left, 46);
-    doc.fontSize(11).fillColor('#e7e4fa').text('Payslip', left, p.company?.address ? 60 : 58);
+    doc.fillColor('#ffffff').fontSize(20).text(p.company?.name || 'Kayaazh Payroll', left, 22);
+    if (p.company?.address) doc.fontSize(8).fillColor('#CCE8DE').text(p.company.address, left, 46);
+    doc.fontSize(11).fillColor('#E8F7F2').text('Payslip', left, p.company?.address ? 60 : 58);
     doc.fillColor('#ffffff').fontSize(13).text(`${MONTHS[p.month] ?? ''} ${p.year}`, 0, 40, { align: 'right', width: right });
 
     // Employee block
     let y = 120;
-    doc.fillColor('#1c1b2e').fontSize(14).text(p.employee.name, left, y);
+    doc.fillColor('#171C20').fontSize(14).text(p.employee.name, left, y);
     doc.fillColor('#666').fontSize(10)
       .text(`Employee Code: ${p.employee.employeeCode}`, left, y + 20)
       .text(`Branch: ${p.employee.branch?.name ?? '-'}`, left, y + 34);
@@ -81,10 +81,10 @@ export function generatePayslipPdf(p: PayslipPdfData): Promise<Buffer> {
       let yy = y;
       doc.fillColor(brand).fontSize(12).text(title, x, yy);
       yy += 22;
-      doc.fontSize(10).fillColor('#1c1b2e');
+      doc.fontSize(10).fillColor('#171C20');
       for (const [label, val] of rows) {
         doc.fillColor('#444').text(label, x, yy, { width: colW - 90 });
-        doc.fillColor('#1c1b2e').text(inr(val), x + colW - 110, yy, { width: 110, align: 'right' });
+        doc.fillColor('#171C20').text(inr(val), x + colW - 110, yy, { width: 110, align: 'right' });
         yy += 18;
       }
       yy += 4;
@@ -100,7 +100,7 @@ export function generatePayslipPdf(p: PayslipPdfData): Promise<Buffer> {
 
     // Net salary band
     const netY = y + 180;
-    doc.rect(left, netY, right - left, 46).fill('#eef0ff');
+    doc.rect(left, netY, right - left, 46).fill('#E8F7F2');
     doc.fillColor(brand).fontSize(13).text('Net Salary', left + 16, netY + 15);
     doc.fillColor(brand).fontSize(16).text(inr(p.netSalary), right - 220, netY + 13, { width: 200, align: 'right' });
 

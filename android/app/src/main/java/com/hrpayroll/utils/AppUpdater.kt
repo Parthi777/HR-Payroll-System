@@ -41,7 +41,7 @@ object AppUpdater {
         clearStaleApks(context, keep = file.name)
 
         val request = DownloadManager.Request(Uri.parse(url))
-            .setTitle("HR Payroll ${versionName.ifBlank { "update" }}")
+            .setTitle("Kayaazh Payroll ${versionName.ifBlank { "update" }}")
             .setDescription("Downloading update…")
             .setMimeType(APK_MIME)
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)

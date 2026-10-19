@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
 import { platformSignIn } from './support/platform-session.js';
+import { adminSignIn } from './support/admin-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -120,11 +121,7 @@ suite('what an employee reads about their month', () => {
     });
     expect(made.statusCode, made.body).toBe(201);
 
-    const signIn = await app.inject({
-      method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-      headers: { 'x-tenant-slug': SLUG },
-      payload: { email: OWNER, password: DEALER_PASSWORD },
-    });
+    const signIn = await adminSignIn(app, { slug: SLUG, email: OWNER, password: DEALER_PASSWORD }, freshIp);
     expect(signIn.statusCode, signIn.body).toBe(200);
     adminToken = signIn.json().token;
 

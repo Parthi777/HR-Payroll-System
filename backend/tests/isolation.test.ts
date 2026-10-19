@@ -15,6 +15,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
+import { adminSignIn } from './support/admin-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -106,10 +107,7 @@ suite('cross-tenant isolation', () => {
       },
     );
 
-    const adminRes = await app.inject({
-      method: 'POST', url: '/api/auth/admin/login', headers: { 'x-tenant-slug': slug },
-      payload: { email: SHARED.email, password: PASSWORD },
-    });
+    const adminRes = await adminSignIn(app, { slug, email: SHARED.email, password: PASSWORD });
     expect(adminRes.statusCode, `admin login for ${slug}: ${adminRes.body}`).toBe(200);
 
     const empRes = await app.inject({
@@ -382,8 +380,11 @@ suite('cross-tenant isolation', () => {
     'GET /api/app/download',
     'GET /api/whatsapp/webhook',
     'POST /api/whatsapp/webhook',
-    'POST /api/auth/admin/google',
     'POST /api/auth/admin/login',
+    // The second step of admin sign-in: reached with a challenge, not a session.
+    'POST /api/auth/admin/two-step/verify',
+    'POST /api/auth/admin/two-step/setup',
+    'POST /api/auth/admin/two-step/enable',
     'POST /api/auth/employee-login',
     'POST /api/auth/refresh-token',
     'GET /api/auth/workspace',
@@ -487,6 +488,11 @@ suite('cross-tenant isolation', () => {
     'PUT /api/admin/leaves/balances/:employeeId',
     'PUT /api/admin/shifts/:id',
     'PUT /api/admin/users/:id',
+    // Two-step after sign-in. The /me pair only ever touches the caller's own
+    // row; the reset is refused across workspaces in tests/sign-in.test.ts.
+    'GET /api/admin/me/two-step',
+    'POST /api/admin/me/recovery-codes',
+    'DELETE /api/admin/users/:id/two-step',
   ];
 
   /**
@@ -516,6 +522,7 @@ suite('cross-tenant isolation', () => {
     'PATCH /api/platform/tenants/:id/status',
     'PATCH /api/platform/tenants/:id/storage',
     'POST /api/platform/tenants/:id/admins',
+    'DELETE /api/platform/tenants/:id/admins/:adminId/two-step',
     'GET /api/platform/signups',
     'PATCH /api/platform/signups/:id/approve',
     'PATCH /api/platform/signups/:id/reject',

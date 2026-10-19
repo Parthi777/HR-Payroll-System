@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
 import { platformSignIn } from './support/platform-session.js';
+import { adminSignIn } from './support/admin-session.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -36,11 +37,7 @@ suite('dealer audit trail', () => {
     const key = `${slug}:${email}`;
     const cached = tokens.get(key);
     if (cached) return cached;
-    const res = await app.inject({
-      method: 'POST', url: '/api/auth/admin/login', remoteAddress: freshIp(),
-      headers: { 'x-tenant-slug': slug },
-      payload: { email, password: DEALER_PASSWORD },
-    });
+    const res = await adminSignIn(app, { slug, email, password: DEALER_PASSWORD }, freshIp);
     expect(res.statusCode, `login ${key}: ${res.body}`).toBe(200);
     tokens.set(key, res.json().token);
     return res.json().token;
@@ -116,16 +113,18 @@ suite('dealer audit trail', () => {
   });
 
   describe('ordinary work writes the trail', () => {
-    it('starts empty — nothing has been done in this workspace yet', async () => {
+    it('starts with nothing but the owner setting up two-step verification', async () => {
+      // Signing in for the first time enrols the owner's authenticator, and
+      // that is itself an access change worth a line.
       const { entries } = await auditLog();
-      expect(entries).toEqual([]);
+      expect(entries.map((e: { action: string }) => e.action)).toEqual(['ADMIN_TWO_STEP_ENABLED']);
     });
 
     it('records a department being created, naming the person who did it', async () => {
       const created = await alpha('POST', '/api/admin/departments', { name: 'Service' });
       expect(created.statusCode, created.body).toBe(200);
 
-      const { entries } = await auditLog();
+      const entries = (await auditLog()).entries.filter((e: { action: string }) => e.action !== 'ADMIN_TWO_STEP_ENABLED');
       expect(entries).toHaveLength(1);
       expect(entries[0].action).toBe('DEPARTMENT_CREATED');
       expect(entries[0].entity).toBe('Department');
@@ -251,9 +250,11 @@ suite('dealer audit trail', () => {
     it('never shows one workspace the other workspace’s trail', async () => {
       const beta = await asDealer('beta-motors', 'owner@beta.test', 'GET', '/api/admin/audit');
       expect(beta.statusCode, beta.body).toBe(200);
-      // Alpha has been busy throughout this suite; Beta has done nothing. If
+      // Alpha has been busy throughout this suite; Beta has only signed in. If
       // scoping were missing, Beta would be reading Alpha's salary changes.
-      expect(beta.json().entries).toEqual([]);
+      const betaEntries = beta.json().entries as { action: string; actorName: string }[];
+      expect(betaEntries.map((e) => e.action)).toEqual(['ADMIN_TWO_STEP_ENABLED']);
+      expect(betaEntries[0].actorName).toBe('Beta Motors Owner');
 
       const alphaEntries = (await auditLog()).entries;
       expect(alphaEntries.length).toBeGreaterThan(0);

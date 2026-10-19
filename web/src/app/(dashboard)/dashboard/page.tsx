@@ -159,8 +159,8 @@ export default function DashboardPage() {
                   <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #eee', fontSize: 13 }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="present" name="Present" fill="#2F55F4" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="total" name="Total staff" fill="#dbe2ff" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="present" name="Present" fill="#00A174" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="total" name="Total staff" fill="#D0EFE5" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}

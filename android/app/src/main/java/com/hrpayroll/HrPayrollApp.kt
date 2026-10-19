@@ -19,7 +19,7 @@ class HrPayrollApp : Application() {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
                 NotificationChannel(
                     PUSH_CHANNEL_ID,
-                    "HR Payroll alerts",
+                    "Kayaazh Payroll alerts",
                     NotificationManager.IMPORTANCE_HIGH,
                 ),
             )

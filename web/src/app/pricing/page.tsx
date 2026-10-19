@@ -6,7 +6,7 @@ import { SiteHeader } from '@/components/site-header';
 import { SiteFooter } from '@/components/site-footer';
 
 export const metadata: Metadata = {
-  title: 'Pricing — HR & Payroll',
+  title: 'Pricing — Kayaazh Payroll',
   description: 'Flat monthly plans by dealership size. Starter, Growth and Enterprise.',
 };
 
@@ -40,10 +40,10 @@ const FAQ = [
 export default function PricingPage() {
   return (
     <main className="min-h-screen bg-background">
-      <section className="brand-gradient relative isolate overflow-hidden px-6 pb-24 pt-8 text-white sm:px-10">
+      <section className="brand-panel relative isolate overflow-hidden px-6 pb-24 pt-8 text-white sm:px-10">
         <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute -left-40 -top-40 h-[30rem] w-[30rem] animate-drift rounded-full bg-white/20 blur-3xl" />
-          <div className="absolute -bottom-52 right-0 h-[26rem] w-[26rem] animate-drift-slow rounded-full bg-indigo-300/20 blur-3xl" />
+          <div className="absolute -left-40 -top-40 h-[30rem] w-[30rem] animate-drift rounded-full bg-brand-500/25 blur-3xl" />
+          <div className="absolute -bottom-52 right-0 h-[26rem] w-[26rem] animate-drift-slow rounded-full bg-gold-500/15 blur-3xl" />
         </div>
         <div className="mx-auto max-w-5xl">
           <SiteHeader />

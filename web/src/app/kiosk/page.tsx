@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, ArrowRight, Check, Clock, Delete, Loader2, LogIn, LogOut, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ArrowRight, Check, Clock, Delete, Loader2, LogIn, LogOut } from 'lucide-react';
+import { BrandLogo } from '@/components/brand-logo';
 import {
   forgetKiosk,
   kioskApi,
@@ -79,12 +80,10 @@ function PairScreen({ onPaired }: { onPaired: (s: KioskSession) => void }) {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white">
+    <main className="flex min-h-screen items-center justify-center bg-ink-950 p-6 text-white">
       <form onSubmit={submit} className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20">
-            <ShieldCheck className="h-7 w-7" />
-          </div>
+          <BrandLogo variant="symbol" height={56} className="h-14 w-14" />
           <h1 className="mt-4 text-xl font-bold">Set up this tablet</h1>
           <p className="mt-1 text-sm text-white/60">
             Create a kiosk in Master Control under Kiosks, then type its pairing code here.

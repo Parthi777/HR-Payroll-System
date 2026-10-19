@@ -11,6 +11,15 @@ Build a **dual-platform AI-powered HR & Payroll System** consisting of:
 1. **Android App** — Employee-facing: selfie attendance, GPS check-in/out, shift view, leave requests, WhatsApp notifications
 2. **Master Control Web App** — Admin-facing: real-time dashboard, geofence management, payroll engine, shift scheduling, employee management, WhatsApp automation
 
+**Product name:** **Kayaazh Payroll** (part of the Kayaazh brand family). The
+brand kit is `Kayaazh Brand Kit/Kayaazh_Brand_Guide.html`; the vector masters
+live in `web/public/brand/` (rendered through `components/brand-logo.tsx`) and,
+converted to vector drawables, in `android/app/src/main/res/` (launcher icon,
+themed icon, notification icon, `brand_payroll_lockup_dark`). Brand green
+`#00A174`, yellow `#F0B323`, charcoal `#171C20`. White text sits on the deeper
+`#00835E` (`brand-600` / `BrandGreen`), never on `#00A174` itself (3.3:1 fails
+contrast). The coloured logo goes only on white or charcoal, never on green.
+
 **Business Context:** Designed for multi-branch operations (e.g., dealership groups, retail chains) where field employees need mobile-first attendance and HR managers need centralized oversight.
 
 ---
@@ -97,7 +106,7 @@ ai-hr-payroll/
 | UI | shadcn/ui + Tailwind CSS |
 | Maps | React Leaflet / Google Maps JS API |
 | Charts | Recharts |
-| Auth | NextAuth.js / JWT |
+| Auth | JWT — email + password + authenticator code (no third-party sign-in) |
 | State | Zustand |
 | Forms | React Hook Form + Zod |
 | Table | TanStack Table v8 |
@@ -125,8 +134,10 @@ ai-hr-payroll/
 ## 📱 Android App — Feature Specification
 
 ### 1. Authentication
-- Phone number + OTP login
-- PIN / Biometric (fingerprint/face unlock) for subsequent logins
+- Employee ID (employee code, e.g. EMP001) or phone number + password. Both are
+  issued by an administrator (Super Admin or HR Manager); there is no self
+  sign-up and no third-party (Google) sign-in
+- Admin mode: email + password + a code from an authenticator app (two-step)
 - JWT token stored in EncryptedSharedPreferences
 - Auto-logout on token expiry
 
@@ -440,10 +451,15 @@ model WhatsAppLog {
 
 ### Auth
 ```
-POST   /api/auth/send-otp
-POST   /api/auth/verify-otp
+POST   /api/auth/employee-login            # { userId: employee code or phone, password } (legacy { phone } still accepted)
 POST   /api/auth/refresh-token
-POST   /api/auth/admin/login
+POST   /api/auth/admin/login               # Password only → { step: verify|enroll, challenge }, never a session
+POST   /api/auth/admin/two-step/verify     # challenge + 6-digit code or recovery code → session
+POST   /api/auth/admin/two-step/setup      # challenge → new secret + otpauth:// URI (first sign-in)
+POST   /api/auth/admin/two-step/enable     # challenge + code → session + 10 recovery codes (shown once)
+GET    /api/admin/me/two-step              # Your status: enabledAt, recoveryCodesLeft
+POST   /api/admin/me/recovery-codes        # Replace your codes (needs a live code)
+DELETE /api/admin/users/:id/two-step       # SUPER_ADMIN clears a colleague's (lost phone); never your own
 GET    /api/auth/workspace                 # Must the sign-in page ask which workspace? { required }
 GET    /api/auth/workspace/:slug           # A workspace's name, for the sign-in page's badge
 ```
@@ -529,6 +545,7 @@ DELETE /api/admin/employees/:id
 POST   /api/admin/employees/:id/enroll-face    # Upload face template
 DELETE /api/admin/employees/:id/face           # Delete the enrolled face template
 POST   /api/admin/employees/bulk-import        # Excel upload
+POST   /api/admin/employees/:id/reset-password # New app password, shown once (SUPER_ADMIN, HR_MANAGER)
 ```
 
 ### Leaves
@@ -899,7 +916,8 @@ instance send nothing. Off per dealer in Settings, or platform-wide with
   the limits actually configured, per 10 minutes:
   admin sign-in 5, platform sign-in 5, platform password change 5,
   platform two-step verify / setup / enable 10 each, platform recovery-code
-  replacement 5, employee sign-in 10, Google sign-in 10, workspace lookup 20,
+  replacement 5, admin two-step verify / setup / enable 10 each, admin
+  recovery-code replacement 5, employee sign-in 10, workspace lookup 20,
   refresh token 30, webhook handshake 30, APK download 30.
 - **Platform console sign-in is two-step, always.** The password returns a
   challenge (`scope: PLATFORM_CHALLENGE`) that opens no route; only the
@@ -907,13 +925,25 @@ instance send nothing. Off per dealer in Settings, or platform-wide with
   refuses any token without `twoStep: true`. First sign-in enrols. A code is
   accepted once per 30-second step; five wrong codes lock the account's second
   step for 15 minutes. Recovery codes are stored as SHA-256 hashes. Logic in
-  `services/platform/two-step.service.ts`; reset a lost phone from Team, or
+  `services/auth/two-step.service.ts`; reset a lost phone from Team, or
   `scripts/reset-platform-two-step.ts`. Optional extras, off until configured:
   `PLATFORM_ALLOWED_IPS` (404 for other addresses) and `NEXT_PUBLIC_PLATFORM_HOST`
   / `NEXT_PUBLIC_ADMIN_HOST` (console and Master Control on their own hostnames,
   via `web/src/proxy.ts` — see `docs/HOSTNAMES.md`).
   The landing page deliberately does not link to the console. See
   `docs/PLATFORM-CONSOLE-ACCESS.md`.
+- **Master Control sign-in is two-step, always** — every `AdminUser` role, on
+  the web and in the Android admin mode. The same design and the same code as
+  the console (`services/auth/two-step.service.ts`, account kind `'admin'`):
+  the password returns an `ADMIN_CHALLENGE` that opens nothing, first sign-in
+  enrols, one use per step, five wrong codes lock for 15 minutes, hashed
+  recovery codes. `authenticate()` refuses any admin-role token without
+  `twoStep: true`, and `/refresh-token` refuses such a refresh token, so
+  deploying it signed every admin out once. A lost phone is reset by another
+  Super Admin from User Access; a dealer whose only Super Admin is locked out is
+  reset from the console (`DELETE /api/platform/tenants/:id/admins/:adminId/two-step`).
+  Employees sign in with an employee code or phone + password only. See
+  `docs/TWO-STEP.md`.
 - **HTTPS only** for all API communication
 - **No certificate pinning.** The API is on a platform-managed domain whose
   certificate rotates; a pin that outlives its certificate bricks every
