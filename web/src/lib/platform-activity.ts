@@ -77,6 +77,12 @@ const SHAPES: Record<string, Shape> = {
     tone: 'grant',
     detail: (m) => join(text(m.email), ROLE_LABEL[text(m.role)] ?? text(m.role)),
   },
+  TENANT_ADMIN_PASSWORD_RESET: {
+    title: 'Dealer login password reset',
+    kind: 'access',
+    tone: 'revoke',
+    detail: (m) => join(text(m.email), 'new password issued'),
+  },
   TENANT_ADMIN_TWO_STEP_RESET: {
     title: 'Dealer login two-step reset',
     kind: 'access',

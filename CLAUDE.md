@@ -646,6 +646,8 @@ GET    /api/platform/signups?status=&limit=
 PATCH  /api/platform/signups/:id/approve   # Provisions suspended + starts the subscription
 PATCH  /api/platform/signups/:id/reject
 PATCH  /api/platform/subscriptions/:workspaceId/mark-paid   # Payment taken outside the gateway
+PATCH  /api/platform/tenants/:id/admins/:adminId/password  # New password for a dealer login nobody there can reset
+DELETE /api/platform/tenants/:id/admins/:adminId/two-step  # Same, for a lost authenticator
 ```
 Read on the web at `/activity`. Rows are tenant-owned, so the Prisma extension
 scopes them; one dealer can never read another's (pinned by `isolation.test.ts`

@@ -122,6 +122,8 @@ export interface DealerAdmin {
   role: string;
   isActive: boolean;
   createdAt: string;
+  /** Null until they have set up their authenticator. */
+  totpEnabledAt: string | null;
 }
 
 export interface PlatformStaff {

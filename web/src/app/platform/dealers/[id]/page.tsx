@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Check, Copy, Loader2, Pause, Pencil, Play, Plus, UserPlus,
+  ArrowLeft, Check, Copy, KeyRound, Loader2, Pause, Pencil, Play, Plus, ShieldOff, UserPlus,
 } from 'lucide-react';
 import {
   DEALER_ROLES, platformApi, suggestPassword,
@@ -22,13 +22,17 @@ interface DealerDetail {
 
 const ROLE_LABEL = Object.fromEntries(DEALER_ROLES.map((r) => [r.value, r.label]));
 
+/** Credentials to hand over: a new login, or a new password for an existing one. */
+type Issued = NewDealerAdmin & { password: string; loginUrl: string; reset?: boolean };
+
 export default function DealerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<DealerDetail | null>(null);
   const [audit, setAudit] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [addingAdmin, setAddingAdmin] = useState(false);
-  const [issued, setIssued] = useState<(NewDealerAdmin & { password: string; loginUrl: string }) | null>(null);
+  const [issued, setIssued] = useState<Issued | null>(null);
+  const [busyAdmin, setBusyAdmin] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +62,44 @@ export default function DealerDetailPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change status');
+    }
+  }
+
+  /**
+   * A new password for a dealer login that cannot sign in, shown once. For the
+   * admin with nobody at the dealer to reset it for them — including one who
+   * only ever signed in with Google, which no longer exists.
+   */
+  async function resetPassword(admin: DealerAdmin) {
+    if (!data) return;
+    if (!confirm(
+      `Give ${admin.name} (${admin.email}) a new password? Their current one stops working at once. You'll see the new one once, to hand over.`,
+    )) return;
+    const password = suggestPassword();
+    setBusyAdmin(admin.id);
+    try {
+      await platformApi.patch(`/tenants/${id}/admins/${admin.id}/password`, { password });
+      setAddingAdmin(false);
+      setIssued({ ...admin, password, loginUrl: data.tenant.loginUrl, reset: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reset this password');
+    } finally {
+      setBusyAdmin(null);
+    }
+  }
+
+  async function resetTwoStep(admin: DealerAdmin) {
+    if (!confirm(
+      `Reset two-step for ${admin.name}? Their authenticator and recovery codes stop working; they set it up again with a new phone at their next sign-in.`,
+    )) return;
+    setBusyAdmin(admin.id);
+    try {
+      await platformApi.del(`/tenants/${id}/admins/${admin.id}/two-step`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reset two-step');
+    } finally {
+      setBusyAdmin(null);
     }
   }
 
@@ -156,13 +198,15 @@ export default function DealerDetailPage() {
         )}
 
         <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-          <table className="w-full min-w-[520px] text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Two-step</th>
+                <th className="px-4 py-3 text-right">Can&rsquo;t sign in?</th>
               </tr>
             </thead>
             <tbody>
@@ -175,6 +219,31 @@ export default function DealerDetailPage() {
                     <span className={a.isActive ? 'text-emerald-600' : 'text-muted-foreground'}>
                       {a.isActive ? 'Active' : 'Disabled'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={a.totpEnabledAt ? 'text-emerald-600' : 'text-muted-foreground'}>
+                      {a.totpEnabledAt ? 'Set up' : 'At next sign-in'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => resetPassword(a)}
+                        disabled={busyAdmin === a.id}
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-60"
+                      >
+                        <KeyRound className="h-3.5 w-3.5" /> New password
+                      </button>
+                      {a.totpEnabledAt && (
+                        <button
+                          onClick={() => resetTwoStep(a)}
+                          disabled={busyAdmin === a.id}
+                          className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-60"
+                        >
+                          <ShieldOff className="h-3.5 w-3.5" /> Reset two-step
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -555,7 +624,7 @@ function CredentialsHandover({
   issued,
   onDone,
 }: {
-  issued: NewDealerAdmin & { password: string; loginUrl: string };
+  issued: Issued;
   onDone: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -564,7 +633,7 @@ function CredentialsHandover({
   return (
     <div className="space-y-4 rounded-2xl border-2 border-emerald-500/40 bg-emerald-50/50 p-6">
       <div>
-        <h3 className="font-semibold text-emerald-900">Login created</h3>
+        <h3 className="font-semibold text-emerald-900">{issued.reset ? 'New password issued' : 'Login created'}</h3>
         <p className="text-sm text-emerald-800">
           Hand these over now. <strong>The password is not stored anywhere</strong> — after you
           leave this screen it can only be reset, not shown again.

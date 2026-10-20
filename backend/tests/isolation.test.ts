@@ -529,6 +529,7 @@ suite('cross-tenant isolation', () => {
     'PATCH /api/platform/tenants/:id/storage',
     'POST /api/platform/tenants/:id/admins',
     'DELETE /api/platform/tenants/:id/admins/:adminId/two-step',
+    'PATCH /api/platform/tenants/:id/admins/:adminId/password',
     'GET /api/platform/signups',
     'PATCH /api/platform/signups/:id/approve',
     'PATCH /api/platform/signups/:id/reject',

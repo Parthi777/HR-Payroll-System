@@ -710,6 +710,31 @@ export async function platformRoutes(app: FastifyInstance) {
   });
 
   /**
+   * Give a dealer administrator a new password. Same reason as above: the
+   * dealer's Super Admins reset each other from User Access, but one who cannot
+   * sign in at all — a lone Super Admin who forgot it, or who only ever signed
+   * in with Google before that was removed — has nobody there to do it.
+   *
+   * The console makes the password up and shows it once; it is never recorded,
+   * only that it was replaced. Two-step is left alone: an admin who still has
+   * their phone keeps it, and one who does not is cleared by the route above.
+   */
+  app.patch('/platform/tenants/:id/admins/:adminId/password', { preHandler: requirePlatform }, async (req) => {
+    const { id, adminId } = req.params as { id: string; adminId: string };
+    const { password } = z.object({ password: z.string().min(12) }).parse(req.body);
+    const admin = await app.prisma.adminUser.findFirst({ where: { id: adminId, tenantId: id }, select: { id: true, email: true } });
+    if (!admin) throw AppError.notFound('Admin');
+
+    await app.prisma.adminUser.update({
+      where: { id: admin.id },
+      // A locked second step would still stand between them and their new password.
+      data: { passwordHash: await bcrypt.hash(password, 12), mfaFailures: 0, mfaLockedUntil: null },
+    });
+    await audit(req, 'TENANT_ADMIN_PASSWORD_RESET', { targetTenantId: id, targetId: admin.id, metadata: { email: admin.email } });
+    return { ok: true };
+  });
+
+  /**
    * Suspend or resume a dealer. Suspension is immediate: `authenticate()` checks
    * tenant status on every request, so existing sessions stop working rather
    * than lingering until their tokens expire.

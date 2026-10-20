@@ -203,6 +203,33 @@ suite('dealer onboarding', () => {
       expect(check.statusCode, check.body).toBe(200);
     });
 
+    it('gives a dealer login a new password, and only within that dealer', async () => {
+      const list = await asPlatform('GET', '/api/platform/tenants');
+      const tenants = list.json().tenants as { id: string; slug: string }[];
+      const id = tenants.find((t) => t.slug === 'abc-motors')!.id;
+      const hr = (await asPlatform('GET', `/api/platform/tenants/${id}`)).json().admins
+        .find((a: { email: string }) => a.email === 'hr@abc.test');
+
+      expect((await asPlatform('PATCH', `/api/platform/tenants/${id}/admins/${hr.id}/password`, { password: 'short' })).statusCode).toBe(422);
+
+      const NEW_PASSWORD = 'reset-by-platform-1';
+      const res = await asPlatform('PATCH', `/api/platform/tenants/${id}/admins/${hr.id}/password`, { password: NEW_PASSWORD });
+      expect(res.statusCode, res.body).toBe(200);
+
+      expect((await adminSignIn(app, { slug: 'abc-motors', email: 'hr@abc.test', password: DEALER_ADMIN_PASSWORD }, freshIp)).statusCode).toBe(401);
+      const signedIn = await adminSignIn(app, { slug: 'abc-motors', email: 'hr@abc.test', password: NEW_PASSWORD }, freshIp);
+      expect(signedIn.statusCode, signedIn.body).toBe(200);
+
+      // The password is never written to the activity log — only that it changed.
+      const log = (await asPlatform('GET', `/api/platform/audit?tenantId=${id}`)).json().entries as { action: string; metadata: unknown }[];
+      const entry = log.find((e) => e.action === 'TENANT_ADMIN_PASSWORD_RESET');
+      expect(entry).toBeDefined();
+      expect(JSON.stringify(entry)).not.toContain(NEW_PASSWORD);
+
+      // Put it back for the suites below, which sign in with the original.
+      await asPlatform('PATCH', `/api/platform/tenants/${id}/admins/${hr.id}/password`, { password: DEALER_ADMIN_PASSWORD });
+    });
+
     it('the same email can administer two different dealers', async () => {
       const res = await asPlatform('POST', '/api/platform/tenants', {
         slug: 'xyz-autos', name: 'XYZ Autos',
@@ -215,6 +242,16 @@ suite('dealer onboarding', () => {
       expect(res2.statusCode, res2.body).toBe(200);
       expect(res2.json().tenant.name).toBe('XYZ Autos');
       tokens.set('xyz-autos:owner@abc.test', res2.json().token);
+    });
+
+    it('refuses a password reset for a login that belongs to another dealer', async () => {
+      const tenants = (await asPlatform('GET', '/api/platform/tenants')).json().tenants as { id: string; slug: string }[];
+      const abc = tenants.find((t) => t.slug === 'abc-motors')!.id;
+      const other = tenants.find((t) => t.slug === 'xyz-autos');
+      const hr = (await asPlatform('GET', `/api/platform/tenants/${abc}`)).json().admins
+        .find((a: { email: string }) => a.email === 'hr@abc.test');
+      const res = await asPlatform('PATCH', `/api/platform/tenants/${other!.id}/admins/${hr.id}/password`, { password: 'cross-dealer-pass-1' });
+      expect(res.statusCode).toBe(404);
     });
   });
 
