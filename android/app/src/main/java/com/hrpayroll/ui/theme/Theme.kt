@@ -21,6 +21,17 @@ private val LightColors = lightColorScheme(
     surface = Color.White,
     onSurface = Ink,
     surfaceVariant = BrandMint,
+    // Selected filter chips, tonal buttons and badges: brand mint and green,
+    // not Material's default lavender.
+    secondaryContainer = BrandMint,
+    onSecondaryContainer = BrandGreenDark,
+    tertiary = BrandGold,
+    onTertiary = Ink,
+    tertiaryContainer = Color(0xFFFDF1D6),
+    onTertiaryContainer = Color(0xFF6B4A00),
+    // Field and divider outlines: a soft green-grey rather than Material's dark grey.
+    outline = Color(0xFFCFDBD5),
+    outlineVariant = CardBorder,
     error = StatusOff,
 )
 
@@ -34,7 +45,9 @@ private val DarkColors = darkColorScheme(
 )
 
 private val BrandShapes = Shapes(
-    small = RoundedCornerShape(12.dp),
+    // Text fields and menus use extraSmall: rounded enough to feel modern.
+    extraSmall = RoundedCornerShape(14.dp),
+    small = RoundedCornerShape(14.dp),
     medium = RoundedCornerShape(20.dp),
     large = RoundedCornerShape(28.dp),
 )

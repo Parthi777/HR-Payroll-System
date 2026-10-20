@@ -42,6 +42,8 @@ export interface PayrollPolicy {
   lateShiftAt: number;
   payDay: number;
   payDayLate: number;
+  /** Employees see payslips and their monthly statement in the app. */
+  visibleToEmployees: boolean;
 }
 
 /** Where this tenant's faces, selfies and claim files live. */
@@ -107,6 +109,7 @@ export function defaultPolicy(): TenantPolicy {
       lateShiftAt: Number(process.env.PAYROLL_LATE_SHIFT_AT ?? 5),
       payDay: Number(process.env.PAYROLL_PAY_DAY ?? 5),
       payDayLate: Number(process.env.PAYROLL_PAY_DAY_LATE ?? 8),
+      visibleToEmployees: false,
     },
     resources: {
       faceMatchThreshold: env.FACE_MATCH_THRESHOLD,
@@ -130,7 +133,7 @@ type SettingsRow = {
   defaultPayrollBasis: string;
   monthDivisor: number; clPerYear: number; otHoursPerDay: number;
   payrollLateShiftAt: number;
-  payrollPayDay: number; payrollPayDayLate: number;
+  payrollPayDay: number; payrollPayDayLate: number; payrollVisibleToEmployees: boolean;
   faceMatchThreshold: number; rekognitionCollectionId: string | null; s3Prefix: string;
   driveParentFolderId: string | null; driveShareWith: string | null;
   whatsappMode: string; whatsappConfig: string | null;
@@ -161,6 +164,7 @@ function toPolicy(row: SettingsRow): TenantPolicy {
       lateShiftAt: row.payrollLateShiftAt,
       payDay: row.payrollPayDay,
       payDayLate: row.payrollPayDayLate,
+      visibleToEmployees: row.payrollVisibleToEmployees,
     },
     resources: {
       faceMatchThreshold: row.faceMatchThreshold,

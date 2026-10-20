@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.claim
 
+import com.hrpayroll.utils.rupees
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -104,6 +105,8 @@ fun MyClaimsScreen(
     }
 
     Scaffold(
+        // The app's own scaffold already sits below the status bar.
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onNew,
@@ -181,9 +184,10 @@ private fun ClaimCard(
     onDownload: () -> Unit,
 ) {
     Card(
-        shape = MaterialTheme.shapes.medium,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.hrpayroll.ui.theme.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.clickable(onClick = onOpen),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
@@ -205,7 +209,7 @@ private fun ClaimCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(claim.title ?: "Voucher", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        "₹${claim.amount ?: 0.0} · ${shortDate(claim.createdAt)}",
+                        "${rupees(claim.amount)} · ${shortDate(claim.createdAt)}",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -278,7 +282,7 @@ private fun ClaimDetailDialog(
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 DetailRow("Type", claim.typeLabel ?: claimTypeLabel(claim.type))
-                DetailRow("Amount", "₹${claim.amount ?: 0.0}")
+                DetailRow("Amount", rupees(claim.amount))
                 DetailRow("Status", label(claim.status))
                 DetailRow("Submitted", fullDate(claim.createdAt))
                 DetailRow(

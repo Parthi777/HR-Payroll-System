@@ -116,6 +116,18 @@ interface HrApi {
     @GET("payroll/my-payslips")
     suspend fun myPayslips(): PayslipListResponse
 
+    @Streaming
+    @GET("payroll/my-payslips/{id}/pdf")
+    suspend fun payslipPdf(@Path("id") id: String): ResponseBody
+
+    /** Every punch and the month's leave, as a PDF. */
+    @Streaming
+    @GET("attendance/my-statement")
+    suspend fun statementPdf(
+        @retrofit2.http.Query("month") month: Int,
+        @retrofit2.http.Query("year") year: Int,
+    ): ResponseBody
+
     // Shift schedule
     @GET("shifts/my-schedule")
     suspend fun mySchedule(): ScheduleResponse
@@ -165,6 +177,13 @@ interface HrApi {
         @retrofit2.http.Query("month") month: Int? = null,
         @retrofit2.http.Query("year") year: Int? = null,
     ): List<PerformanceRowDto>
+
+    @GET("admin/reports/employee/{id}/month")
+    suspend fun employeeMonth(
+        @Path("id") id: String,
+        @retrofit2.http.Query("month") month: Int,
+        @retrofit2.http.Query("year") year: Int,
+    ): com.hrpayroll.data.remote.dto.EmployeeMonthDto
 
     // ── Claims (employee) ──
     @GET("claims/my-claims")

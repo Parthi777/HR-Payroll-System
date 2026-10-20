@@ -21,7 +21,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -120,152 +124,106 @@ fun AttendanceScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            BrandHeader(title = "Attendance")
+            BrandHeader(
+                title = "Attendance",
+                subtitle = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM")),
+            )
 
-            // "Today" summary tiles float up over the header, like the reference.
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .offset(y = (-22).dp)
-                    .padding(horizontal = 16.dp),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-            ) {
-                Column {
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
-                        TodayStat("Check In", state.todayCheckIn ?: "—", StatusPresent, Modifier.weight(1f))
-                        TodayStat("Check Out", state.todayCheckOut ?: "—", StatusOff, Modifier.weight(1f))
-                        TodayStat(
-                            "Hours",
-                            state.todayMinutes?.let { "%d:%02d".format(it / 60, it % 60) } ?: "—",
-                            MaterialTheme.colorScheme.primary,
-                            Modifier.weight(1f),
-                        )
-                    }
-                    if (state.todayApproval == "PENDING") {
-                        Text(
-                            "Outside work zone — today's check-in is waiting for HR approval",
-                            fontSize = 11.sp,
-                            color = StatusHalf,
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                    }
-                    state.missingCheckout?.let { missing ->
-                        Text(
-                            "You did not check out on ${missing.dateLabel ?: "an earlier day"} — " +
-                                "enter that time before checking in again",
-                            fontSize = 11.sp,
-                            color = StatusHalf,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                    }
+            // Today: the three times that matter, each with its own icon.
+            com.hrpayroll.ui.components.SectionCard(modifier = Modifier.padding(horizontal = 16.dp), floating = true) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    TodayTime(Icons.AutoMirrored.Filled.Login, "Check in", state.todayCheckIn ?: "--:--", StatusPresent, Modifier.weight(1f))
+                    TodayTime(Icons.AutoMirrored.Filled.Logout, "Check out", state.todayCheckOut ?: "--:--", StatusOff, Modifier.weight(1f))
+                    TodayTime(
+                        Icons.Filled.Timer,
+                        "Worked",
+                        state.todayMinutes?.let { "${it / 60}h ${"%02d".format(it % 60)}m" } ?: "--",
+                        com.hrpayroll.ui.theme.BrandGreen,
+                        Modifier.weight(1f),
+                    )
+                }
+                if (state.todayApproval == "PENDING") {
+                    Spacer(Modifier.height(12.dp))
+                    Notice("Outside the work zone — today's check-in is waiting for HR approval")
+                }
+                state.missingCheckout?.let { missing ->
+                    Spacer(Modifier.height(12.dp))
+                    Notice("You did not check out on ${missing.dateLabel ?: "an earlier day"} — enter that time before checking in again")
                 }
             }
 
-            // Records list fills the remaining space.
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .offset(y = (-8).dp)
-                    .padding(horizontal = 16.dp),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Attendance Records",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(14.dp))
 
-                    when {
-                        state.isLoading -> CircularProgressIndicator(Modifier.padding(24.dp))
-                        state.error != null -> Text(
-                            "Error: ${state.error}",
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(vertical = 12.dp),
+            // Calendar and the day-by-day list fill the remaining space.
+            com.hrpayroll.ui.components.SectionCard(
+                modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+            ) {
+                when {
+                    state.isLoading -> CircularProgressIndicator(Modifier.padding(24.dp), color = com.hrpayroll.ui.theme.BrandGreen)
+                    state.error != null -> Text(
+                        "Couldn't load attendance: ${state.error}",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+
+                val records = state.records
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    item {
+                        MonthCalendar(
+                            month = state.calMonth,
+                            year = state.calYear,
+                            calendar = state.calendar,
+                            onShift = viewModel::shiftMonth,
                         )
                     }
-
-                    val records = state.records
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
+                    if (records.isNotEmpty()) {
                         item {
-                            MonthCalendar(
-                                month = state.calMonth,
-                                year = state.calYear,
-                                calendar = state.calendar,
-                                onShift = viewModel::shiftMonth,
+                            Text(
+                                "Recent days",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = com.hrpayroll.ui.theme.Ink,
+                                modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
                             )
                         }
-                        items(records) { record -> RecordRow(record) }
                     }
+                    items(records) { record -> RecordRow(record) }
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
 
             // One check-in and one check-out per day (the backend also enforces this):
-            // Check In is disabled once done; Check Out unlocks after check-in.
+            // Check In is done once; Check Out unlocks after check-in.
             val checkedIn = state.todayCheckIn != null
             val checkedOut = state.todayCheckOut != null
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Button(
+                PunchButton(
+                    text = if (checkedIn) "Checked in" else "Check in",
+                    icon = if (checkedIn) Icons.Filled.CheckCircle else Icons.Filled.CameraAlt,
+                    enabled = !checkedIn,
+                    container = com.hrpayroll.ui.theme.BrandGreen,
                     // An earlier day left open blocks the camera: ask for that
                     // check-out first instead of failing after the selfie.
                     onClick = { if (viewModel.onCheckInTapped()) onCheckIn() },
-                    enabled = !checkedIn,
-                    modifier = Modifier.weight(1f).height(54.dp),
-                    shape = MaterialTheme.shapes.medium,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = StatusPresent,
-                        disabledContainerColor = StatusPresentBg,
-                    ),
-                ) {
-                    Icon(
-                        Icons.Filled.CameraAlt,
-                        contentDescription = null,
-                        tint = if (checkedIn) StatusPresent else Color.White,
-                    )
-                    Text(
-                        if (checkedIn) "  Checked In ✓" else "  Check In",
-                        color = if (checkedIn) StatusPresent else Color.White,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                Button(
-                    onClick = onCheckOut,
+                    modifier = Modifier.weight(1f),
+                )
+                PunchButton(
+                    text = if (checkedOut) "Checked out" else "Check out",
+                    icon = if (checkedOut) Icons.Filled.CheckCircle else Icons.AutoMirrored.Filled.Logout,
                     enabled = checkedIn && !checkedOut,
-                    modifier = Modifier.weight(1f).height(54.dp),
-                    shape = MaterialTheme.shapes.medium,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = StatusOff,
-                        disabledContainerColor = StatusOffBg,
-                    ),
-                ) {
-                    Icon(
-                        Icons.Filled.Logout,
-                        contentDescription = null,
-                        tint = if (checkedIn && !checkedOut) Color.White else StatusOff,
-                    )
-                    Text(
-                        if (checkedOut) "  Checked Out ✓" else "  Check Out",
-                        color = if (checkedIn && !checkedOut) Color.White else StatusOff,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
+                    container = com.hrpayroll.ui.theme.Ink,
+                    onClick = onCheckOut,
+                    modifier = Modifier.weight(1f),
+                )
             }
 
             // Fallback when the normal gate can't be met — face check failing, or
@@ -274,7 +232,7 @@ fun AttendanceScreen(
                 onClick = viewModel::openManualPunch,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
             ) {
-                Icon(Icons.Filled.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Filled.EditNote, contentDescription = null, modifier = Modifier.size(18.dp), tint = com.hrpayroll.ui.theme.BrandGreen)
                 Text(
                     if (state.missingCheckout != null) {
                         "  Enter check-out for ${state.missingCheckout?.dateLabel ?: "the missed day"}"
@@ -283,17 +241,70 @@ fun AttendanceScreen(
                     },
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
+                    color = com.hrpayroll.ui.theme.BrandGreen,
                 )
             }
-
-            Text(
-                "One check-in and one check-out per day",
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                fontSize = 11.sp,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
-            )
+            Spacer(Modifier.height(6.dp))
         }
+    }
+}
+
+@Composable
+private fun TodayTime(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String, tint: Color, modifier: Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        com.hrpayroll.ui.components.IconBubble(icon, tint, size = 38.dp)
+        Spacer(Modifier.height(8.dp))
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = com.hrpayroll.ui.theme.Ink, maxLines = 1)
+        Text(label, fontSize = 11.sp, color = com.hrpayroll.ui.theme.MutedText)
+    }
+}
+
+/** An amber note inside a card — something the employee has to act on. */
+@Composable
+private fun Notice(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+            .background(StatusHalfBg)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Info, contentDescription = null, tint = StatusHalf, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, fontSize = 12.sp, color = StatusHalf, fontWeight = FontWeight.Medium)
+    }
+}
+
+/**
+ * Check in / check out. A done action stays visible as a quiet mint chip with a
+ * tick, so the day's state reads at a glance.
+ */
+@Composable
+private fun PunchButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean,
+    container: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(56.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = container,
+            contentColor = Color.White,
+            disabledContainerColor = com.hrpayroll.ui.theme.BrandMint,
+            disabledContentColor = com.hrpayroll.ui.theme.BrandGreen,
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = if (enabled) 4.dp else 0.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
     }
 }
 
@@ -307,8 +318,9 @@ private fun RecordRow(record: AttendanceRecordUi) {
         else -> StatusHalf to StatusHalfBg
     }
     Card(
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = com.hrpayroll.ui.theme.BrandSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.hrpayroll.ui.theme.CardBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(

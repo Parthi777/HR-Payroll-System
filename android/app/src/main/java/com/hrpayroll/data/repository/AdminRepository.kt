@@ -25,6 +25,7 @@ class AdminRepository @Inject constructor(
         api.approveAttendance(id, mapOf("as" to if (half) "HALF" else "FULL"))
     suspend fun rejectAttendance(id: String) = api.rejectAttendance(id)
     suspend fun performance(month: Int? = null, year: Int? = null): List<PerformanceRowDto> = api.performance(month, year)
+    suspend fun employeeMonth(id: String, month: Int, year: Int) = api.employeeMonth(id, month, year)
 
     suspend fun claims(status: String?): List<ClaimDto> = api.adminClaims(status).claims
     suspend fun approveClaim(id: String) = api.approveClaim(id)

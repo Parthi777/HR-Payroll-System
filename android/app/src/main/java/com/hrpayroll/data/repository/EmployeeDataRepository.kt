@@ -18,5 +18,7 @@ class EmployeeDataRepository @Inject constructor(
     suspend fun myLeaves(): List<LeaveDto> = api.myLeaves().leaves
     suspend fun leaveBalance(): List<LeaveBalanceDto> = api.leaveBalance().balances
     suspend fun myPayslips(): List<PayslipDto> = api.myPayslips().payslips
+    suspend fun payslipPdf(id: String): ByteArray = api.payslipPdf(id).bytes()
+    suspend fun statementPdf(month: Int, year: Int): ByteArray = api.statementPdf(month, year).bytes()
     suspend fun mySchedule(): List<ScheduleDayDto> = api.mySchedule().schedule
 }

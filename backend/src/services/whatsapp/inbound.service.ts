@@ -24,6 +24,7 @@
  *    the resolved tenant's context as that employee, so the ordinary scoping
  *    rules apply to a caller who never signed in.
  */
+import { getTenantPolicy } from '../settings/tenant-settings.service.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { runInTenant, runUnscoped } from '../../context/tenant-context.js';
@@ -283,6 +284,10 @@ export async function handleInbound(
       }
 
       case 'SLIP': {
+        // The same switch as the app's Payroll tab: a dealer that does not
+        // share payroll with staff does not share it here either.
+        const policy = await getTenantPolicy(prisma);
+        if (!policy.payroll.visibleToEmployees) return `${name}: payslips are not shared here — please contact HR.`;
         const slip = await prisma.payslip.findFirst({
           where: { employeeId },
           orderBy: [{ year: 'desc' }, { month: 'desc' }],

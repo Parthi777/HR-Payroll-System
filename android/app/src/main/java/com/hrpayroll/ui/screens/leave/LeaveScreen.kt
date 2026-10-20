@@ -1,5 +1,25 @@
 package com.hrpayroll.ui.screens.leave
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.outlined.BeachAccess
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.hrpayroll.ui.components.ChoiceChip
+import com.hrpayroll.ui.components.GradientButton
+import com.hrpayroll.ui.components.IconBubble
+import com.hrpayroll.ui.components.SectionCard
+import com.hrpayroll.ui.components.SectionTitle
+import com.hrpayroll.ui.theme.BrandGreen
+import com.hrpayroll.ui.theme.BrandSurface
+import com.hrpayroll.ui.theme.CardBorder
+import com.hrpayroll.ui.theme.Ink
+import com.hrpayroll.ui.theme.MutedText
+import com.hrpayroll.ui.theme.StatusLeave
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,92 +101,74 @@ fun LeaveScreen(viewModel: LeaveViewModel = hiltViewModel()) {
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            BrandHeader(title = "Leave")
+            BrandHeader(title = "Leave", subtitle = "Plan time off and follow your requests")
 
-            Card(
-                modifier = Modifier.fillMaxWidth().offset(y = (-24).dp).padding(horizontal = 16.dp),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            // Balance: casual leave is the only paid leave with a quota.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    BalancePill("Casual Leave remaining", balance("CL"), Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(20.dp))
-
-                    Text("Apply for Leave", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Spacer(Modifier.height(14.dp))
-
-                    LeaveTypeDropdown(selected = leaveType, onSelect = { leaveType = it })
-                    Spacer(Modifier.height(12.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            FieldLabel("From")
-                            DateField(value = fromDate, onClick = { pickerFor = "from" })
-                        }
-                        Column(Modifier.weight(1f)) {
-                            FieldLabel("To")
-                            DateField(value = toDate, onClick = { pickerFor = "to" })
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-
-                    FieldLabel("Reason")
-                    OutlinedTextField(value = reason, onValueChange = { reason = it }, placeholder = { Text("Enter reason…") }, modifier = Modifier.fillMaxWidth().height(90.dp), shape = MaterialTheme.shapes.small)
-                    Spacer(Modifier.height(16.dp))
-
-                    Button(
-                        onClick = { viewModel.apply(leaveType, fromDate, toDate, days, reason) },
-                        enabled = !state.isSubmitting,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape = MaterialTheme.shapes.medium,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    ) {
-                        if (state.isSubmitting) CircularProgressIndicator(Modifier.height(22.dp), color = Color.White, strokeWidth = 2.dp)
-                        else Text(
-                            "Submit  ·  ${if (days == 0.5) "Half day" else "${days.toInt()} day(s)"}",
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-
-                    state.message?.let { Spacer(Modifier.height(10.dp)); Text(it, color = StatusPresent, fontWeight = FontWeight.SemiBold) }
-                    state.error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium) }
-                }
+                BalanceCard("Casual leave left", balance("CL"), Icons.Outlined.BeachAccess, StatusLeave, Modifier.weight(1f))
+                BalanceCard(
+                    "Pending requests",
+                    state.myLeaves.count { it.status == "PENDING" }.toString(),
+                    Icons.Outlined.HourglassTop,
+                    StatusHalf,
+                    Modifier.weight(1f),
+                )
             }
 
-            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text("My Leaves", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(16.dp))
+            SectionCard(modifier = Modifier.padding(horizontal = 16.dp), floating = true) {
+                Text("Request leave", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink)
+                Spacer(Modifier.height(14.dp))
+
+                FieldLabel("Type")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LEAVE_TYPES.forEach { (code, name) ->
+                        ChoiceChip(text = name, selected = leaveType == code, modifier = Modifier.weight(1f)) { leaveType = code }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DateTile("From", fromDate, Modifier.weight(1f)) { pickerFor = "from" }
+                    DateTile("To", toDate, Modifier.weight(1f)) { pickerFor = "to" }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                FieldLabel("Reason")
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    placeholder = { Text("A line for your manager…", color = MutedText) },
+                    modifier = Modifier.fillMaxWidth().height(96.dp),
+                    shape = RoundedCornerShape(16.dp),
+                )
+                Spacer(Modifier.height(18.dp))
+
+                GradientButton(
+                    text = "Send request · ${if (days == 0.5) "half day" else "${days.toInt()} day${if (days.toInt() == 1) "" else "s"}"}",
+                    loading = state.isSubmitting,
+                    icon = Icons.AutoMirrored.Filled.Send,
+                    onClick = { viewModel.apply(leaveType, fromDate, toDate, days, reason) },
+                )
+
+                state.message?.let { Spacer(Modifier.height(10.dp)); Text(it, color = StatusPresent, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                state.error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium, fontSize = 13.sp) }
+            }
+
+            SectionTitle("My requests", modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 10.dp))
+            Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.isLoading) {
-                    CircularProgressIndicator(Modifier.padding(8.dp))
+                    CircularProgressIndicator(Modifier.padding(8.dp), color = BrandGreen)
                 } else if (state.myLeaves.isEmpty()) {
-                    Text("No leave requests yet.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                    Text("No leave requests yet.", fontSize = 13.sp, color = MutedText)
                 } else {
-                    state.myLeaves.forEach { lv ->
-                        val (fg, bg) = when (lv.status) {
-                            "APPROVED" -> StatusPresent to StatusPresentBg
-                            "REJECTED" -> StatusOff to StatusOffBg
-                            else -> StatusHalf to StatusHalfBg
-                        }
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                            shape = MaterialTheme.shapes.medium,
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                        ) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("${lv.type} · ${lv.days?.toInt() ?: 1} day(s)", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                                    Text(lv.reason ?: "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                                }
-                                StatusChip(lv.status ?: "PENDING", fg, bg)
-                            }
-                        }
-                    }
+                    state.myLeaves.forEach { lv -> LeaveRow(lv) }
                 }
-                Spacer(Modifier.height(20.dp))
             }
+            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -184,55 +186,6 @@ fun LeaveScreen(viewModel: LeaveViewModel = hiltViewModel()) {
             },
             onDismiss = { pickerFor = null },
         )
-    }
-}
-
-/** Leave type dropdown with full names (matches the reference "Selected Leave Type"). */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun LeaveTypeDropdown(selected: String, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = LEAVE_TYPES.firstOrNull { it.first == selected }?.second ?: selected
-    androidx.compose.material3.ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
-            value = "$selectedLabel ($selected)",
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Leave type") },
-            trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            shape = MaterialTheme.shapes.small,
-            modifier = Modifier.fillMaxWidth().menuAnchor(),
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            LEAVE_TYPES.forEach { (code, name) ->
-                androidx.compose.material3.DropdownMenuItem(
-                    text = { Text("$name ($code)") },
-                    onClick = {
-                        onSelect(code)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
-}
-
-/** Read-only date field that opens the Material date picker on tap. */
-@Composable
-private fun DateField(value: String, onClick: () -> Unit) {
-    Box {
-        OutlinedTextField(
-            value = value,
-            onValueChange = {},
-            readOnly = true,
-            placeholder = { Text("Select date") },
-            trailingIcon = { androidx.compose.material3.Icon(Icons.Filled.CalendarMonth, "Pick date") },
-            singleLine = true,
-            shape = MaterialTheme.shapes.small,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        // Transparent overlay so the whole field is tappable (readOnly fields swallow clicks).
-        Box(Modifier.matchParentSize().clickable(onClick = onClick))
     }
 }
 
@@ -258,16 +211,84 @@ private fun LeaveDatePicker(onPicked: (String) -> Unit, onDismiss: () -> Unit) {
 
 @Composable
 private fun FieldLabel(text: String) {
-    Text(text, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 4.dp))
+    Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MutedText, modifier = Modifier.padding(bottom = 6.dp))
 }
 
 @Composable
-private fun BalancePill(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.small).padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+private fun BalanceCard(label: String, value: String, icon: ImageVector, tint: Color, modifier: Modifier) {
+    SectionCard(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBubble(icon, tint, size = 42.dp)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(value, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
+                Text(label, fontSize = 12.sp, color = MutedText, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** A date to tap: the label above, the picked day (or a prompt) below, a calendar icon. */
+@Composable
+private fun DateTile(label: String, iso: String, modifier: Modifier, onClick: () -> Unit) {
+    val shown = runCatching {
+        java.time.LocalDate.parse(iso).format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM"))
+    }.getOrNull()
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(BrandSurface)
+            .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+        IconBubble(Icons.Outlined.CalendarMonth, BrandGreen, size = 34.dp)
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(label, fontSize = 11.sp, color = MutedText)
+            Text(shown ?: "Pick a day", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (shown != null) Ink else MutedText)
+        }
+    }
+}
+
+@Composable
+private fun LeaveRow(lv: com.hrpayroll.data.remote.dto.LeaveDto) {
+    val (fg, bg) = when (lv.status) {
+        "APPROVED" -> StatusPresent to StatusPresentBg
+        "REJECTED" -> StatusOff to StatusOffBg
+        else -> StatusHalf to StatusHalfBg
+    }
+    val name = LEAVE_TYPES.firstOrNull { it.first == lv.type }?.second ?: when (lv.type) {
+        "SL" -> "Sick Leave"
+        "EL" -> "Earned Leave"
+        else -> lv.type ?: "Leave"
+    }
+    fun day(iso: String?) = runCatching {
+        java.time.LocalDate.parse(iso?.take(10)).format(java.time.format.DateTimeFormatter.ofPattern("d MMM"))
+    }.getOrNull()
+    val from = day(lv.fromDate)
+    val to = day(lv.toDate)
+    val range = when {
+        from == null -> ""
+        to == null || to == from -> from
+        else -> "$from – $to"
+    }
+    val d = lv.days ?: 1.0
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBubble(Icons.Outlined.BeachAccess, StatusLeave, size = 42.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name, fontWeight = FontWeight.SemiBold, color = Ink, fontSize = 15.sp)
+                Text(
+                    listOf(range, if (d == 0.5) "half day" else "${d.toInt()} day${if (d.toInt() == 1) "" else "s"}").filter { it.isNotBlank() }.joinToString(" · "),
+                    fontSize = 12.sp,
+                    color = MutedText,
+                )
+                if (!lv.reason.isNullOrBlank()) Text(lv.reason, fontSize = 12.sp, color = MutedText.copy(alpha = 0.8f), maxLines = 1)
+            }
+            StatusChip((lv.status ?: "PENDING").lowercase().replaceFirstChar { it.uppercase() }, fg, bg)
+        }
     }
 }

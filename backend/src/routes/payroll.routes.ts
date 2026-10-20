@@ -15,6 +15,7 @@ import { getCompanyProfile } from '../services/settings/tenant-settings.service.
 import { buildBankFile, bankFileCsv } from '../services/payroll/bank-file.service.js';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+import { assertEmployeePayrollVisible } from '../services/payroll/payroll-visibility.js';
 import { recordAudit } from '../services/audit/audit.service.js';
 
 /** Company profile for PDF headers (empty object when unset). */
@@ -210,18 +211,22 @@ export async function payrollRoutes(app: FastifyInstance) {
     };
   });
 
+  // The employee's own payslips — only while the dealer shares payroll with
+  // staff (Settings → "Show payroll to employees"). Employee tokens only:
+  // administrators read payslips through /admin/payroll.
   app.get('/payroll/my-payslips', { preHandler: authenticate }, async (req) => {
+    await assertEmployeePayrollVisible(req);
     const payslips = await app.prisma.payslip.findMany({ where: { employeeId: req.user.sub }, orderBy: [{ year: 'desc' }, { month: 'desc' }] });
     return { payslips };
   });
 
   app.get('/payroll/my-payslips/:id/pdf', { preHandler: authenticate }, async (req, reply) => {
+    await assertEmployeePayrollVisible(req);
     const { id } = req.params as { id: string };
     const payslip = await app.prisma.payslip.findUnique({ where: { id } });
     if (!payslip) throw AppError.notFound('Payslip');
-    if (req.user.role === 'EMPLOYEE' && payslip.employeeId !== req.user.sub) {
-      throw AppError.forbidden('Not your payslip');
-    }    return streamPayslipPdf(app, reply, id);
+    if (payslip.employeeId !== req.user.sub) throw AppError.forbidden('Not your payslip');
+    return streamPayslipPdf(app, reply, id);
   });
 
   // Admin: download any employee's payslip PDF.

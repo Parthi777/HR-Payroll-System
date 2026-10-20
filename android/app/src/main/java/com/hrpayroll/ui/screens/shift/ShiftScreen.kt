@@ -51,7 +51,6 @@ fun ShiftScreen(viewModel: ShiftViewModel = hiltViewModel()) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = (-24).dp)
                     .padding(horizontal = 16.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -132,9 +131,10 @@ private fun ScheduleRow(day: ScheduleDayDto) {
     val detail = if (day.isOff == true) "Weekly Off"
     else "${day.shiftName ?: "Shift"} · ${day.startTime ?: ""}–${day.endTime ?: ""}"
     Card(
-        shape = MaterialTheme.shapes.medium,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.hrpayroll.ui.theme.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),

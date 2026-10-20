@@ -191,13 +191,119 @@ data class PerformanceRowDto(
     val employeeCode: String? = null,
     val name: String? = null,
     val branch: String? = null,
-    val presentDays: Int = 0,
+    val department: String? = null,
+    val designation: String? = null,
+    val joiningDate: String? = null,
+    /** ISO date: joining, or when the workspace began if later. The earliest starts the month dropdown. */
+    val availableFrom: String? = null,
+    // Fractional: a half day counts 0.5, as on the muster and the payslip.
+    val presentDays: Double = 0.0,
     val lateDays: Int = 0,
-    val absentDays: Int = 0,
-    val leaveDays: Int = 0,
+    val absentDays: Double = 0.0,
+    val leaveDays: Double = 0.0,
     val attendanceRate: Int = 0,
     val avgHours: Double = 0.0,
     val flaggedCount: Int = 0,
+)
+
+// ── One employee's month (admin) — GET /admin/reports/employee/:id/month ──
+@JsonClass(generateAdapter = true)
+data class MonthRefDto(val month: Int = 1, val year: Int = 2026)
+
+@JsonClass(generateAdapter = true)
+data class ShiftRefDto(val name: String? = null, val startTime: String? = null, val endTime: String? = null)
+
+@JsonClass(generateAdapter = true)
+data class EmployeeProfileDto(
+    val id: String? = null,
+    val name: String? = null,
+    val employeeCode: String? = null,
+    val phone: String? = null,
+    val branch: String? = null,
+    val department: String? = null,
+    val designation: String? = null,
+    val shift: ShiftRefDto? = null,
+    val joiningDate: String? = null,
+)
+
+/** One day: status is PRESENT / LATE / HALF_DAY / ABSENT / PENDING / ON_LEAVE / LOP / WEEKLY_OFF(_WORKED) / HOLIDAY(_WORKED) / NOT_JOINED. */
+@JsonClass(generateAdapter = true)
+data class EmployeeDayDto(
+    val day: Int = 0,
+    val weekday: Int = 0,
+    val status: String? = null,
+    val checkIn: String? = null,
+    val checkOut: String? = null,
+    val workedHours: Double? = null,
+    val punchMode: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class EmployeeMonthSummaryDto(
+    val present: Double = 0.0,
+    val offDuty: Double = 0.0,
+    val late: Double = 0.0,
+    val half: Double = 0.0,
+    val absent: Double = 0.0,
+    val pending: Double = 0.0,
+    val leave: Double = 0.0,
+    val lop: Double = 0.0,
+    val off: Double = 0.0,
+    val served: Double = 0.0,
+    val workedHours: Double = 0.0,
+)
+
+@JsonClass(generateAdapter = true)
+data class EmployeeAttendanceDto(
+    val days: List<EmployeeDayDto> = emptyList(),
+    val summary: EmployeeMonthSummaryDto = EmployeeMonthSummaryDto(),
+)
+
+@JsonClass(generateAdapter = true)
+data class EmployeeVoucherDto(
+    val id: String? = null,
+    val claimNo: Int? = null,
+    val title: String? = null,
+    val typeLabel: String? = null,
+    val amount: Double = 0.0,
+    val status: String? = null,
+    val createdAt: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class VoucherTotalsDto(val count: Int = 0, val amount: Double = 0.0, val paid: Double = 0.0)
+
+/** Present only for Super Admin and Payroll Admin. */
+@JsonClass(generateAdapter = true)
+data class EmployeeSalaryDto(
+    val monthlySalary: Double = 0.0,
+    val payrollBasis: String? = null,
+    val perDaySalary: Double = 0.0,
+    val servedDays: Double = 0.0,
+    val paidDays: Double = 0.0,
+    val basePay: Double = 0.0,
+    val otHours: Double = 0.0,
+    val otPay: Double = 0.0,
+    val sundayDays: Double = 0.0,
+    val sundayPay: Double = 0.0,
+    val leaveDeduction: Double = 0.0,
+    val grossSalary: Double = 0.0,
+    val pf: Double = 0.0,
+    val esi: Double = 0.0,
+    val netSalary: Double = 0.0,
+)
+
+@JsonClass(generateAdapter = true)
+data class EmployeeMonthDto(
+    val month: Int = 1,
+    val year: Int = 2026,
+    val employee: EmployeeProfileDto = EmployeeProfileDto(),
+    val attendance: EmployeeAttendanceDto = EmployeeAttendanceDto(),
+    val leaves: List<LeaveDto> = emptyList(),
+    val vouchers: List<EmployeeVoucherDto> = emptyList(),
+    val voucherTotals: VoucherTotalsDto = VoucherTotalsDto(),
+    val salary: EmployeeSalaryDto? = null,
+    val months: List<MonthRefDto> = emptyList(),
 )
 
 // ── Claims ──
@@ -437,6 +543,8 @@ data class MeDto(
     val shift: String? = null,
     /** Who to ring about attendance or salary. Null when the dealer set nobody. */
     val hr: HrContactDto? = null,
+    /** The dealer shares payroll with staff: show the Payroll tab. Off unless they turned it on. */
+    val payrollVisible: Boolean = false,
 )
 
 @JsonClass(generateAdapter = true)

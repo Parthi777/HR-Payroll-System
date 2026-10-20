@@ -1,6 +1,7 @@
 package com.hrpayroll.ui.navigation
 
 import androidx.lifecycle.ViewModel
+import com.hrpayroll.data.local.PayrollAccess
 import com.hrpayroll.data.local.TokenStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -11,6 +12,10 @@ import javax.inject.Inject
 @HiltViewModel
 class NavViewModel @Inject constructor(
     private val tokenStore: TokenStore,
+    payrollAccess: PayrollAccess,
 ) : ViewModel() {
     fun role(): String? = tokenStore.getRole()
+
+    /** Show the employee Payroll tab — the dealer shares payroll with staff. */
+    val payrollVisible = payrollAccess.visible
 }

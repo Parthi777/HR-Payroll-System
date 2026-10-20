@@ -1,5 +1,8 @@
 package com.hrpayroll.ui.components
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,9 +34,20 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hrpayroll.ui.theme.BrandGradient
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.unit.Dp
+import com.hrpayroll.ui.theme.BrandGold
 import com.hrpayroll.ui.theme.BrandGreen
+import com.hrpayroll.ui.theme.BrandGreenBright
+import com.hrpayroll.ui.theme.BrandSurface
+import com.hrpayroll.ui.theme.CardBorder
 import com.hrpayroll.ui.theme.Ink
+import com.hrpayroll.ui.theme.MutedText
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -61,40 +75,81 @@ import com.hrpayroll.utils.Motion
  */
 
 /**
- * Circular icon button that floats on the header.
+ * The brand's light wash: mint fading to the page colour, with a soft green
+ * glow on the left and a yellow one on the right. Sits behind headers (and the
+ * sign-in screen), so every screen opens with the same light, branded top.
+ */
+@Composable
+fun BrandWash(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        drawRect(Brush.verticalGradient(listOf(Color(0xFFE2F4EC), Color(0xFFEFF8F4), BrandSurface)))
+        val green = Offset(size.width * 0.05f, size.height * 0.05f)
+        drawCircle(
+            brush = Brush.radialGradient(listOf(BrandGreenBright.copy(alpha = 0.16f), Color.Transparent), center = green, radius = size.width * 0.7f),
+            radius = size.width * 0.7f,
+            center = green,
+        )
+        val gold = Offset(size.width * 0.98f, size.height * 0.15f)
+        drawCircle(
+            brush = Brush.radialGradient(listOf(BrandGold.copy(alpha = 0.18f), Color.Transparent), center = gold, radius = size.width * 0.5f),
+            radius = size.width * 0.5f,
+            center = gold,
+        )
+    }
+}
+
+/**
+ * Round icon button for headers.
  *
- * Translucent white on the gradient, solid white with a soft shadow when it
- * sits on a pale surface.
+ * White with a hairline on the light header (the default). `onGradient` is for
+ * the few that sit on a strong green surface, where it turns translucent white.
  */
 @Composable
 fun CircleIconButton(
     icon: ImageVector,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    onGradient: Boolean = true,
+    onGradient: Boolean = false,
+    badge: Boolean = false,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = modifier
-            .size(44.dp)
-            .then(if (onGradient) Modifier else Modifier.shadow(6.dp, CircleShape, spotColor = Color(0x33203070)))
-            .clip(CircleShape)
-            .background(if (onGradient) Color.White.copy(alpha = 0.18f) else Color.White)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = contentDescription, tint = if (onGradient) Color.White else Ink)
+    Box(modifier = modifier.size(44.dp)) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(if (onGradient) Color.White.copy(alpha = 0.18f) else Color.White)
+                .then(if (onGradient) Modifier else Modifier.border(1.dp, CardBorder, CircleShape))
+                .clickable { onClick() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                tint = if (onGradient) Color.White else Ink,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        if (badge) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 9.dp, end = 10.dp)
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(BrandGold)
+                    .border(1.5.dp, Color.White, CircleShape),
+            )
+        }
     }
 }
 
 /**
- * The header every screen starts with: brand gradient, rounded bottom corners,
- * white title, and optional floating buttons either side.
+ * The header every screen starts with: the light brand wash, a bold charcoal
+ * title with an optional line under it, and round buttons either side.
  *
- * `content` is for a screen that needs more in the header than a title — the
- * home screen's avatar and name, for instance. It is laid out centred under
- * the title, and the whole block grows to fit rather than the screen inventing
- * its own header.
+ * `content` is for a screen that needs more in the header than a title; it is
+ * laid out under the title, inside the same wash.
  */
 @Composable
 fun BrandHeader(
@@ -110,50 +165,40 @@ fun BrandHeader(
     onTrailing: (() -> Unit)? = null,
     content: @Composable (ColumnScope.() -> Unit)? = null,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
-            .background(BrandGradient)
-            .padding(horizontal = 20.dp),
-    ) {
-        // Top-left is the way back, or whatever else a screen puts there (the
-        // home screen's alerts bell).
-        if (onBack != null || (leadingIcon != null && onLeading != null)) {
-            CircleIconButton(
-                icon = leadingIcon ?: Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = leadingDescription ?: "Back",
-                modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp),
-                onClick = onLeading ?: onBack ?: {},
-            )
-        }
-        if (trailingIcon != null && onTrailing != null) {
-            CircleIconButton(
-                icon = trailingIcon,
-                contentDescription = trailingDescription,
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp),
-                onClick = onTrailing,
-            )
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(top = 72.dp, bottom = 22.dp),
-            horizontalAlignment = if (content != null) Alignment.CenterHorizontally else Alignment.Start,
-        ) {
-            if (title != null) {
-                Text(
-                    text = title,
-                    color = Color.White,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            if (subtitle != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(subtitle, color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
+    Box(modifier = modifier.fillMaxWidth()) {
+        BrandWash(Modifier.matchParentSize())
+        Column(modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onBack != null || (leadingIcon != null && onLeading != null)) {
+                    CircleIconButton(
+                        icon = leadingIcon ?: Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = leadingDescription ?: "Back",
+                        onClick = onLeading ?: onBack ?: {},
+                    )
+                    Spacer(Modifier.width(14.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    if (title != null) {
+                        Text(
+                            text = title,
+                            color = Ink,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.3).sp,
+                        )
+                    }
+                    if (subtitle != null) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(subtitle, color = MutedText, fontSize = 13.sp)
+                    }
+                }
+                if (trailingIcon != null && onTrailing != null) {
+                    Spacer(Modifier.width(12.dp))
+                    CircleIconButton(icon = trailingIcon, contentDescription = trailingDescription, onClick = onTrailing)
+                }
             }
             if (content != null) {
-                if (title != null || subtitle != null) Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
                 content()
             }
         }
@@ -161,10 +206,10 @@ fun BrandHeader(
 }
 
 /**
- * The white card everything sits in.
+ * The white card everything sits in: generous corners, a hairline border and
+ * a soft shadow, so it lifts off the page without looking heavy.
  *
- * `floating` is the one that overlaps the header — the reference design's first
- * card on a screen. Everything else is a flat list card.
+ * `floating` gives it a little more lift — the first, most important card.
  */
 @Composable
 fun SectionCard(
@@ -173,12 +218,61 @@ fun SectionCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (floating) 6.dp else 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = if (floating) 10.dp else 4.dp,
+                shape = RoundedCornerShape(24.dp),
+                ambientColor = Color(0x14005A40),
+                spotColor = Color(0x1F005A40),
+            ),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(modifier = Modifier.padding(16.dp), content = content)
+        Column(modifier = Modifier.padding(18.dp), content = content)
+    }
+}
+
+/** A tinted rounded square holding an icon — the accent beside stats, list rows and actions. */
+@Composable
+fun IconBubble(
+    icon: ImageVector,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(size * 0.32f))
+            .background(tint.copy(alpha = 0.12f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size * 0.52f))
+    }
+}
+
+/** A section heading on the page, with an optional action on the right ("See all"). */
+@Composable
+fun SectionTitle(
+    text: String,
+    modifier: Modifier = Modifier,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        if (action != null && onAction != null) {
+            Text(
+                action,
+                color = BrandGreen,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAction).padding(6.dp),
+            )
+        }
     }
 }
 
@@ -195,24 +289,30 @@ fun StatTile(
     accent: Color = BrandGreen,
     modifier: Modifier = Modifier,
     caption: String? = null,
+    icon: ImageVector? = null,
 ) {
     SectionCard(modifier = modifier) {
+        if (icon != null) {
+            IconBubble(icon, accent, size = 36.dp)
+            Spacer(Modifier.height(12.dp))
+        }
         Text(
             text = value,
-            color = accent,
+            color = if (icon != null) Ink else accent,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.5).sp,
         )
         Spacer(Modifier.height(2.dp))
         Text(
             text = label,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            color = MutedText,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
         )
         if (caption != null) {
             Spacer(Modifier.height(2.dp))
-            Text(caption, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f), fontSize = 11.sp)
+            Text(caption, color = MutedText.copy(alpha = 0.8f), fontSize = 11.sp)
         }
     }
 }
@@ -297,7 +397,7 @@ fun StatusChip(
     }
 }
 
-/** Reference-style stat pill: filled royal blue (white text) or plain white (dark text).
+/** Stat pill: filled brand green (white text) or plain white (dark text).
  *  e.g. Worked [105h] · Salary Tracked [200h]. */
 @Composable
 fun StatPill(
@@ -318,5 +418,128 @@ fun StatPill(
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
         )
+    }
+}
+
+/**
+ * The screen's main action: a green pill, shaded from the deeper brand green so
+ * the white label stays readable. The same button the sign-in screen uses.
+ */
+@Composable
+fun GradientButton(
+    text: String,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    enabled: Boolean = true,
+    icon: ImageVector? = null,
+    onClick: () -> Unit,
+) {
+    val active = enabled && !loading
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .shadow(if (active) 8.dp else 0.dp, RoundedCornerShape(18.dp), ambientColor = BrandGreen, spotColor = BrandGreen)
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                if (enabled) Brush.horizontalGradient(listOf(BrandGreen, com.hrpayroll.ui.theme.BrandGreenDark))
+                else Brush.horizontalGradient(listOf(CardBorder, CardBorder)),
+            )
+            .clickable(enabled = active, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (loading) {
+            androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (icon != null) {
+                    Icon(icon, contentDescription = null, tint = if (enabled) Color.White else MutedText, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(text, color = if (enabled) Color.White else MutedText, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+/** One choice in a row of options (leave type, status filter): mint and green when picked. */
+@Composable
+fun ChoiceChip(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) com.hrpayroll.ui.theme.BrandMint else Color.White)
+            .border(if (selected) 1.5.dp else 1.dp, if (selected) BrandGreen else CardBorder, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            color = if (selected) BrandGreen else Ink,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
+}
+
+/** "October 2026" for a month and year. */
+fun monthLabel(month: Int, year: Int): String =
+    java.time.YearMonth.of(year, month).format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy"))
+
+/**
+ * A month picker: a white pill showing the chosen month, opening a list of the
+ * months offered (newest first). Used wherever a screen covers one month.
+ */
+@Composable
+fun MonthDropdown(
+    month: Int,
+    year: Int,
+    options: List<Pair<Int, Int>>,
+    onSelect: (month: Int, year: Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.White)
+                .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
+                .clickable { open = true }
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(androidx.compose.material.icons.Icons.Outlined.CalendarMonth, contentDescription = null, tint = BrandGreen, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(monthLabel(month, year), color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.width(6.dp))
+            Icon(androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown, contentDescription = "Choose month", tint = MutedText, modifier = Modifier.size(20.dp))
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.background(Color.White).heightIn(max = 360.dp),
+        ) {
+            options.forEach { (m, y) ->
+                val selected = m == month && y == year
+                androidx.compose.material3.DropdownMenuItem(
+                    text = {
+                        Text(
+                            monthLabel(m, y),
+                            color = if (selected) BrandGreen else Ink,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    },
+                    onClick = { open = false; onSelect(m, y) },
+                )
+            }
+        }
     }
 }

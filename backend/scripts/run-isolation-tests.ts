@@ -47,6 +47,7 @@ run(
     'tests/employee-month.test.ts', 'tests/punch-reminders.test.ts',
     'tests/integration.test.ts',
     'tests/sign-in.test.ts',
+    'tests/payroll-visibility.test.ts',
   ],
   {
     DATABASE_URL: url,

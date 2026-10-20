@@ -1,4 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { assertEmployeePayrollVisible } from '../services/payroll/payroll-visibility.js';
+import { employeeMonthDetail } from '../services/reports/employee-month.service.js';
+import { generateStatementPdf } from '../services/reports/statement-pdf.service.js';
+import { requireTenantId } from '../context/tenant-context.js';
+import { buildMusterReport } from '../services/reports/muster-report.service.js';
 import { z } from 'zod';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -17,7 +22,7 @@ import { classifyDay, type DayCode } from '../services/attendance/day-classify.j
 import { minutesLate } from '../services/attendance/attendance-policy.js';
 import { getObjectBytes } from '../services/storage/storage.service.js';
 import { dayKey } from '../utils/time.js';
-import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
+import { getCompanyProfile, getTenantPolicy } from '../services/settings/tenant-settings.service.js';
 import { changed, recordAudit } from '../services/audit/audit.service.js';
 
 const HHMM = z.string().regex(/^\d{1,2}:\d{2}$/, 'Use a HH:MM time, e.g. 09:30');
@@ -408,61 +413,71 @@ export async function attendanceRoutes(app: FastifyInstance) {
   );
 
   // Per-employee performance/monitoring report for a month (admin, mobile + web).
+  //
+  // Built on the muster grid, so every count is the classifier's and agrees
+  // with the muster, the payroll report, the payslip and the app's employee
+  // month view. It used to count stored statuses itself, which missed half
+  // days, pending punches and leave days with no attendance row.
   app.get(
     '/admin/reports/performance',
-    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') },
+    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN') },
     async (req) => {
-      const q = req.query as { month?: string; year?: string };
+      const q = z
+        .object({
+          month: z.coerce.number().int().min(1).max(12).optional(),
+          year: z.coerce.number().int().min(2000).max(2100).optional(),
+        })
+        .parse(req.query);
       const now = new Date();
-      const month = q.month ? parseInt(q.month, 10) : now.getMonth() + 1; // 1-12
-      const year = q.year ? parseInt(q.year, 10) : now.getFullYear();
+      const month = q.month ?? now.getMonth() + 1; // 1-12
+      const year = q.year ?? now.getFullYear();
       const start = new Date(year, month - 1, 1);
       const end = new Date(year, month, 1);
 
-      const [employees, rows] = await Promise.all([
+      const [muster, employees, flaggedRows, tenant] = await Promise.all([
+        buildMusterReport(app.prisma, month, year),
         app.prisma.employee.findMany({
           where: { status: 'ACTIVE' },
-          include: { branch: true },
-          orderBy: { name: 'asc' },
+          select: { id: true, joiningDate: true },
         }),
-        app.prisma.attendance.findMany({ where: { date: { gte: start, lt: end }, employee: { status: 'ACTIVE' } } }),
+        app.prisma.attendance.findMany({
+          where: { date: { gte: start, lt: end }, isFlagged: true, employee: { status: 'ACTIVE' } },
+          select: { employeeId: true },
+        }),
+        app.prisma.tenant.findUnique({ where: { id: requireTenantId() }, select: { createdAt: true } }),
       ]);
+      const joined = new Map(employees.map((e) => [e.id, e.joiningDate]));
+      // A month picker starts at joining — or when this workspace began, if
+      // that is later: before it there are no punches, and every day would
+      // read as absent.
+      const availableFrom = (joining: Date | undefined) =>
+        joining && tenant && tenant.createdAt > joining ? tenant.createdAt : joining ?? null;
+      const flagged = new Map<string, number>();
+      for (const r of flaggedRows) flagged.set(r.employeeId, (flagged.get(r.employeeId) ?? 0) + 1);
 
-      const byEmp = new Map<string, typeof rows>();
-      for (const r of rows) {
-        const list = byEmp.get(r.employeeId) ?? [];
-        list.push(r);
-        byEmp.set(r.employeeId, list);
-      }
-
-      return employees.map((e) => {
-        const list = byEmp.get(e.id) ?? [];
-        const present = list.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
-        const late = list.filter((r) => r.status === 'LATE').length;
-        const absent = list.filter((r) => r.status === 'ABSENT').length;
-        const leave = list.filter((r) => r.status === 'ON_LEAVE').length;
-        const flagged = list.filter((r) => r.isFlagged).length;
-        const withCheckout = list.filter((r) => r.workingMinutes != null);
-        const totalMin = withCheckout.reduce((s, r) => s + (r.workingMinutes ?? 0), 0);
-        const avgHours = withCheckout.length
-          ? Math.round((totalMin / withCheckout.length / 60) * 10) / 10
-          : 0;
-        const denom = present + absent;
-        const attendanceRate = denom > 0 ? Math.round((present / denom) * 100) : 0;
-        return {
-          employeeId: e.id,
-          employeeCode: e.employeeCode,
-          name: e.name,
-          branch: e.branch.name,
-          presentDays: present,
-          lateDays: late,
-          absentDays: absent,
-          leaveDays: leave,
-          attendanceRate,
-          avgHours,
-          flaggedCount: flagged,
-        };
-      });
+      return [...muster.employees]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((e) => {
+          const daysWithHours = e.days.filter((d) => d.workMinutes > 0).length;
+          const denom = e.present + e.absent;
+          return {
+            employeeId: e.id,
+            employeeCode: e.employeeCode,
+            name: e.name,
+            branch: e.branch,
+            department: e.department,
+            designation: e.designation,
+            joiningDate: joined.get(e.id) ?? null,
+            availableFrom: availableFrom(joined.get(e.id)),
+            presentDays: e.present,
+            lateDays: e.lateDays,
+            absentDays: e.absent,
+            leaveDays: e.leave,
+            attendanceRate: denom > 0 ? Math.round((e.present / denom) * 100) : 0,
+            avgHours: daysWithHours ? Math.round((e.workMinutes / daysWithHours / 60) * 10) / 10 : 0,
+            flaggedCount: flagged.get(e.id) ?? 0,
+          };
+        });
     },
   );
 
@@ -499,6 +514,28 @@ export async function attendanceRoutes(app: FastifyInstance) {
       return { attendance: updated };
     },
   );
+
+  // Employee: a month's statement as a PDF — every day's punches and the
+  // month's leave — while the dealer shares payroll with staff.
+  app.get('/attendance/my-statement', { preHandler: authenticate }, async (req, reply) => {
+    await assertEmployeePayrollVisible(req);
+    const now = new Date();
+    const q = z
+      .object({
+        month: z.coerce.number().int().min(1).max(12).default(now.getMonth() + 1),
+        year: z.coerce.number().int().min(2000).max(2100).default(now.getFullYear()),
+      })
+      .parse(req.query);
+    const detail = await employeeMonthDetail(app.prisma, req.user.sub, q.month, q.year, { includeSalary: false });
+    if (!detail.months.some((m) => m.month === q.month && m.year === q.year)) {
+      throw new AppError('There is no statement for that month', 400);
+    }
+    const pdf = await generateStatementPdf(detail, await getCompanyProfile(app.prisma));
+    const tag = `${q.year}-${String(q.month).padStart(2, '0')}`;
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition', `attachment; filename="statement-${detail.employee.employeeCode}-${tag}.pdf"`);
+    return reply.send(pdf);
+  });
 
   // Employee: month-view calendar — one status per day (present/late/half/absent/
   // leave/off/pending), so staff can verify their own attendance and raise issues.

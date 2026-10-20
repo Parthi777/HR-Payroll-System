@@ -1,5 +1,32 @@
 package com.hrpayroll.ui.screens.admin
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.BeachAccess
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.PersonOff
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.hrpayroll.ui.components.AnimatedEntrance
+import com.hrpayroll.ui.components.CircleIconButton
+import com.hrpayroll.ui.components.IconBubble
+import com.hrpayroll.ui.components.SectionCard
+import com.hrpayroll.ui.theme.BrandGold
+import com.hrpayroll.ui.theme.BrandGreenDark
+import com.hrpayroll.ui.theme.CardBorder
+import com.hrpayroll.ui.theme.Ink
+import com.hrpayroll.ui.theme.MutedText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +41,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.IconButton
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -45,7 +71,6 @@ import com.hrpayroll.ui.theme.StatusHalf
 import com.hrpayroll.ui.theme.StatusLeave
 import com.hrpayroll.ui.theme.StatusOff
 import com.hrpayroll.ui.theme.StatusPresent
-import com.hrpayroll.ui.components.StatTile
 
 /** Admin home: live overview cards (GET /admin/dashboard/stats). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -98,73 +123,61 @@ fun AdminDashboardScreen(
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             BrandHeader(
-                title = "Admin Dashboard",
+                title = "Dashboard",
+                subtitle = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM")),
                 trailingIcon = Icons.AutoMirrored.Filled.Logout,
                 trailingDescription = "Log out",
                 onTrailing = { confirmLogout = true },
             )
 
-            Column(modifier = Modifier.padding(16.dp)) {
-                NotificationsCard(
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                val isToday = state.overviewDate == java.time.LocalDate.now()
+                val d = state.daySummary
+                val present = if (isToday) s.presentNow else (d?.present ?: 0)
+                val total = if (isToday) s.totalStaff else (d?.total ?: 0)
+
+                AnimatedEntrance(index = 0) {
+                    OverviewHero(
+                        title = if (isToday) "Present today" else "Present on ${state.overviewDate.dayOfMonth} ${DASH_MONTHS[state.overviewDate.monthValue]}",
+                        present = present,
+                        total = total,
+                        rate = if (isToday) s.attendanceRate else if (total > 0) present * 100 / total else 0,
+                        footnote = if (isToday) "${s.branches} branch${if (s.branches == 1) "" else "es"} · ${s.totalStaff} staff" else "Past day",
+                        onPickDate = { showOverviewPicker = true },
+                        onToday = if (isToday) null else ({ viewModel.pickOverviewDate(java.time.LocalDate.now()) }),
+                    )
+                }
+
+                AttentionCard(
+                    pendingApprovals = if (isToday) s.pendingApprovals else 0,
                     notifications = state.notifications,
                     unread = state.unread,
                     onSeen = viewModel::markNotificationsRead,
                 )
 
-                val isToday = state.overviewDate == java.time.LocalDate.now()
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (isToday) "Today's Overview"
-                        else "${state.overviewDate.dayOfMonth} ${DASH_MONTHS[state.overviewDate.monthValue]}",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    if (!isToday) TextButton(onClick = { viewModel.pickOverviewDate(java.time.LocalDate.now()) }) { Text("Today") }
-                    IconButton(onClick = { showOverviewPicker = true }) {
-                        Icon(Icons.Filled.CalendarMonth, contentDescription = "Pick a date",
-                            tint = if (isToday) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f) else MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(14.dp))
+                AnimatedEntrance(index = 1) { Column {
+                    if (isToday) {
+                        StatRow(
+                            StatCardData("Absent", s.absent.toString(), StatusOff, Icons.Outlined.PersonOff),
+                            StatCardData("Late arrivals", s.lateArrivals.toString(), StatusHalf, Icons.Outlined.Schedule),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        StatRow(
+                            StatCardData("On leave", s.onLeave.toString(), StatusLeave, Icons.Outlined.BeachAccess),
+                            StatCardData("Awaiting approval", s.pendingApprovals.toString(), Color(0xFFB07D0C), Icons.Outlined.HourglassTop),
+                        )
+                    } else {
+                        StatRow(
+                            StatCardData("Late", (d?.late ?: 0).toString(), StatusHalf, Icons.Outlined.Schedule),
+                            StatCardData("Absent", (d?.absent ?: 0).toString(), StatusOff, Icons.Outlined.PersonOff),
+                        )
+                        if (state.dayLoading) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("Loading…", fontSize = 12.sp, color = MutedText)
+                        }
                     }
-                }
-                Spacer(Modifier.height(8.dp))
-
-                if (isToday) {
-                    StatRow(
-                        StatCardData("Present Now", s.presentNow.toString(), StatusPresent),
-                        StatCardData("Absent", s.absent.toString(), StatusOff),
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    StatRow(
-                        StatCardData("Late Arrivals", s.lateArrivals.toString(), StatusHalf),
-                        StatCardData("On Leave", s.onLeave.toString(), StatusLeave),
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    StatRow(
-                        StatCardData("Total Staff", s.totalStaff.toString(), BrandGreen),
-                        StatCardData("Branches", s.branches.toString(), BrandGreen),
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    StatRow(
-                        StatCardData("Pending Approvals", s.pendingApprovals.toString(), StatusHalf),
-                        StatCardData("Attendance", "${s.attendanceRate}%", StatusPresent),
-                    )
-                } else {
-                    val d = state.daySummary
-                    StatRow(
-                        StatCardData("Present", (d?.present ?: 0).toString(), StatusPresent),
-                        StatCardData("Late", (d?.late ?: 0).toString(), StatusHalf),
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    StatRow(
-                        StatCardData("Absent", (d?.absent ?: 0).toString(), StatusOff),
-                        StatCardData("Total Staff", (d?.total ?: 0).toString(), BrandGreen),
-                    )
-                    if (state.dayLoading) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("Loading…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
-                    }
-                }
+                } }
 
                 state.error?.let {
                     Spacer(Modifier.height(16.dp))
@@ -172,7 +185,7 @@ fun AdminDashboardScreen(
                 }
 
                 // ── Monthly attendance analysis (month filter) ──
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(24.dp))
                 MonthlyAnalysis(state = state, onShift = viewModel::shiftMonth)
 
                 // App details footer
@@ -185,7 +198,7 @@ fun AdminDashboardScreen(
                     fontSize = 11.sp,
                     lineHeight = 16.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
+                    color = MutedText.copy(alpha = 0.7f),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(20.dp))
@@ -194,59 +207,151 @@ fun AdminDashboardScreen(
     }
 }
 
-private data class StatCardData(val label: String, val value: String, val accent: Color)
+private data class StatCardData(val label: String, val value: String, val accent: Color, val icon: ImageVector)
 
 @Composable
 private fun StatRow(left: StatCardData, right: StatCardData) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        StatTile(left.label, left.value, left.accent, Modifier.weight(1f))
-        StatTile(right.label, right.value, right.accent, Modifier.weight(1f))
+        listOf(left, right).forEach { c ->
+            SectionCard(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBubble(c.icon, c.accent, size = 42.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(c.value, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text(c.label, color = MutedText, fontSize = 12.sp, maxLines = 1)
+                    }
+                }
+            }
+        }
     }
 }
 
-
-/** Claims-workflow notifications — shows only UNREAD items; "Dismiss" hides them. */
+/** Who is in today, on the brand green — the one number an owner opens the app for. */
 @Composable
-private fun NotificationsCard(
+private fun OverviewHero(
+    title: String,
+    present: Int,
+    total: Int,
+    rate: Int,
+    footnote: String,
+    onPickDate: () -> Unit,
+    onToday: (() -> Unit)?,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(14.dp, RoundedCornerShape(28.dp), ambientColor = BrandGreen, spotColor = BrandGreen)
+            .clip(RoundedCornerShape(28.dp))
+            .background(Brush.linearGradient(listOf(BrandGreen, BrandGreenDark))),
+    ) {
+        Canvas(Modifier.matchParentSize()) {
+            val c = Offset(size.width * 0.95f, size.height * 0.0f)
+            drawCircle(Brush.radialGradient(listOf(BrandGold.copy(alpha = 0.35f), Color.Transparent), center = c, radius = size.width * 0.55f), radius = size.width * 0.55f, center = c)
+        }
+        Column(Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                if (onToday != null) {
+                    Text(
+                        "Today",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.18f)).clickable(onClick = onToday).padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                CircleIconButton(Icons.Outlined.CalendarMonth, contentDescription = "Pick a date", onGradient = true, onClick = onPickDate)
+            }
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("$present", color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+                Text(" / $total", color = Color.White.copy(alpha = 0.75f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+                Spacer(Modifier.weight(1f))
+                Text("$rate%", color = BrandGold, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 6.dp))
+            }
+            Spacer(Modifier.height(10.dp))
+            Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.22f))) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(if (total > 0) (present.toFloat() / total).coerceIn(0f, 1f) else 0f)
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(footnote, color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+        }
+    }
+}
+
+/**
+ * What needs the admin: punches waiting for sign-off, and the newest unread
+ * notifications (three at most — the rest are a "Mark all read" away).
+ */
+@Composable
+private fun AttentionCard(
+    pendingApprovals: Int,
     notifications: List<com.hrpayroll.data.remote.dto.NotificationDto>,
     unread: Int,
     onSeen: () -> Unit,
 ) {
-    // Only surface unread items, and hide the whole card once nothing is new.
     val unreadItems = notifications.filter { it.isRead == false }
-    if (unread == 0 || unreadItems.isEmpty()) return
-    androidx.compose.material3.Card(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
-        shape = MaterialTheme.shapes.medium,
-        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    if (pendingApprovals == 0 && (unread == 0 || unreadItems.isEmpty())) return
+    Spacer(Modifier.height(16.dp))
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Needs your attention", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+            if (unread > 0) {
                 Text(
-                    "Notifications ($unread new)",
-                    fontSize = 15.sp,
+                    "$unread new",
+                    color = Color(0xFF8A5A00),
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFFFDF1D6)).padding(horizontal = 10.dp, vertical = 4.dp),
                 )
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onSeen) { Text("Dismiss", fontSize = 12.sp) }
             }
-            unreadItems.take(5).forEach { n ->
-                Column(Modifier.padding(vertical = 5.dp)) {
-                    Text(
-                        (if (n.type == "CLAIM_APPROVED") "\u2713 " else "\u25CF ") + (n.title ?: ""),
-                        fontSize = 13.sp,
-                        fontWeight = if (n.isRead == false) FontWeight.Bold else FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        n.body ?: "",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                    )
-                }
+        }
+        if (pendingApprovals > 0) {
+            Spacer(Modifier.height(12.dp))
+            AttentionRow(Icons.Outlined.HourglassTop, Color(0xFFB07D0C), "$pendingApprovals punch${if (pendingApprovals == 1) "" else "es"} awaiting approval", "Open the Live tab to approve or reject")
+        }
+        unreadItems.take(3).forEach { n ->
+            Spacer(Modifier.height(12.dp))
+            val title = (n.title ?: "").lowercase()
+            AttentionRow(
+                when {
+                    "voucher" in title -> Icons.AutoMirrored.Outlined.ReceiptLong
+                    "punch" in title -> Icons.Outlined.Schedule
+                    else -> Icons.Outlined.Notifications
+                },
+                when {
+                    "voucher" in title -> BrandGreen
+                    "punch" in title -> StatusHalf
+                    else -> StatusLeave
+                },
+                n.title ?: "",
+                n.body ?: "",
+            )
+        }
+        if (unread > 0) {
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = onSeen, modifier = Modifier.align(Alignment.End)) {
+                Text("Mark all read", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = BrandGreen)
             }
+        }
+    }
+}
+
+@Composable
+private fun AttentionRow(icon: ImageVector, tint: Color, title: String, body: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconBubble(icon, tint, size = 38.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Ink, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if (body.isNotBlank()) Text(body, fontSize = 12.sp, color = MutedText, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
 }
@@ -257,33 +362,36 @@ private val DASH_MONTHS = arrayOf("", "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
 @Composable
 private fun MonthlyAnalysis(state: AdminDashboardUiState, onShift: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Monthly Analysis", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-        Spacer(Modifier.weight(1f))
-        androidx.compose.material3.IconButton(onClick = { onShift(-1) }) {
-            Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous month")
-        }
-        Text(
-            "${DASH_MONTHS.getOrElse(state.filterMonth) { "" }} ${state.filterYear}",
-            fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        androidx.compose.material3.IconButton(onClick = { onShift(1) }) {
-            Icon(Icons.Filled.ChevronRight, contentDescription = "Next month")
+        Text("This month", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+        Row(
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.White).border(1.dp, CardBorder, RoundedCornerShape(50)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = { onShift(-1) }, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous month", tint = Ink)
+            }
+            Text(
+                "${DASH_MONTHS.getOrElse(state.filterMonth) { "" }} ${state.filterYear}",
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink,
+            )
+            IconButton(onClick = { onShift(1) }, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Filled.ChevronRight, contentDescription = "Next month", tint = Ink)
+            }
         }
     }
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(12.dp))
     val m = state.monthSummary
     if (state.monthLoading && m == null) {
-        androidx.compose.material3.CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)
+        androidx.compose.material3.CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp, color = BrandGreen)
     } else if (m != null) {
         StatRow(
-            StatCardData("Present days", m.present.toString(), StatusPresent),
-            StatCardData("Late days", m.late.toString(), StatusHalf),
+            StatCardData("Present days", com.hrpayroll.utils.days(m.present), StatusPresent, Icons.Outlined.CheckCircle),
+            StatCardData("Late days", m.late.toString(), StatusHalf, Icons.Outlined.Schedule),
         )
         Spacer(Modifier.height(12.dp))
         StatRow(
-            StatCardData("Absent days", m.absent.toString(), StatusOff),
-            StatCardData("Leave days", m.leave.toString(), StatusLeave),
+            StatCardData("Absent days", com.hrpayroll.utils.days(m.absent), StatusOff, Icons.Outlined.PersonOff),
+            StatCardData("Leave days", com.hrpayroll.utils.days(m.leave), StatusLeave, Icons.Outlined.BeachAccess),
         )
     }
 }

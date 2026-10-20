@@ -1,5 +1,9 @@
 package com.hrpayroll.ui.screens.admin
 
+import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -173,20 +177,23 @@ private fun DailyRow(row: DailyRowDto) {
     // Tap the row to expand full details right below the employee name.
     var expanded by remember { mutableStateOf(false) }
     Card(
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.hrpayroll.ui.theme.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.clickable { expanded = !expanded },
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Initials(row.name)
+                Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(row.name ?: "—", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(row.name ?: "—", fontWeight = FontWeight.SemiBold, color = com.hrpayroll.ui.theme.Ink, fontSize = 15.sp)
                     Text("${row.employeeCode ?: ""}  ·  ${row.branch ?: ""}", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        color = com.hrpayroll.ui.theme.MutedText)
                 }
                 val (fg, bg) = statusColors(row.status)
-                StatusChip(row.status?.replace("_", " ") ?: "—", fg, bg)
+                StatusChip(titleCase(row.status), fg, bg)
                 Icon(
                     if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                     contentDescription = if (expanded) "Collapse" else "Expand",
@@ -215,9 +222,16 @@ private fun DailyRow(row: DailyRowDto) {
                         fontSize = 12.sp, color = StatusHalf, fontWeight = FontWeight.Medium)
                 }
             } else {
-                Spacer(Modifier.height(4.dp))
-                Text("In ${row.checkIn ?: "—"}   ·   Out ${row.checkOut ?: "—"}", fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(com.hrpayroll.ui.theme.BrandSurface).padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text("In  ", fontSize = 12.sp, color = com.hrpayroll.ui.theme.MutedText)
+                    Text(row.checkIn ?: "—", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = com.hrpayroll.ui.theme.Ink)
+                    Spacer(Modifier.weight(1f))
+                    Text("Out  ", fontSize = 12.sp, color = com.hrpayroll.ui.theme.MutedText)
+                    Text(row.checkOut ?: "—", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = com.hrpayroll.ui.theme.Ink)
+                }
             }
         }
     }
@@ -231,6 +245,19 @@ private fun DetailLine(label: String, value: String) {
         Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(0.6f))
     }
+}
+
+/** "PRESENT" / "LATE_ARRIVAL" → "Present" / "Late arrival". */
+private fun titleCase(status: String?): String =
+    status?.replace("_", " ")?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "—"
+
+@Composable
+private fun Initials(name: String?) {
+    val text = (name ?: "?").split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
+    Box(
+        Modifier.size(40.dp).clip(CircleShape).background(com.hrpayroll.ui.theme.BrandMint),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = com.hrpayroll.ui.theme.BrandGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
 }
 
 private fun statusColors(status: String?): Pair<Color, Color> = when {
@@ -249,11 +276,12 @@ private fun MonthCalendar(
     onShift: (Int) -> Unit, onPick: (Int) -> Unit,
 ) {
     Card(
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.hrpayroll.ui.theme.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { onShift(-1) }) { Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous month") }
                 Text("${MONTHS.getOrElse(month) { "" }} $year", fontWeight = FontWeight.Bold, fontSize = 14.sp,
@@ -346,37 +374,45 @@ private fun ApprovalsCard(
     onApproveHalf: (String) -> Unit,
     onReject: (String) -> Unit,
 ) {
-    Card(
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = StatusHalfBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Text(
-                "Attendance approvals (${approvals.size})",
-                fontWeight = FontWeight.Bold, fontSize = 15.sp, color = StatusHalf,
-            )
-            Spacer(Modifier.height(4.dp))
+    com.hrpayroll.ui.components.SectionCard(floating = true) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                com.hrpayroll.ui.components.IconBubble(Icons.Filled.HourglassTop, StatusHalf, size = 40.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Waiting for your approval", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = com.hrpayroll.ui.theme.Ink)
+                    Text("${approvals.size} punch${if (approvals.size == 1) "" else "es"}", fontSize = 12.sp, color = com.hrpayroll.ui.theme.MutedText)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Text(
                 "Full day pays the whole day, Half day pays 0.5. Reject pays nothing " +
                     "(late → marked leave, out-of-zone → absent).",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                fontSize = 11.sp, color = com.hrpayroll.ui.theme.MutedText,
             )
             approvals.forEach { a ->
-                Spacer(Modifier.height(10.dp))
-                Column {
-                    Text("${a.name ?: "Employee"}  ", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface)
-                    Text("${a.employeeCode ?: ""} · ${a.branch ?: ""} · in ${a.checkIn ?: "—"}",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    a.reason?.let { Text(it, fontSize = 12.sp, color = StatusHalf) }
-                    Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(12.dp))
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(com.hrpayroll.ui.theme.BrandSurface)
+                        .border(1.dp, com.hrpayroll.ui.theme.CardBorder, RoundedCornerShape(18.dp)).padding(12.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Initials(a.name)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(a.name ?: "Employee", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = com.hrpayroll.ui.theme.Ink)
+                            Text("${a.employeeCode ?: ""} · ${a.branch ?: ""} · in ${a.checkIn ?: "—"}",
+                                fontSize = 12.sp, color = com.hrpayroll.ui.theme.MutedText)
+                        }
+                    }
+                    a.reason?.let { Spacer(Modifier.height(6.dp)); Text(it, fontSize = 12.sp, color = StatusHalf) }
+                    Spacer(Modifier.height(10.dp))
                     val busy = busyId == a.id
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         androidx.compose.material3.Button(
                             onClick = { a.id?.let(onApprove) },
                             enabled = !busy,
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = StatusPresent),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = com.hrpayroll.ui.theme.BrandGreen),
+                            shape = RoundedCornerShape(14.dp),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                         ) {
                             if (busy) androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
@@ -389,19 +425,18 @@ private fun ApprovalsCard(
                             onClick = { a.id?.let(onApproveHalf) },
                             enabled = !busy,
                             colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = StatusHalf),
+                            shape = RoundedCornerShape(14.dp),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
                         ) { Text("Half day", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
                         androidx.compose.material3.OutlinedButton(
                             onClick = { a.id?.let(onReject) },
                             enabled = !busy,
                             colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = StatusOff),
+                            shape = RoundedCornerShape(14.dp),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                         ) { Text("Reject", fontSize = 13.sp) }
                     }
                 }
-                androidx.compose.material3.HorizontalDivider(
-                    Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
             }
-        }
     }
 }

@@ -18,10 +18,10 @@ import javax.inject.Inject
 
 /** Aggregated month totals for the dashboard month filter. */
 data class MonthSummary(
-    val present: Int = 0,
+    val present: Double = 0.0, // a half day counts 0.5, as on the muster
     val late: Int = 0,
-    val absent: Int = 0,
-    val leave: Int = 0,
+    val absent: Double = 0.0,
+    val leave: Double = 0.0,
     val employees: Int = 0,
 )
 

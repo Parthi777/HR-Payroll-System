@@ -15,7 +15,9 @@ val BrandMint = Color(0xFFE8F7F2) // selected chip / nav indicator tint
 val BrandGold = Color(0xFFF0B323) // brand yellow — accents only, never behind white text
 val Charcoal = Color(0xFF171C20) // brand charcoal: ink, and the reversed-logo backdrop
 val CharcoalDeep = Color(0xFF11161D)
-val BrandSurface = Color(0xFFF4F5F1) // soft warm-grey screen background
+val BrandSurface = Color(0xFFF6F9F8) // screen background: the faintest green-grey, so white cards lift off it
+val CardBorder = Color(0xFFE6EEEA) // hairline around cards and fields — depth without heavy shadows
+val MutedText = Color(0xFF66716D) // secondary text: labels, captions, hints
 val Ink = Charcoal // primary dark text on pale surfaces
 
 // Status colors (attendance + claim chips) — see docs/design-system.md

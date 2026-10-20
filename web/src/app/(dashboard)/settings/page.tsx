@@ -27,6 +27,8 @@ interface Company {
   punchRemindersOn?: boolean;
   punchOutReminderAt?: string;
   // Payroll policy
+  /** Employees see their payslips and a monthly statement in the app. Off by default. */
+  payrollVisibleToEmployees?: boolean;
   monthDivisor?: number;
   clPerYear?: number;
   otHoursPerDay?: number;
@@ -373,6 +375,19 @@ function CompanyCard() {
         <div className="border-t border-border/60 pt-4 sm:col-span-2">
           <h3 className="mb-3 text-sm font-semibold">Payroll policy</h3>
           <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Show payroll to employees"
+              hint="When on, staff see their payslips in the app and can download them, along with a monthly statement of every punch-in, punch-out and leave. Off by default."
+            >
+              <select
+                className={input}
+                value={String(c.payrollVisibleToEmployees ?? false)}
+                onChange={(e) => set('payrollVisibleToEmployees', e.target.value === 'true')}
+              >
+                <option value="false">Off — payroll stays with HR</option>
+                <option value="true">On — staff see payslips and statements</option>
+              </select>
+            </Field>
             <Field
               label="Days a month is divided by"
               warn

@@ -23,7 +23,7 @@ export async function profileRoutes(app: FastifyInstance) {
     // dealership that filled in one field meant to be reachable. Both empty
     // returns null, and the app hides the button rather than dialling nothing.
     const settings = await app.prisma.tenantSettings.findFirst({
-      select: { hrContactName: true, hrContactPhone: true, phone: true },
+      select: { hrContactName: true, hrContactPhone: true, phone: true, payrollVisibleToEmployees: true },
     });
     const hrPhone = settings?.hrContactPhone?.trim() || settings?.phone?.trim() || '';
     const hrName = settings?.hrContactName?.trim() || '';
@@ -38,6 +38,9 @@ export async function profileRoutes(app: FastifyInstance) {
       branch: e.branch.name,
       shift: e.shift.name,
       hr: hrPhone ? { name: hrName || 'HR', phone: hrPhone } : null,
+      // Whether the dealer shares payroll with staff — the app shows the
+      // Payroll tab only when it does. The payroll routes enforce it too.
+      payrollVisible: settings?.payrollVisibleToEmployees ?? false,
     };
   });
 

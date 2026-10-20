@@ -351,6 +351,13 @@ suite('working out whose employee sent a message', () => {
       expect(reply).not.toMatch(/https?:\/\//);
     });
 
+    it('keeps payslips to itself while the dealer does not share payroll with staff', async () => {
+      // "Show payroll to employees" is off by default, and SLIP follows it.
+      const reply = await ask('SLIP');
+      expect(reply).toMatch(/not shared here/i);
+      expect(reply).not.toMatch(/Net:/);
+    });
+
     it('sends IN and OUT back to the app, which is where the selfie happens', async () => {
       expect(await ask('IN')).toMatch(/app/i);
       expect(await ask('OUT')).toMatch(/app/i);

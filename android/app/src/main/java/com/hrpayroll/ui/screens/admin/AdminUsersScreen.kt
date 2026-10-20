@@ -61,6 +61,8 @@ fun AdminUsersScreen(
     var showAdd by remember { mutableStateOf(false) }
 
     Scaffold(
+        // The app's own scaffold already sits below the status bar.
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (state.isSuperAdmin) {
                 ExtendedFloatingActionButton(
@@ -118,9 +120,10 @@ fun AdminUsersScreen(
 @Composable
 private fun AdminRow(admin: AdminUserDto, onToggle: (Boolean) -> Unit) {
     Card(
-        shape = MaterialTheme.shapes.medium,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.hrpayroll.ui.theme.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),

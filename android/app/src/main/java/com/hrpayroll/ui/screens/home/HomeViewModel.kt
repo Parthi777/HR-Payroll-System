@@ -22,6 +22,9 @@ data class HomeUiState(
     val employeeCode: String = "",
     val todayStatus: String = "—",
     val todayWorked: String = "—",
+    /** Today's punches, "08:57 AM" — null until made. */
+    val checkInTime: String? = null,
+    val checkOutTime: String? = null,
     /**
      * This calendar month, from the same classifier payroll uses — it resets on
      * the 1st. These used to be counted from the last thirty attendance records
@@ -42,6 +45,8 @@ data class HomeUiState(
     val hrPhone: String = "",
     /** Per-employee photo URL (keyed by code so Coil can't serve another user's cached photo). */
     val photoUrl: String = "",
+    /** The dealer shares payroll with staff: offer the Payslips shortcut. */
+    val payrollVisible: Boolean = false,
 )
 
 @HiltViewModel
@@ -50,6 +55,7 @@ class HomeViewModel @Inject constructor(
     private val attendanceRepo: AttendanceRepository,
     private val authRepository: AuthRepository,
     tokenStore: TokenStore,
+    private val payrollAccess: com.hrpayroll.data.local.PayrollAccess,
 ) : ViewModel() {
 
     val authToken: String? = tokenStore.getToken()
@@ -57,7 +63,10 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    fun logout() = authRepository.logout()
+    fun logout() {
+        payrollAccess.set(false)
+        authRepository.logout()
+    }
 
     init { refresh() }
 
@@ -90,6 +99,8 @@ class HomeViewModel @Inject constructor(
                 employeeCode = me?.employeeCode ?: "",
                 todayStatus = today?.status ?: "—",
                 todayWorked = worked,
+                checkInTime = formatIsoTime(today?.checkIn),
+                checkOutTime = formatIsoTime(today?.checkOut),
                 monthLabel = now.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()),
                 presentDays = present,
                 absentDays = absent,
@@ -104,7 +115,19 @@ class HomeViewModel @Inject constructor(
                 // Unique per-employee URL — the server ignores the query, but it gives Coil a
                 // distinct cache key so employee B never sees employee A's cached photo.
                 photoUrl = me?.employeeCode?.let { "${BuildConfig.API_BASE_URL}me/photo?e=$it" } ?: "",
+                payrollVisible = me?.payrollVisible == true,
             )
+            // Only a successful /me moves the switch; a failed one keeps what we had.
+            if (me != null) payrollAccess.set(me.payrollVisible)
         }
+    }
+
+    /** ISO instant → "08:57 AM" in the device timezone. */
+    private fun formatIsoTime(iso: String?): String? = iso?.let {
+        runCatching {
+            java.time.format.DateTimeFormatter.ofPattern("hh:mm a")
+                .withZone(java.time.ZoneId.systemDefault())
+                .format(java.time.Instant.parse(it))
+        }.getOrNull()
     }
 }

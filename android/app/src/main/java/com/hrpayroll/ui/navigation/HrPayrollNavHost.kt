@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.navigation
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
@@ -20,6 +21,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -68,6 +70,7 @@ object Routes {
     const val ADMIN_CLAIMS = "admin_claims"
     const val ADMIN_PEOPLE = "admin_people"
     const val ADMIN_USERS = "admin_users" // pushed from People (SUPER_ADMIN)
+    const val ADMIN_EMPLOYEE_MONTH = "admin_employee/{employeeId}?month={month}&year={year}" // pushed from Performance
 }
 
 /** Build the claim submit route; pass "new" for a fresh claim or a claim id to resubmit. */
@@ -83,16 +86,12 @@ private val employeeTabs = listOf(
     BottomTab(Routes.ATTENDANCE, "Attendance", Icons.Filled.CheckCircle),
     BottomTab(Routes.LEAVE, "Leave", Icons.Filled.CalendarMonth),
     BottomTab(Routes.CLAIMS, "Vouchers", Icons.Filled.ReceiptLong),
-    // Pay, and the days behind it. This is the "re-add later" the old Payslip
-    // tab left behind: the payslip now lives inside it, with the month's hours,
-    // late days and leave beside it.
-    //
-    // Switched OFF for release, not removed — the screen is finished but has not
-    // been looked at on a real phone, and the first thing it shows an employee
-    // is what they are owed. A wrong figure there is the one mistake nobody
-    // forgives. Put this line back when it has been checked against a payslip.
-    // BottomTab(Routes.PAYROLL, "Payroll", Icons.Filled.Wallet),
 )
+
+// Pay, and the days behind it: payslips and the monthly statement. Shown only
+// while the dealer shares payroll with staff (Settings → "Show payroll to
+// employees", off by default) — see PayrollAccess.
+private val payrollTab = BottomTab(Routes.PAYROLL, "Payroll", Icons.Filled.Wallet)
 
 private val adminTabs = listOf(
     BottomTab(Routes.ADMIN_DASHBOARD, "Dashboard", Icons.Filled.Dashboard),
@@ -116,45 +115,55 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
         else -> adminTabs
     }
 
+    val payrollVisible by navViewModel.payrollVisible.collectAsState()
+    val visibleEmployeeTabs = if (payrollVisible) employeeTabs.take(3) + payrollTab + employeeTabs.drop(3) else employeeTabs
+
     // Pick the tab set for the active section (employee vs admin); null = no bottom bar.
     val tabs = when (currentRoute) {
         in adminTabs.map { it.route } -> visibleAdminTabs
-        in employeeTabs.map { it.route } -> employeeTabs
+        in (employeeTabs + payrollTab).map { it.route } -> visibleEmployeeTabs
         else -> null
     }
 
     Scaffold(
         bottomBar = {
             if (tabs != null) {
-                // Cleaner bar: label only under the active tab, subtle inactive icons.
-                NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-                    tabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentRoute == tab.route,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = {
-                                Text(
-                                    tab.label,
-                                    fontSize = 11.sp,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                                )
-                            },
-                            alwaysShowLabel = false,
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = BrandGreen,
-                                selectedTextColor = BrandGreen,
-                                unselectedIconColor = Color(0xFF8E989F),
-                                unselectedTextColor = Color(0xFF8E989F),
-                                indicatorColor = BrandMint,
-                            ),
-                        )
+                // Labels always shown — an icon alone makes people guess. The
+                // active tab sits in a mint pill; a hairline separates the bar
+                // from the page instead of a heavy shadow.
+                Column {
+                    androidx.compose.material3.HorizontalDivider(color = com.hrpayroll.ui.theme.CardBorder)
+                    NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
+                        tabs.forEach { tab ->
+                            val selected = currentRoute == tab.route
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = {
+                                    navController.navigate(tab.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                label = {
+                                    Text(
+                                        tab.label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold
+                                        else androidx.compose.ui.text.font.FontWeight.Medium,
+                                    )
+                                },
+                                alwaysShowLabel = true,
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = BrandGreen,
+                                    selectedTextColor = BrandGreen,
+                                    unselectedIconColor = Color(0xFF8E989F),
+                                    unselectedTextColor = Color(0xFF8E989F),
+                                    indicatorColor = BrandMint,
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -190,8 +199,21 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
 
             // Employee
             composable(Routes.HOME) {
+                // The shortcuts open a tab the way tapping it in the bar would.
+                val openTab: (String) -> Unit = { route ->
+                    navController.navigate(route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
                 HomeScreen(
+                    onOpenAttendance = { openTab(Routes.ATTENDANCE) },
+                    onApplyLeave = { openTab(Routes.LEAVE) },
+                    onNewVoucher = { navController.navigate(claimSubmitRoute("new")) },
+                    onOpenPayroll = { openTab(Routes.PAYROLL) },
                     onCheckIn = { navController.navigate(cameraRoute("checkin")) },
+                    onCheckOut = { navController.navigate(cameraRoute("checkout")) },
                     onLogout = {
                         navController.navigate(Routes.LOGIN) {
                             popUpTo(0) { inclusive = true } // clear the whole back stack
@@ -251,7 +273,21 @@ fun HrPayrollNavHost(navViewModel: NavViewModel = androidx.hilt.navigation.compo
             }
             composable(Routes.ADMIN_LIVE) { LiveAttendanceScreen() }
             composable(Routes.ADMIN_CLAIMS) { AdminClaimsScreen() }
-            composable(Routes.ADMIN_PERFORMANCE) { PerformanceScreen() }
+            composable(Routes.ADMIN_PERFORMANCE) {
+                PerformanceScreen(onOpenEmployee = { id, month, year ->
+                    navController.navigate("admin_employee/$id?month=$month&year=$year")
+                })
+            }
+            composable(
+                Routes.ADMIN_EMPLOYEE_MONTH,
+                arguments = listOf(
+                    navArgument("employeeId") { type = NavType.StringType },
+                    navArgument("month") { type = NavType.IntType; defaultValue = 0 },
+                    navArgument("year") { type = NavType.IntType; defaultValue = 0 },
+                ),
+            ) {
+                com.hrpayroll.ui.screens.admin.EmployeeMonthScreen(onBack = { navController.popBackStack() })
+            }
             composable(Routes.ADMIN_PEOPLE) {
                 AdminEmployeesScreen(onOpenUsers = { navController.navigate(Routes.ADMIN_USERS) })
             }

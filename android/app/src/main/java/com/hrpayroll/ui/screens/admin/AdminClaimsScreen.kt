@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.admin
 
+import com.hrpayroll.utils.rupees
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -181,9 +182,10 @@ private fun AdminClaimCard(
     val open = claim.status == "PENDING" || claim.status == "NEEDS_CLARIFICATION"
 
     Card(
-        shape = MaterialTheme.shapes.medium,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.hrpayroll.ui.theme.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -194,13 +196,13 @@ private fun AdminClaimCard(
                             claim.employee?.name ?: "Employee",
                             claim.employee?.employeeCode,
                             claim.employee?.branch?.name,
-                            claim.type,
+                            claim.type?.let { com.hrpayroll.ui.screens.claim.claimTypeLabel(it) },
                         ).joinToString(" · "),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
                 }
-                Text("₹${claim.amount ?: 0.0}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(rupees(claim.amount), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(0.dp))
             }
 
@@ -352,7 +354,7 @@ private fun PayDialog(claim: ClaimDto, onConfirm: (String?) -> Unit, onDismiss: 
         text = {
             Column {
                 Text(
-                    "₹${claim.amount ?: 0.0} — ${claim.title ?: ""}\nby ${claim.employee?.name ?: ""} (${claim.employee?.employeeCode ?: ""})",
+                    "${rupees(claim.amount)} — ${claim.title ?: ""}\nby ${claim.employee?.name ?: ""} (${claim.employee?.employeeCode ?: ""})",
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.height(8.dp))

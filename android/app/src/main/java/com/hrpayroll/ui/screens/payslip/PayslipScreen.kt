@@ -35,7 +35,7 @@ import com.hrpayroll.ui.theme.MoneyGreen
 import com.hrpayroll.ui.theme.StatusPresentBg
 
 private val MONTHS = arrayOf("", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
-private fun money(v: Double?) = "₹" + (v ?: 0.0).toInt().toString()
+private fun money(v: Double?) = com.hrpayroll.utils.rupees((v ?: 0.0).toInt().toDouble())
 
 /** Day counts are fractional (half days) — show "20" but keep "20.5". */
 private fun days(v: Double?): String {
@@ -53,7 +53,7 @@ fun PayslipScreen(viewModel: PayslipViewModel = hiltViewModel()) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             BrandHeader(title = "Payslip")
 
-            Column(modifier = Modifier.padding(horizontal = 16.dp).offset(y = (-20).dp)) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 when {
                     state.isLoading -> {
                         Spacer(Modifier.height(24.dp))
@@ -151,9 +151,10 @@ private fun PayslipContent(slip: PayslipDto) {
 private fun SectionCard(title: String, items: List<Pair<String, String>>, deduction: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.hrpayroll.ui.theme.CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)

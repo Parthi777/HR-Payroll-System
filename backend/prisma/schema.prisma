@@ -585,6 +585,10 @@ model TenantSettings {
   payrollLateShiftAt      Int @default(5) // late punches that push the pay date out
   payrollPayDay           Int @default(5) // normal pay date, day of the next month
   payrollPayDayLate       Int @default(8) // shifted pay date
+  /// Whether employees see their payslips and can download a monthly
+  /// punch/leave statement in the app. Off until the dealer chooses to share
+  /// pay with staff; the server refuses those requests while it is off.
+  payrollVisibleToEmployees Boolean @default(false)
 
   // ── External resources, one set per dealer ──
   faceMatchThreshold      Int     @default(85)

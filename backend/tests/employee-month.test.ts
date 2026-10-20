@@ -263,4 +263,80 @@ suite('what an employee reads about their month', () => {
       expect(res.json().hr).toEqual({ name: 'Front Office', phone: '+914242424242' });
     });
   });
+
+  describe('the admin month view of one employee', () => {
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    const view = (token: string, id = employeeId) =>
+      app.inject({
+        method: 'GET', url: `/api/admin/reports/employee/${id}/month?month=${month}&year=${year}`,
+        remoteAddress: freshIp(),
+        headers: { authorization: `Bearer ${token}`, 'x-tenant-slug': SLUG },
+      });
+
+    it('counts exactly what the employee report and the performance list count', async () => {
+      const res = await view(adminToken);
+      expect(res.statusCode, res.body).toBe(200);
+      const detail = res.json();
+
+      const report = await asAdmin('GET', `/api/admin/reports/employee/${employeeId}?month=${month}&year=${year}`);
+      expect(report.statusCode, report.body).toBe(200);
+      expect(detail.attendance.summary).toEqual(report.json().summary);
+      expect(detail.attendance.days).toEqual(report.json().days);
+
+      const list = await asAdmin('GET', `/api/admin/reports/performance?month=${month}&year=${year}`);
+      expect(list.statusCode, list.body).toBe(200);
+      const row = (list.json() as { employeeId: string; presentDays: number; absentDays: number; leaveDays: number; joiningDate: string }[])
+        .find((r) => r.employeeId === employeeId)!;
+      expect(row.presentDays).toBe(detail.attendance.summary.present);
+      expect(row.absentDays).toBe(detail.attendance.summary.absent);
+      expect(row.leaveDays).toBe(detail.attendance.summary.leave);
+      expect(row.joiningDate).toBeTruthy();
+
+      // The picker starts at this month and only goes back.
+      expect(detail.months[0]).toEqual({ month, year });
+      expect(detail.employee.name).toBe('Month Staffer');
+    });
+
+    it('shows salary to the owner, figured by the payroll engine', async () => {
+      const detail = (await view(adminToken)).json();
+      expect(detail.salary).not.toBeNull();
+      expect(detail.salary.monthlySalary).toBe(24000);
+      expect(detail.salary.netSalary).toBe(
+        Math.round((detail.salary.grossSalary - detail.salary.pf - detail.salary.esi) * 100) / 100,
+      );
+    });
+
+    it('lists only the leave that falls in the month', async () => {
+      const inMonth = new Date(year, month - 1, 28).toISOString().slice(0, 10);
+      const applied = await asStaff('POST', '/api/leaves/apply', { type: 'CL', fromDate: inMonth, toDate: inMonth, days: 1, reason: 'in this month' });
+      expect(applied.statusCode, applied.body).toBe(200);
+      const other = await asStaff('POST', '/api/leaves/apply', { type: 'CL', fromDate: `${year + 1}-03-02`, toDate: `${year + 1}-03-02`, days: 1, reason: 'next year' });
+      expect(other.statusCode, other.body).toBe(200);
+
+      const reasons = ((await view(adminToken)).json().leaves as { reason: string }[]).map((l) => l.reason);
+      expect(reasons).toContain('in this month');
+      expect(reasons).not.toContain('next year');
+    });
+
+    it('hides salary from an HR Manager, and keeps a Branch Manager to their own people', async () => {
+      for (const [email, role] of [['hr@month.test', 'HR_MANAGER'], ['bm@month.test', 'BRANCH_MANAGER']] as const) {
+        const made = await asAdmin('POST', '/api/admin/users', { name: role, email, role, password: 'another-dealer-password' });
+        expect(made.statusCode, made.body).toBe(200);
+      }
+      const hr = (await adminSignIn(app, { slug: SLUG, email: 'hr@month.test', password: 'another-dealer-password' }, freshIp)).json().token;
+      const hrView = await view(hr);
+      expect(hrView.statusCode, hrView.body).toBe(200);
+      expect(hrView.json().salary).toBeNull();
+
+      // Not this employee's manager, and pinned to no branch: not their team.
+      const bm = (await adminSignIn(app, { slug: SLUG, email: 'bm@month.test', password: 'another-dealer-password' }, freshIp)).json().token;
+      expect((await view(bm)).statusCode).toBe(403);
+    });
+
+    it('does not find an employee that is not in this workspace', async () => {
+      expect((await view(adminToken, 'cl_not_a_real_employee_id')).statusCode).toBe(404);
+    });
+  });
 });

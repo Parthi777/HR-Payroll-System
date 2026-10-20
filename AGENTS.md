@@ -191,7 +191,12 @@ Open App → GPS Check (within geofence?) → Front Camera Preview
 - Geofence violation warning
 
 ### 7. Payroll / Salary
-- View monthly payslip
+Shown only when the dealer turns on **Settings → Show payroll to employees**
+(`TenantSettings.payrollVisibleToEmployees`, off by default). `/api/me` returns
+`payrollVisible`; the app adds the Payroll tab from it, and the server refuses
+the employee payroll routes (and WhatsApp `SLIP`) while it is off.
+- View monthly payslip, download it as a PDF
+- Download a monthly statement PDF: every punch-in/punch-out and the month's leave
 - Attendance summary (present/absent/leave/LOP days)
 - Deduction breakdown (PF, ESI, TDS)
 - Salary credited confirmation
@@ -521,8 +526,9 @@ GET    /api/shifts/my-schedule             # Employee's schedule (7 days)
 ```
 POST   /api/admin/payroll/run              # Trigger payroll for month/year
 GET    /api/admin/payroll/preview/:month/:year
-GET    /api/payroll/my-payslips
-GET    /api/payroll/my-payslips/:id/pdf
+GET    /api/payroll/my-payslips            # Employee only; 403 unless the dealer shows payroll to employees
+GET    /api/payroll/my-payslips/:id/pdf    # Same switch; own payslips only (admins use /admin/payroll/payslips/:id/pdf)
+GET    /api/attendance/my-statement?month=&year=  # Same switch; the month's punches + leave as a PDF
 POST   /api/admin/payroll/send-slips       # Send all payslips via WhatsApp
 ```
 

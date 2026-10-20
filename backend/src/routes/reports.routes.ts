@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { DAILY_STATUS, attendanceFromMuster, employeeMonthDetail } from '../services/reports/employee-month.service.js';
 import { z } from 'zod';
-import { requireRole } from '../middleware/auth.js';
+import { assertManages, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { classifyDay, overtimeMinutes, type DayCode } from '../services/attendance/day-classify.js';
 import { buildPayrollReport } from '../services/reports/payroll-report.service.js';
@@ -21,19 +22,6 @@ const fmtTime = (d: Date | null) =>
   d ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: COMPANY_TZ }) : null;
 
 /** Grid code → the status word the daily report and the web chips speak. */
-const DAILY_STATUS: Record<DayCode, string> = {
-  P: 'PRESENT',
-  HD: 'HALF_DAY',
-  A: 'ABSENT',
-  WO: 'WEEKLY_OFF',
-  'WO*': 'WEEKLY_OFF_WORKED',
-  HL: 'HOLIDAY',
-  'HL*': 'HOLIDAY_WORKED',
-  LV: 'ON_LEAVE',
-  LOP: 'LOP',
-  PN: 'PENDING',
-  '': 'NOT_JOINED',
-};
 
 /** Attendance counts only when it never needed approval or was approved. */
 const counted = (a: { approvalStatus: string | null }) =>
@@ -413,28 +401,7 @@ export async function reportsRoutes(app: FastifyInstance) {
     const me = muster.employees[0];
     if (!me) throw AppError.notFound('Employee');
 
-    const days = me.days.map((d) => ({
-      day: d.day,
-      weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(d.weekday),
-      status: d.late && d.status === 'P' ? 'LATE' : DAILY_STATUS[d.status],
-      checkIn: d.inTime === '--:--' ? null : d.inTime,
-      checkOut: d.outTime === '--:--' ? null : d.outTime,
-      workedHours: d.workMinutes ? Math.round((d.workMinutes / 60) * 10) / 10 : null,
-      punchMode: d.punchMode,
-      attendanceId: d.attendanceId,
-    }));
-    const summary = {
-      present: me.present,
-      offDuty: me.sundayDuty + me.holidayDuty,
-      late: me.lateDays,
-      half: me.days.filter((d) => d.status === 'HD').length,
-      absent: me.absent,
-      pending: me.pending,
-      leave: me.leave,
-      lop: me.lop,
-      off: me.weeklyOff + me.holidays,
-      worked: me.workMinutes,
-    };
+    const { days, summary } = attendanceFromMuster(me);
 
     return respondTable(
       reply,
@@ -469,9 +436,27 @@ export async function reportsRoutes(app: FastifyInstance) {
           designation: employee.designation?.name ?? '-',
         },
         month, year, days,
-        summary: { ...summary, workedHours: Math.round((summary.worked / 60) * 10) / 10 },
+        summary,
       },
     );
+  });
+
+  /**
+   * One employee's complete month for the app: every day, the totals, their
+   * leave, the vouchers they raised, and the months a picker may offer.
+   * Salary is included only for the roles that already see pay (Super Admin,
+   * Payroll Admin); a Branch Manager sees only their own people.
+   */
+  app.get('/admin/reports/employee/:id/month', { preHandler: guard }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { month, year } = z
+      .object({ month: z.coerce.number().int().min(1).max(12), year: z.coerce.number().int().min(2000).max(2100) })
+      .parse(req.query);
+    // Branch Managers see their own people; the other roles are company-wide.
+    if (req.user.role === 'BRANCH_MANAGER') await assertManages(app.prisma, req.user, id);
+    return employeeMonthDetail(app.prisma, id, month, year, {
+      includeSalary: req.user.role === 'SUPER_ADMIN' || req.user.role === 'PAYROLL_ADMIN',
+    });
   });
 
   // ── Late-punch report: who was late, when, how often ──

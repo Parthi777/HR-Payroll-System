@@ -26,6 +26,7 @@ single-tenant deployment behaves exactly as it did before.
 | `payrollLateShiftAt` | `5` | late punches that push the pay date out |
 | `payrollLateWithholdOver` | `8` | late punches that withhold the payslip |
 | `payrollPayDay` / `payrollPayDayLate` | `5` / `8` | pay dates, day of the following month |
+| `payrollVisibleToEmployees` | `false` | "Show payroll to employees": staff see a Payroll tab with their payslips (PDF download) and a monthly punch/leave statement PDF. Off, the employee payroll routes and WhatsApp `SLIP` refuse — not just hidden |
 | `faceMatchThreshold` | `85` | minimum face-match score, **floor of 70** — below that the match stops meaning anything |
 
 ## External resources

@@ -98,6 +98,7 @@ const companySchema = z.object({
   payrollLateShiftAt: z.number().int().min(0).max(31).optional(),
   payrollPayDay: z.number().int().min(1).max(28).optional(),
   payrollPayDayLate: z.number().int().min(1).max(28).optional(),
+  payrollVisibleToEmployees: z.boolean().optional(),
 
   // Face threshold is a security control, so it has a floor: below ~70 the
   // match stops meaning anything and attendance would accept the wrong person.
@@ -135,6 +136,7 @@ export async function masterRoutes(app: FastifyInstance) {
         payrollLateShiftAt: d.payroll.lateShiftAt,
         payrollPayDay: d.payroll.payDay,
         payrollPayDayLate: d.payroll.payDayLate,
+        payrollVisibleToEmployees: d.payroll.visibleToEmployees,
         faceMatchThreshold: d.resources.faceMatchThreshold,
         s3Prefix: d.resources.s3Prefix,
         rekognitionCollectionId: d.resources.rekognitionCollectionId,

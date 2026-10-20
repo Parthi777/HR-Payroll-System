@@ -493,6 +493,12 @@ suite('cross-tenant isolation', () => {
     'GET /api/admin/me/two-step',
     'POST /api/admin/me/recovery-codes',
     'DELETE /api/admin/users/:id/two-step',
+    // One employee's month for the app; scope and roles pinned in
+    // tests/employee-month.test.ts.
+    'GET /api/admin/reports/employee/:id/month',
+    // The employee's own statement, read for req.user.sub only; the switch
+    // that opens it is pinned in tests/payroll-visibility.test.ts.
+    'GET /api/attendance/my-statement',
   ];
 
   /**
