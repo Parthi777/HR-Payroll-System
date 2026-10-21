@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { ShieldCheck, ScanFace, MapPin, Wallet, Loader2, AlertCircle, ArrowRight } from 'lucide-react';
 import { ApiError, api } from '@/lib/api';
 import { PasswordInput } from '@/components/password-input';
@@ -305,9 +306,14 @@ export default function LoginPage() {
                   required
                 />
 
-                <label htmlFor="password" className="mb-1.5 block text-xs font-semibold text-foreground/80">
-                  Password
-                </label>
+                <div className="mb-1.5 flex items-baseline justify-between">
+                  <label htmlFor="password" className="block text-xs font-semibold text-foreground/80">
+                    Password
+                  </label>
+                  <Link href="/forgot-password" className="text-xs font-medium text-primary underline-offset-2 hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
                 <PasswordInput
                   value={password}
                   onChange={setPassword}

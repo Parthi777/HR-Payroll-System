@@ -100,6 +100,25 @@ const envSchema = z.object({
   // Where the public site lives, for building the payment link that is handed
   // to a new dealership. Falls back to a relative path when unset.
   PUBLIC_SITE_URL: z.string().optional(),
+
+  // "Sign in with Google" on the PLATFORM CONSOLE only — the Web-application
+  // OAuth client id, the audience Google ID tokens are checked against. Master
+  // Control and the app have no Google sign-in. Unset = the button is refused.
+  GOOGLE_WEB_CLIENT_ID: z.string().optional(),
+
+  // Outgoing email (SMTP) — for now only "Forgot password?" on Master Control.
+  // Gmail: smtp.gmail.com, port 465, the Gmail address and an app password
+  // (Google Account → Security → App passwords). Unset = the reset link is not
+  // offered and the request says to ask a Super Admin instead.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(465),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().optional(), // e.g. "Kayaazh Payroll <you@gmail.com>"; defaults to SMTP_USER
+  // Where Master Control is, for the link in that email, e.g. https://hr.kayaazh.com.
+  // Never taken from the request: a forged Host header would otherwise send the
+  // reset link — and its token — to someone else's site. Falls back to PUBLIC_SITE_URL.
+  ADMIN_APP_URL: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

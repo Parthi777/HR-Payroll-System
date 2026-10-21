@@ -48,6 +48,7 @@ run(
     'tests/integration.test.ts',
     'tests/sign-in.test.ts',
     'tests/payroll-visibility.test.ts',
+    'tests/password-reset.test.ts',
   ],
   {
     DATABASE_URL: url,

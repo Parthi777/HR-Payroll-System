@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import { currentCode, platformSignIn } from './support/platform-session.js';
 import { codeForStep, stepAt } from '../src/services/auth/totp.js';
 import { adminSignIn } from './support/admin-session.js';
+import { setGoogleVerifierForTests } from '../src/services/auth/google-id-token.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -960,6 +961,56 @@ suite('dealer onboarding', () => {
     it('is unreachable with a dealer’s own sign-in', async () => {
       const res = await asDealer('abc-motors', 'owner@abc.test', '/api/platform/audit');
       expect(res.statusCode).toBe(403);
+    });
+  });
+  describe('sign in with Google', () => {
+    const google = (credential: string) =>
+      app.inject({ method: 'POST', url: '/api/platform/auth/google', remoteAddress: freshIp(), payload: { credential } });
+    /** Stands in for Google: the "token" is the address, "unverified:" marks one Google has not verified. */
+    const fakeGoogle = () =>
+      setGoogleVerifierForTests(async (c) => {
+        if (c === 'forged-token-xyz') throw new Error('bad signature');
+        return c.startsWith('unverified:') ? { email: c.slice(11), emailVerified: false } : { email: c, emailVerified: true };
+      });
+
+    afterAll(() => setGoogleVerifierForTests(null));
+
+    it('is refused while no Google client id is configured', async () => {
+      setGoogleVerifierForTests(null);
+      expect((await google('owner@platform.test')).statusCode).toBe(503);
+    });
+
+    it('replaces the password, never the authenticator code', async () => {
+      fakeGoogle();
+      const res = await google(PLATFORM.email.toUpperCase());
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().step).toBe('verify');
+      expect(res.json().token).toBeUndefined();
+      // The challenge opens nothing on its own.
+      const tenants = await app.inject({
+        method: 'GET', url: '/api/platform/tenants', headers: { authorization: `Bearer ${res.json().challenge}` },
+      });
+      expect([401, 403]).toContain(tenants.statusCode);
+
+      const verified = await app.inject({
+        method: 'POST', url: '/api/platform/auth/two-step/verify', remoteAddress: freshIp(),
+        payload: { challenge: res.json().challenge, code: await currentCode(app, PLATFORM.email) },
+      });
+      expect(verified.statusCode, verified.body).toBe(200);
+      expect(verified.json().token).toBeTruthy();
+    });
+
+    it('lets in only an active console account', async () => {
+      fakeGoogle();
+      expect((await google('stranger@gmail.test')).statusCode).toBe(401);
+      // A dealer's admin is not console staff, whatever Google says.
+      expect((await google('owner@abc.test')).statusCode).toBe(401);
+    });
+
+    it('refuses an unverified address and a token Google did not sign', async () => {
+      fakeGoogle();
+      expect((await google(`unverified:${PLATFORM.email}`)).statusCode).toBe(401);
+      expect((await google('forged-token-xyz')).statusCode).toBe(401);
     });
   });
 });

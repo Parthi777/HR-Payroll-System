@@ -5,6 +5,7 @@ import { requirePlatform, type JwtPayload, type JwtRole } from '../middleware/au
 import { AppError } from '../utils/AppError.js';
 import { env } from '../config/env.js';
 import { parseAllowList, platformAccessHook } from '../services/platform/platform-access.js';
+import { googleSignInConfigured, verifiedGoogleEmail } from '../services/auth/google-id-token.js';
 import { planByCode } from '../services/subscription/plans.js';
 import { markPaid, paymentUrl, startSubscription } from '../services/subscription/subscription.service.js';
 import {
@@ -189,6 +190,25 @@ export async function platformRoutes(app: FastifyInstance) {
     // A correct password is half a sign-in. It earns a challenge — good for
     // nothing but the next step — and never a session. Which step comes next
     // depends on whether this person has an authenticator set up yet.
+    const step: ChallengePurpose = staff.totpSecret ? 'verify' : 'enroll';
+    return { step, challenge: signChallenge(staff.id, step) };
+  });
+
+  /**
+   * "Sign in with Google" — in place of the password, not of the second step.
+   * Returns the same challenge the password does, so the authenticator code is
+   * still asked for. Only an address that is already an active console account
+   * gets in; Google never creates one.
+   */
+  app.post('/platform/auth/google', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
+    if (!googleSignInConfigured()) throw new AppError('Google sign-in is not set up for the console', 503);
+    const { credential } = z.object({ credential: z.string().min(10).max(5000) }).parse(req.body);
+    const email = await verifiedGoogleEmail(credential);
+
+    const staff = await app.prisma.platformUser.findUnique({ where: { email } });
+    // Saying so names only the caller's own address, which they already hold.
+    if (!staff || !staff.isActive) throw AppError.unauthorized(`${email} does not have access to the console`);
+
     const step: ChallengePurpose = staff.totpSecret ? 'verify' : 'enroll';
     return { step, challenge: signChallenge(staff.id, step) };
   });
@@ -521,6 +541,11 @@ export async function platformRoutes(app: FastifyInstance) {
         password: input.password,
       },
     });
+
+    // The GSTIN they gave becomes the company profile's, so payslips carry it from day one.
+    if (signup.gstNumber) {
+      await app.prisma.tenantSettings.updateMany({ where: { tenantId: tenant.id }, data: { gstin: signup.gstNumber } });
+    }
 
     const subscription = await startSubscription(app.prisma, tenant.id, planCode);
 

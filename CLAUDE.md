@@ -106,7 +106,7 @@ ai-hr-payroll/
 | UI | shadcn/ui + Tailwind CSS |
 | Maps | React Leaflet / Google Maps JS API |
 | Charts | Recharts |
-| Auth | JWT — email + password + authenticator code (no third-party sign-in) |
+| Auth | JWT — email + password + authenticator code. Google only on the platform console (in place of the password) and the public sign-up |
 | State | Zustand |
 | Forms | React Hook Form + Zod |
 | Table | TanStack Table v8 |
@@ -465,9 +465,19 @@ POST   /api/auth/admin/two-step/enable     # challenge + code → session + 10 r
 GET    /api/admin/me/two-step              # Your status: enabledAt, recoveryCodesLeft
 POST   /api/admin/me/recovery-codes        # Replace your codes (needs a live code)
 DELETE /api/admin/users/:id/two-step       # SUPER_ADMIN clears a colleague's (lost phone); never your own
+POST   /api/auth/admin/forgot-password     # { email } → emails a one-time link (30 min); same answer for any address; 503 without SMTP
+POST   /api/auth/admin/reset-password      # { token, password } → new password; two-step still required to sign in
 GET    /api/auth/workspace                 # Must the sign-in page ask which workspace? { required }
 GET    /api/auth/workspace/:slug           # A workspace's name, for the sign-in page's badge
 ```
+
+"Forgot password?" on the Master Control sign-in page emails a link to
+`/reset-password` (built from `ADMIN_APP_URL`, never from the request's Host).
+Only the token's SHA-256 is stored (`AdminUser.resetLinkHash`); it works once,
+for 30 minutes, inside the workspace it was issued in. Mail goes out over SMTP
+(`services/mail/mail.service.ts`) — Gmail with an app password works. A reset
+replaces the password only: the authenticator code is still asked for, so
+access to the mailbox alone gets no one in.
 
 One address (`admin.<domain>`) serves every dealer, so the sign-in page asks
 which workspace when the address names none and more than one exists — see
@@ -506,6 +516,15 @@ POST   /api/public/subscription/:token/order    # Razorpay order, at the server'
 POST   /api/public/subscription/:token/confirm  # Checkout result, verified by signature
 POST   /api/public/razorpay/webhook        # payment.captured → opens the workspace
 ```
+The sign-up form asks for name, contact number, organisation name and GSTIN
+(required, validated, copied to the workspace's company profile on approval).
+The email comes from **Sign up with Google** — the server reads the address out
+of Google's signed ID token (`googleCredential`, `services/auth/google-id-token.ts`),
+never from the form — or is typed when Google is unavailable; the console marks
+which (`SignupRequest.emailFromGoogle`). The workspace address is made from the
+organisation name and can be changed on approval. The page then tells them to
+wait for the team to contact them.
+
 Signing up creates nothing but a request. Approving it provisions the workspace
 **SUSPENDED** with a Subscription (PENDING_PAYMENT); the first payment is what
 opens it. Both the checkout callback and the webhook are signature-verified and
@@ -922,15 +941,20 @@ instance send nothing. Off per dealer in Settings, or platform-wide with
 - **Rate limiting** (per client IP, so `trustProxy` must stay on behind the
   platform proxy or everyone shares one bucket). OTP no longer exists; these are
   the limits actually configured, per 10 minutes:
-  admin sign-in 5, platform sign-in 5, platform password change 5,
+  admin sign-in 5, platform sign-in 5, platform Google sign-in 10, platform password change 5,
   platform two-step verify / setup / enable 10 each, platform recovery-code
   replacement 5, admin two-step verify / setup / enable 10 each, admin
-  recovery-code replacement 5, employee sign-in 10, workspace lookup 20,
+  recovery-code replacement 5, admin forgot-password 5, admin reset-password 10, employee sign-in 10, workspace lookup 20,
   refresh token 30, webhook handshake 30, APK download 30.
 - **Platform console sign-in is two-step, always.** The password returns a
   challenge (`scope: PLATFORM_CHALLENGE`) that opens no route; only the
   challenge plus a TOTP or recovery code yields a session, and `requirePlatform`
-  refuses any token without `twoStep: true`. First sign-in enrols. A code is
+  refuses any token without `twoStep: true`. **Sign in with Google**
+  (`POST /api/platform/auth/google`, `services/platform/google-sign-in.ts`) is
+  the console's alternative to the password — never to the code: a verified
+  Google address that is an active PlatformUser gets the same challenge.
+  Needs `GOOGLE_WEB_CLIENT_ID` (backend) and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+  (web, build-time), the same OAuth client. First sign-in enrols. A code is
   accepted once per 30-second step; five wrong codes lock the account's second
   step for 15 minutes. Recovery codes are stored as SHA-256 hashes. Logic in
   `services/auth/two-step.service.ts`; reset a lost phone from Team, or
@@ -1032,6 +1056,22 @@ RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
 RAZORPAY_WEBHOOK_SECRET=           # a different secret from the key secret
 PUBLIC_SITE_URL=                   # so payment links are absolute
+
+# Google — platform console sign-in and the public "Sign up with Google" only
+# (both the same Web OAuth client id; its Authorized JavaScript origins must
+# include the site's address)
+GOOGLE_WEB_CLIENT_ID=              # backend
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=      # web, build-time
+
+# Email — "Forgot password?" on Master Control (all optional; unset = the
+# page says to ask a Super Admin). Gmail: an app password from Google Account →
+# Security → App passwords (needs 2-Step Verification on that Gmail account).
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=
+SMTP_PASS=
+MAIL_FROM=                         # e.g. "Kayaazh Payroll <you@gmail.com>"; defaults to SMTP_USER
+ADMIN_APP_URL=                     # where Master Control is, for the link, e.g. https://hr.kayaazh.com
 
 # Addresses (all optional; see docs/HOSTNAMES.md)
 NEXT_PUBLIC_ADMIN_HOST=            # web: Master Control, e.g. "admin.yourdomain.com"; build-time

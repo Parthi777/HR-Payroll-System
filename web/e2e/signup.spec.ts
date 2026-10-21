@@ -13,8 +13,10 @@
  */
 import { expect, test } from './fixtures';
 
-const COMPANY = 'Selvam Motors';
-const SLUG = `selvam-${Date.now().toString(36)}`;
+const SUFFIX = Date.now().toString(36);
+const COMPANY = `Selvam Motors ${SUFFIX}`;
+// No address is asked for any more; the server makes one from the name.
+const SLUG = `selvam-motors-${SUFFIX}`;
 const CONTACT = { name: 'Selvam Raj', email: `owner@${SLUG}.test`, phone: '+919000044444' };
 
 test.describe.configure({ mode: 'serial' });
@@ -29,18 +31,18 @@ test('a dealership asks for a workspace from the pricing page', async ({ page })
   // The plan travelled with the link, so nobody has to choose twice.
   await expect(page.getByRole('radio', { name: /Growth/ })).toBeChecked();
 
-  await page.getByPlaceholder('Bhavani Motors').fill(COMPANY);
-  // The address is suggested from the name, and can be overridden.
-  await expect(page.getByPlaceholder('bhavani-motors')).toHaveValue('selvam-motors');
-  await page.getByPlaceholder('bhavani-motors').fill(SLUG);
+  // No Google client id in this environment, so the email is typed.
+  await page.getByPlaceholder('you@dealership.com').fill(CONTACT.email);
   await page.getByPlaceholder('Ravi Kumar').fill(CONTACT.name);
   await page.getByPlaceholder('+91 90000 00000').fill(CONTACT.phone);
-  await page.getByPlaceholder('you@dealership.com').fill(CONTACT.email);
+  await page.getByPlaceholder('Bhavani Motors').fill(COMPANY);
+  await page.getByPlaceholder('33ABCDE1234F1Z5').fill('33abcde1234f1z5');
 
-  await page.getByRole('button', { name: 'Send request' }).click();
+  await page.getByRole('button', { name: 'Sign up' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Request received' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /you.re signed up/ })).toBeVisible();
   await expect(page.getByText(COMPANY)).toBeVisible();
+  await expect(page.getByText('Please wait for our team to contact you')).toBeVisible();
   // Signing up creates no session and no workspace to walk into.
   await page.goto(`/login?tenant=${SLUG}`);
   await expect(page.getByText('Welcome back')).toBeVisible();

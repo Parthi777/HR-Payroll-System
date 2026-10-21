@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
+import { googleSignInConfigured, verifiedGoogleEmail } from '../services/auth/google-id-token.js';
 import { PLANS, PLAN_CODES, planByCode } from '../services/subscription/plans.js';
 import { markPaid, publicView } from '../services/subscription/subscription.service.js';
 import {
@@ -15,12 +16,24 @@ import {
 const SLUG = /^[a-z0-9][a-z0-9-]{1,30}$/;
 const RESERVED = new Set(['www', 'api', 'app', 'admin', 'platform', 'static', 'assets']);
 
+/** An Indian GSTIN: state code, PAN, entity number, 'Z', check character. */
+const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
 const signupSchema = z.object({
   companyName: z.string().trim().min(2).max(120),
-  slug: z.string().trim().toLowerCase().min(2).max(31),
+  /** Optional: worked out from the company name when not given. */
+  slug: z.string().trim().toLowerCase().min(2).max(31).optional(),
   contactName: z.string().trim().min(2).max(120),
-  email: z.string().trim().toLowerCase().email(),
+  /** Typed — or left out, when a Google sign-in supplies it. */
+  email: z.string().trim().toLowerCase().email().optional(),
+  /** A Google ID token from "Sign up with Google". Its verified address wins over any typed one. */
+  googleCredential: z.string().min(10).max(5000).optional(),
   phone: z.string().trim().min(6).max(20),
+  gstNumber: z
+    .string()
+    .trim()
+    .transform((v) => v.toUpperCase().replace(/\s+/g, ''))
+    .refine((v) => GSTIN.test(v), 'Enter a valid 15-character GST number, e.g. 33ABCDE1234F1Z5'),
   staffCount: z.coerce.number().int().min(1).max(100_000).optional(),
   branchCount: z.coerce.number().int().min(1).max(1_000).optional(),
   planCode: z.enum(PLAN_CODES),
@@ -70,9 +83,19 @@ export async function publicRoutes(app: FastifyInstance) {
    * Rate-limited hard, because it is the one place a stranger can write to.
    */
   app.post('/public/signup', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (req, reply) => {
-    const input = signupSchema.parse(req.body);
+    const { googleCredential, ...input } = signupSchema.parse(req.body);
 
-    if (!SLUG.test(input.slug) || RESERVED.has(input.slug)) {
+    // From Google, the address is proven to be theirs; typed, it is taken on trust
+    // and the team confirms it when they call.
+    let email = input.email;
+    const emailFromGoogle = Boolean(googleCredential);
+    if (googleCredential) {
+      if (!googleSignInConfigured()) throw new AppError('Google sign-up is not available — enter your email instead', 503);
+      email = await verifiedGoogleEmail(googleCredential);
+    }
+    if (!email) throw new AppError('Sign up with Google, or enter your email address', 400);
+
+    if (input.slug !== undefined && (!SLUG.test(input.slug) || RESERVED.has(input.slug))) {
       throw new AppError(
         `"${input.slug}" cannot be a workspace address. Use lowercase letters, digits and hyphens, e.g. "bhavani-motors".`,
         400,
@@ -80,23 +103,22 @@ export async function publicRoutes(app: FastifyInstance) {
     }
     if (!planByCode(input.planCode)) throw new AppError('Choose a plan', 400);
 
-    const taken = await app.prisma.tenant.findUnique({ where: { slug: input.slug } });
-    if (taken) throw new AppError(`The address "${input.slug}" is already in use. Try another.`, 409);
+    const pendingFromEmail = await app.prisma.signupRequest.findFirst({ where: { status: 'PENDING', email } });
+    if (pendingFromEmail) throw new AppError('We already have a request from this email address and are reviewing it.', 409);
 
-    const pending = await app.prisma.signupRequest.findFirst({
-      where: { status: 'PENDING', OR: [{ slug: input.slug }, { email: input.email }] },
-    });
-    if (pending) {
-      throw new AppError(
-        pending.email === input.email
-          ? 'We already have a request from this email address and are reviewing it.'
-          : `Someone has already asked for the address "${input.slug}".`,
-        409,
-      );
+    let slug: string;
+    if (input.slug) {
+      slug = input.slug;
+      const taken = await app.prisma.tenant.findUnique({ where: { slug } });
+      if (taken) throw new AppError(`The address "${slug}" is already in use. Try another.`, 409);
+      const asked = await app.prisma.signupRequest.findFirst({ where: { status: 'PENDING', slug } });
+      if (asked) throw new AppError(`Someone has already asked for the address "${slug}".`, 409);
+    } else {
+      slug = await freeSlugFor(input.companyName);
     }
 
     const created = await app.prisma.signupRequest.create({
-      data: { ...input, status: 'PENDING' },
+      data: { ...input, slug, email, emailFromGoogle, status: 'PENDING' },
       select: { id: true, companyName: true, createdAt: true },
     });
     logger.info({ signupId: created.id }, 'signup request received');
@@ -107,6 +129,25 @@ export async function publicRoutes(app: FastifyInstance) {
       companyName: created.companyName,
     });
   });
+
+  /**
+   * A workspace address from the company name, not yet used or asked for.
+   * Only a suggestion: the team can change it when they approve the request.
+   */
+  async function freeSlugFor(companyName: string): Promise<string> {
+    let base = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 26);
+    if (!SLUG.test(base) || RESERVED.has(base)) base = `dealer-${base}`.replace(/-+$/, '').slice(0, 26);
+    if (!SLUG.test(base)) base = 'dealer';
+    for (let n = 1; n < 50; n++) {
+      const slug = n === 1 ? base : `${base}-${n}`;
+      const [tenant, asked] = await Promise.all([
+        app.prisma.tenant.findUnique({ where: { slug }, select: { id: true } }),
+        app.prisma.signupRequest.findFirst({ where: { status: 'PENDING', slug }, select: { id: true } }),
+      ]);
+      if (!tenant && !asked) return slug;
+    }
+    throw new AppError('Could not find a free workspace address — add a few words to your organisation name.', 409);
+  }
 
   /** The subscription behind a payment link. The token is the only credential. */
   async function subscriptionFor(token: string) {

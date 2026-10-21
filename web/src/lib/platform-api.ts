@@ -148,6 +148,9 @@ export interface SignupRow {
   branchCount: number | null;
   planCode: string;
   note: string | null;
+  gstNumber: string | null;
+  /** The email came from a Google sign-in, so it is known to be theirs. */
+  emailFromGoogle: boolean;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   reviewNote: string | null;
   reviewedAt: string | null;

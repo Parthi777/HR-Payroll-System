@@ -163,6 +163,18 @@ const SHAPES: Record<string, Shape> = {
     tone: 'neutral',
     detail: (m) => text(m.account),
   },
+  ADMIN_PASSWORD_RESET_REQUESTED: {
+    title: 'Password reset link emailed',
+    kind: 'access',
+    tone: 'neutral',
+    detail: (m) => join(text(m.account), 'from the sign-in page'),
+  },
+  ADMIN_PASSWORD_RESET_BY_EMAIL: {
+    title: 'Password reset from email',
+    kind: 'access',
+    tone: 'revoke',
+    detail: (m) => join(text(m.account), 'new password set with the emailed link'),
+  },
 
   // Attendance
   ATTENDANCE_OVERRIDDEN: {

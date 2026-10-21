@@ -488,6 +488,11 @@ model AdminUser {
   mfaFailures       Int       @default(0)
   mfaLockedUntil    DateTime?
 
+  /// "Forgot password?": SHA-256 of the emailed link's token — never the token
+  /// itself — and when it stops working. Cleared when used.
+  resetLinkHash      String?   @unique
+  resetLinkExpiresAt DateTime?
+
   auditLogs AuditLog[]
 
   createdAt DateTime @default(now())
@@ -803,6 +808,10 @@ model SignupRequest {
   branchCount  Int?
   planCode     String // STARTER | GROWTH | ENTERPRISE
   note         String?
+  /// GSTIN, upper-cased. Copied to the workspace's company profile on approval.
+  gstNumber    String?
+  /// True when the email came from a Google sign-in rather than being typed.
+  emailFromGoogle Boolean @default(false)
   status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
   reviewedById String? // PlatformUser
   reviewedAt   DateTime?

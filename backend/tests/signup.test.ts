@@ -14,6 +14,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcrypt';
 import type { FastifyInstance } from 'fastify';
 import { adminSignIn } from './support/admin-session.js';
+// Imported lazily: a static import would load config/env.ts before the
+// webhook secret below is set.
+const setGoogleVerifierForTests: typeof import('../src/services/auth/google-id-token.js').setGoogleVerifierForTests =
+  async (...args) => (await import('../src/services/auth/google-id-token.js')).setGoogleVerifierForTests(...args);
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const suite = TEST_DATABASE_URL ? describe : describe.skip;
@@ -37,6 +41,7 @@ const APPLICANT = {
   branchCount: 2,
   planCode: 'GROWTH' as const,
   note: 'Two showrooms, one workshop.',
+  gstNumber: '33abcde1234f1z5',
 };
 
 /** The Growth plan, in paise, as backend/src/services/subscription/plans.ts holds it. */
@@ -337,12 +342,70 @@ suite('signing up without being invited', () => {
       const me = await asPlatform('GET', '/api/platform/me');
       expect(paid.json().subscription.paidById).toBe(me.json().id);
       expect((await app.prisma.tenant.findUniqueOrThrow({ where: { id: workspaceId } })).status).toBe('ACTIVE');
+
+      // The GSTIN they gave is the new workspace's, upper-cased.
+      const { runUnscoped } = await import('../src/context/tenant-context.js');
+      const settings = await runUnscoped('test: read the new workspace settings', () =>
+        app.prisma.tenantSettings.findFirstOrThrow({ where: { tenantId: workspaceId } }),
+      );
+      expect(settings.gstin).toBe('33ABCDE1234F1Z5');
     });
 
     it('is a no-op the second time, rather than a second month', async () => {
       const again = await asPlatform('PATCH', `/api/platform/subscriptions/${workspaceId}/mark-paid`);
       expect(again.statusCode).toBe(200);
       expect(again.json().alreadyPaid).toBe(true);
+    });
+  });
+
+  describe('the GST number', () => {
+    it('is required, and must look like a GSTIN', async () => {
+      const { gstNumber: _omit, ...withoutGst } = APPLICANT;
+      const base = { ...withoutGst, companyName: 'Gst Motors', slug: 'gst-motors', email: 'gst@motors.test' };
+      expect((await post('/api/public/signup', base)).statusCode).toBe(422);
+      expect((await post('/api/public/signup', { ...base, gstNumber: '12345' })).statusCode).toBe(422);
+    });
+  });
+
+  describe('signing up with Google', () => {
+    const GOOGLE_APPLICANT = {
+      companyName: 'Dharani Wheels', contactName: 'Priya', phone: '+919000077777',
+      gstNumber: '33ABCDE1234F1Z5', planCode: 'GROWTH' as const,
+    };
+    afterAll(async () => { await setGoogleVerifierForTests(null); });
+
+    it('takes the address from Google, not from what was typed', async () => {
+      await setGoogleVerifierForTests(async (c) =>
+        c === 'forged-google-token' ? Promise.reject(new Error('bad signature')) : { email: 'Priya@Dharani.test', emailVerified: true },
+      );
+      const res = await post('/api/public/signup', {
+        ...GOOGLE_APPLICANT, googleCredential: 'a-google-id-token', email: 'typed@elsewhere.test',
+      });
+      expect(res.statusCode, res.body).toBe(201);
+
+      const signup = await app.prisma.signupRequest.findFirstOrThrow({ where: { companyName: 'Dharani Wheels' } });
+      expect(signup.email).toBe('priya@dharani.test');
+      expect(signup.emailFromGoogle).toBe(true);
+      // No address was asked for, so one was made from the name.
+      expect(signup.slug).toBe('dharani-wheels');
+    });
+
+    it('refuses a token Google did not sign', async () => {
+      const res = await post('/api/public/signup', { ...GOOGLE_APPLICANT, companyName: 'Forged Motors', googleCredential: 'forged-google-token' });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('needs either Google or a typed address', async () => {
+      const res = await post('/api/public/signup', { ...GOOGLE_APPLICANT, companyName: 'No Email Motors' });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('picks the next free address when the name is already asked for', async () => {
+      await setGoogleVerifierForTests(async () => ({ email: 'second@dharani.test', emailVerified: true }));
+      const res = await post('/api/public/signup', { ...GOOGLE_APPLICANT, googleCredential: 'another-google-token' });
+      expect(res.statusCode, res.body).toBe(201);
+      const signup = await app.prisma.signupRequest.findFirstOrThrow({ where: { email: 'second@dharani.test' } });
+      expect(signup.slug).toBe('dharani-wheels-2');
     });
   });
 

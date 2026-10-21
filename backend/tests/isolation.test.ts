@@ -385,6 +385,10 @@ suite('cross-tenant isolation', () => {
     'POST /api/auth/admin/two-step/verify',
     'POST /api/auth/admin/two-step/setup',
     'POST /api/auth/admin/two-step/enable',
+    // "Forgot password?": reached by an address, then by an emailed token, both
+    // looked up inside the workspace the request names.
+    'POST /api/auth/admin/forgot-password',
+    'POST /api/auth/admin/reset-password',
     'POST /api/auth/employee-login',
     'POST /api/auth/refresh-token',
     'GET /api/auth/workspace',
@@ -511,6 +515,7 @@ suite('cross-tenant isolation', () => {
    */
   const PLATFORM_SURFACE = [
     'POST /api/platform/auth/login',
+    'POST /api/platform/auth/google',
     'POST /api/platform/auth/two-step/verify',
     'POST /api/platform/auth/two-step/setup',
     'POST /api/platform/auth/two-step/enable',

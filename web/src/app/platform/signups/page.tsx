@@ -146,8 +146,16 @@ export default function SignupsPage() {
                   <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
                     <span className="font-mono">{row.slug}</span>
                     <span>{row.contactName}</span>
-                    <span className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{row.email}</span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3.5" />{row.email}
+                      {row.emailFromGoogle && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700" title="Signed up with Google, so this address is theirs">
+                          via Google
+                        </span>
+                      )}
+                    </span>
                     <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />{row.phone}</span>
+                    {row.gstNumber && <span className="font-mono">GST {row.gstNumber}</span>}
                   </div>
 
                   <div className="mt-1 text-xs text-muted-foreground">

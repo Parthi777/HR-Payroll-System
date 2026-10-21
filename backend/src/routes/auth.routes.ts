@@ -6,6 +6,12 @@ import { runInTenant } from '../context/tenant-context.js';
 import { requireTenantFromRequest, resolveTenant, tenantSlugFromRequest } from '../context/tenant-resolve.js';
 import { AppError } from '../utils/AppError.js';
 import { recordAudit } from '../services/audit/audit.service.js';
+import { mailConfigured } from '../services/mail/mail.service.js';
+import {
+  RESET_TTL_MINUTES,
+  completeAdminPasswordReset,
+  issueAdminPasswordReset,
+} from '../services/auth/password-reset.service.js';
 import {
   CHALLENGE_TTL,
   acceptTotp,
@@ -27,6 +33,8 @@ const adminLoginSchema = z.object({ email: z.string().email(), password: z.strin
 const employeeLoginSchema = z
   .object({ userId: z.string().trim().min(1).optional(), phone: z.string().trim().min(1).optional(), password: z.string().min(1) })
   .refine((b) => b.userId || b.phone, { message: 'Enter your employee ID or phone number', path: ['userId'] });
+const forgotSchema = z.object({ email: z.string().trim().email() });
+const resetSchema = z.object({ token: z.string().min(20).max(200), password: z.string().min(12) });
 const challengeSchema = z.object({ challenge: z.string().min(1) });
 const challengeCodeSchema = z.object({ challenge: z.string().min(1), code: z.string().trim().min(1).max(32) });
 
@@ -319,6 +327,51 @@ export async function authRoutes(app: FastifyInstance) {
         actorId: admin.id, entityId: admin.id, metadata: { account: admin.email },
       });
       return { ...signAdminSession(tenant, admin), recoveryCodes };
+    });
+  });
+
+  /**
+   * "Forgot password?" — email a one-time link to a Master Control login.
+   *
+   * The same answer whether or not the address has an account here, and the
+   * mail goes out after the response rather than before it, so neither the
+   * words nor the timing say which addresses are registered. Without SMTP
+   * configured it says so plainly: a reset that silently never arrives is
+   * worse than being told to ask a Super Admin.
+   */
+  app.post('/admin/forgot-password', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (req) => {
+    const { email } = forgotSchema.parse(req.body);
+    const tenant = await tenantFor(req);
+    if (!mailConfigured()) {
+      throw new AppError('Password reset by email is not set up yet — ask a Super Admin to reset your password from User Access.', 503);
+    }
+
+    await runInTenant({ tenantId: tenant.id, subjectId: 'password-reset', role: 'SUPER_ADMIN' }, async () => {
+      const issued = await issueAdminPasswordReset(app.prisma, tenant, email);
+      if (!issued) return;
+      await recordAudit(req, 'ADMIN_PASSWORD_RESET_REQUESTED', 'AdminUser', {
+        actorId: issued.admin.id, entityId: issued.admin.id, metadata: { account: issued.admin.email },
+      });
+      void issued.send().catch((err) => req.log.error({ err }, 'password reset email failed'));
+    });
+
+    return {
+      ok: true,
+      message: `If ${email} has a login at ${tenant.name}, a link to set a new password is on its way. It works for ${RESET_TTL_MINUTES} minutes.`,
+    };
+  });
+
+  /** Spend the emailed link. Sign-in afterwards still needs the authenticator code. */
+  app.post('/admin/reset-password', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
+    const { token, password } = resetSchema.parse(req.body);
+    const tenant = await tenantFor(req);
+
+    return runInTenant({ tenantId: tenant.id, subjectId: 'password-reset', role: 'SUPER_ADMIN' }, async () => {
+      const admin = await completeAdminPasswordReset(app.prisma, token, password);
+      await recordAudit(req, 'ADMIN_PASSWORD_RESET_BY_EMAIL', 'AdminUser', {
+        actorId: admin.id, entityId: admin.id, metadata: { account: admin.email },
+      });
+      return { ok: true, email: admin.email, tenant: { slug: tenant.slug, name: tenant.name } };
     });
   });
 
