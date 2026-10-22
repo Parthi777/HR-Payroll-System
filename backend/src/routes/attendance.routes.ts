@@ -24,6 +24,7 @@ import { getObjectBytes } from '../services/storage/storage.service.js';
 import { dayKey } from '../utils/time.js';
 import { getCompanyProfile, getTenantPolicy } from '../services/settings/tenant-settings.service.js';
 import { changed, recordAudit } from '../services/audit/audit.service.js';
+import { adminDashboardInsights } from '../services/dashboard/insights.service.js';
 
 const HHMM = z.string().regex(/^\d{1,2}:\d{2}$/, 'Use a HH:MM time, e.g. 09:30');
 
@@ -362,6 +363,24 @@ export async function attendanceRoutes(app: FastifyInstance) {
         total: b.employees.length,
       }));
       return { trend: days, branches: branchStats };
+    },
+  );
+
+  // The dashboard's deeper panels: rate over the range, arrival times, punch
+  // types, departments, pending queues, late arrivals, upcoming leave — and the
+  // last payroll's totals, only for the roles that may see salaries. A branch
+  // manager sees their own branch.
+  app.get(
+    '/admin/dashboard/insights',
+    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN') },
+    async (req) => {
+      const { days } = z.object({ days: z.coerce.number().refine((d) => d === 7 || d === 30).default(7) }).parse(req.query);
+      const role = req.user.role;
+      return adminDashboardInsights(app.prisma, {
+        days: days as 7 | 30,
+        branchId: role === 'BRANCH_MANAGER' ? req.user.branchId ?? undefined : undefined,
+        includePayroll: role === 'SUPER_ADMIN' || role === 'PAYROLL_ADMIN',
+      });
     },
   );
 

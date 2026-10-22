@@ -240,3 +240,72 @@ export interface NewDealerAdmin {
   email: string;
   role: string;
 }
+
+/* ── Monitoring (GET /overview, GET /tenants/:id/insights) — counts and states only ── */
+
+export interface DealerSubscription {
+  planCode: string;
+  status: 'PENDING_PAYMENT' | 'ACTIVE' | 'PAST_DUE' | 'CANCELLED';
+  amountPaise: number;
+  periodEnd: string | null;
+  paidAt: string | null;
+}
+
+export interface DealerOverviewRow {
+  id: string;
+  slug: string;
+  name: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+  createdAt: string;
+  staff: number;
+  branches: number;
+  checkedInToday: number;
+  attendanceRate: number;
+  lastCheckInAt: string | null;
+  checkInsLast14: number[];
+  subscription: DealerSubscription | null;
+  admins: number;
+  adminsWithTwoStep: number;
+  lastAdminSignInAt: string | null;
+  lastPayroll: { month: number; year: number; payslips: number } | null;
+  kiosks: number;
+  kioskLastSeenAt: string | null;
+  pendingApprovals: number;
+}
+
+export interface PlatformOverview {
+  totals: {
+    dealers: number;
+    activeDealers: number;
+    suspendedDealers: number;
+    staff: number;
+    checkedInToday: number;
+    attendanceRate: number;
+    pendingSignups: number;
+    monthlyRecurringPaise: number;
+    awaitingPayment: number;
+  };
+  dealers: DealerOverviewRow[];
+  series: {
+    checkIns: { label: string; checkIns: number }[];
+    staffGrowth: { label: string; staff: number }[];
+    signupsPerWeek: { label: string; pending: number; approved: number; rejected: number }[];
+    subscriptionsByStatus: { status: string; count: number }[];
+    dealersByPlan: { plan: string; count: number }[];
+    recurringByPlan: { plan: string; rupees: number }[];
+  };
+}
+
+export interface DealerInsights {
+  today: { staff: number; checkedIn: number; attendanceRate: number; pendingApprovals: number; branches: number };
+  checkIns: { label: string; checkIns: number; late: number }[];
+  punchModes: { mode: string; label: string; count: number }[];
+  branchesToday: { branch: string; total: number; present: number }[];
+  staffGrowth: { label: string; staff: number }[];
+  leavePerWeek: { label: string; approved: number; pending: number; rejected: number }[];
+  claimsByStatus: { status: string; count: number }[];
+  payrollRuns: { month: number; year: number; payslips: number }[];
+  admins: { id: string; name: string; role: string; isActive: boolean; totpEnabledAt: string | null; lastSignInAt: string | null }[];
+  kiosks: { id: string; name: string; branch: string; isActive: boolean; pairedAt: string | null; lastSeenAt: string | null }[];
+  subscription: DealerSubscription | null;
+}

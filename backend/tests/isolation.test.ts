@@ -268,6 +268,14 @@ suite('cross-tenant isolation', () => {
       expect(res.json().branches).toBe(1);
     });
 
+    it('dashboard insights count one employee, and name none of the other tenant', async () => {
+      const res = await as(A.adminToken, A.slug, 'GET', '/api/admin/dashboard/insights?days=30');
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().staff).toBe(1);
+      expect(res.json().branches).toHaveLength(1);
+      expect(JSON.stringify(res.json())).not.toContain('bravo');
+    });
+
     it('live attendance shows only this tenant', async () => {
       const res = await as(A.adminToken, A.slug, 'GET', '/api/admin/attendance/live');
       expect(res.statusCode).toBe(200);
@@ -338,6 +346,7 @@ suite('cross-tenant isolation', () => {
     'PATCH /api/admin/leaves/:id/approve',
     'PUT /api/admin/geofence/:branchId',
     'GET /api/admin/dashboard/stats',
+    'GET /api/admin/dashboard/insights',
     'GET /api/admin/attendance/live',
     'GET /api/admin/reports/daily',
     'POST /api/admin/payroll/run',
@@ -527,6 +536,8 @@ suite('cross-tenant isolation', () => {
     'DELETE /api/platform/users/:id/two-step',
     'GET /api/platform/tenants',
     'POST /api/platform/tenants',
+    'GET /api/platform/overview',
+    'GET /api/platform/tenants/:id/insights',
     'GET /api/platform/tenants/:id',
     'PATCH /api/platform/tenants/:id',
     'PATCH /api/platform/tenants/:id/status',

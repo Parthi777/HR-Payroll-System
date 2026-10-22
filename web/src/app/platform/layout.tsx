@@ -73,12 +73,14 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
         <nav className="ml-8 hidden items-center gap-1 sm:flex">
           {[
-            { href: '/platform', label: 'Dealers' },
+            { href: '/platform', label: 'Overview' },
             { href: '/platform/signups', label: 'Signups' },
             { href: '/platform/users', label: 'Team' },
             { href: '/platform/activity', label: 'Activity' },
           ].map((item) => {
-            const active = item.href === '/platform' ? pathname === '/platform' : pathname.startsWith(item.href);
+            const active = item.href === '/platform'
+              ? pathname === '/platform' || pathname.startsWith('/platform/dealers')
+              : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

@@ -5,6 +5,7 @@ import { requirePlatform, type JwtPayload, type JwtRole } from '../middleware/au
 import { AppError } from '../utils/AppError.js';
 import { env } from '../config/env.js';
 import { parseAllowList, platformAccessHook } from '../services/platform/platform-access.js';
+import { platformOverview, platformTenantInsights } from '../services/dashboard/insights.service.js';
 import { planByCode } from '../services/subscription/plans.js';
 import { markPaid, paymentUrl, startSubscription } from '../services/subscription/subscription.service.js';
 import {
@@ -623,6 +624,21 @@ export async function platformRoutes(app: FastifyInstance) {
         loginUrl: tenantLoginUrl(t.slug),
       })),
     };
+  });
+
+  /**
+   * The console's monitoring view: every dealer's activity, billing and health,
+   * and the trends across them. Counts and states only — see
+   * services/dashboard/insights.service.ts for what is deliberately left out.
+   */
+  app.get('/platform/overview', { preHandler: requirePlatform }, async () => platformOverview(app.prisma));
+
+  /** One dealer's monitoring view, for its page in the console. */
+  app.get('/platform/tenants/:id/insights', { preHandler: requirePlatform }, async (req) => {
+    const { id } = req.params as { id: string };
+    const tenant = await app.prisma.tenant.findUnique({ where: { id }, select: { id: true } });
+    if (!tenant) throw AppError.notFound('Dealer');
+    return platformTenantInsights(app.prisma, id);
   });
 
   app.get('/platform/tenants/:id', { preHandler: requirePlatform }, async (req) => {

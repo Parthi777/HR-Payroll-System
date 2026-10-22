@@ -8,10 +8,13 @@ import {
 } from 'lucide-react';
 import {
   DEALER_ROLES, platformApi, suggestPassword,
-  type AuditEntry, type AuditPage, type Dealer, type DealerAdmin, type DealerStorage,
+  type AuditEntry, type AuditPage, type Dealer, type DealerAdmin, type DealerInsights, type DealerStorage,
   type NewDealerAdmin,
 } from '@/lib/platform-api';
 import { describeActivity, exactTime } from '@/lib/platform-activity';
+import { DealerMonitor } from '@/components/platform/dealer-monitor';
+import { StatusDialog } from '@/components/platform/status-dialog';
+import { timeAgo } from '@/components/motion';
 
 interface DealerDetail {
   tenant: Dealer & { updatedAt: string };
@@ -33,6 +36,8 @@ export default function DealerDetailPage() {
   const [addingAdmin, setAddingAdmin] = useState(false);
   const [issued, setIssued] = useState<Issued | null>(null);
   const [busyAdmin, setBusyAdmin] = useState<string | null>(null);
+  const [insights, setInsights] = useState<DealerInsights | null>(null);
+  const [changingStatus, setChangingStatus] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -49,21 +54,11 @@ export default function DealerDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function setStatus(status: 'ACTIVE' | 'SUSPENDED') {
-    if (!data) return;
-    const suspending = status === 'SUSPENDED';
-    if (!confirm(
-      suspending
-        ? `Suspend ${data.tenant.name}? Everyone signed in there is signed out on their next request, and nobody can sign back in until you resume it.`
-        : `Resume ${data.tenant.name}? Their people can sign in again straight away.`,
-    )) return;
-    try {
-      await platformApi.patch(`/tenants/${id}/status`, { status });
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not change status');
-    }
-  }
+  // Monitoring loads on its own: a slow or failed chart query must not hide the
+  // admin logins, which are what someone usually comes here to change.
+  useEffect(() => {
+    platformApi.get<DealerInsights>(`/tenants/${id}/insights`).then(setInsights).catch(() => setInsights(null));
+  }, [id]);
 
   /**
    * A new password for a dealer login that cannot sign in, shown once. For the
@@ -148,8 +143,10 @@ export default function DealerDetailPage() {
               onRename={async (name) => { await platformApi.patch(`/tenants/${id}`, { name }); await load(); }}
             />
             <button
-              onClick={() => setStatus(active ? 'SUSPENDED' : 'ACTIVE')}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+              onClick={() => setChangingStatus(true)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                active ? 'border-border hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800' : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              }`}
             >
               {active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               {active ? 'Suspend' : 'Resume'}
@@ -163,6 +160,26 @@ export default function DealerDetailPage() {
           <CopyStat label="Sign in at" value={tenant.loginUrl} />
         </dl>
       </div>
+
+      {/* ── monitor ── */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Monitor</h2>
+          <p className="text-sm text-muted-foreground">
+            Activity, billing and health at {tenant.name}. Counts only — never their people&rsquo;s names or pay.
+          </p>
+        </div>
+        <DealerMonitor insights={insights} />
+      </section>
+
+      <StatusDialog
+        target={changingStatus ? {
+          id: tenant.id, name: tenant.name, slug: tenant.slug, status: tenant.status,
+          staff: employees, admins: admins.filter((a) => a.isActive).length,
+        } : null}
+        onClose={() => setChangingStatus(false)}
+        onChanged={() => void load()}
+      />
 
       {/* ── admin accounts ── */}
       <section className="space-y-3">
@@ -198,7 +215,7 @@ export default function DealerDetailPage() {
         )}
 
         <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Name</th>
@@ -206,6 +223,7 @@ export default function DealerDetailPage() {
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Two-step</th>
+                <th className="px-4 py-3">Last sign-in</th>
                 <th className="px-4 py-3 text-right">Can&rsquo;t sign in?</th>
               </tr>
             </thead>
@@ -224,6 +242,9 @@ export default function DealerDetailPage() {
                     <span className={a.totpEnabledAt ? 'text-emerald-600' : 'text-muted-foreground'}>
                       {a.totpEnabledAt ? 'Set up' : 'At next sign-in'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {timeAgo(insights?.admins.find((x) => x.id === a.id)?.lastSignInAt)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">

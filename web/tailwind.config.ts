@@ -101,12 +101,44 @@ const config: Config = {
           '0%, 100%': { opacity: '0.35', transform: 'scale(1)' },
           '50%': { opacity: '0.6', transform: 'scale(1.12)' },
         },
+        /* A success tick drawing itself (stroke-dasharray set on the path). */
+        'check-draw': {
+          '0%': { strokeDashoffset: '48' },
+          '100%': { strokeDashoffset: '0' },
+        },
+        /* The circle behind it landing. */
+        pop: {
+          '0%': { transform: 'scale(0.4)', opacity: '0' },
+          '60%': { transform: 'scale(1.08)', opacity: '1' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        /* A few pieces of confetti thrown up and falling (direction set inline). */
+        confetti: {
+          '0%': { transform: 'translate(0, 0) rotate(0deg)', opacity: '1' },
+          '100%': { transform: 'translate(var(--dx), var(--dy)) rotate(var(--rot))', opacity: '0' },
+        },
+        /* A row that just changed, so the eye finds it. */
+        'row-flash': {
+          '0%': { boxShadow: '0 0 0 0 rgba(0,161,116,0)' },
+          '25%': { boxShadow: '0 0 0 4px rgba(0,161,116,0.35)' },
+          '100%': { boxShadow: '0 0 0 0 rgba(0,161,116,0)' },
+        },
+        /* A step in a progress list arriving. */
+        'step-in': {
+          '0%': { opacity: '0', transform: 'translateX(-6px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
       },
       animation: {
         drift: 'drift 22s ease-in-out infinite',
         'drift-slow': 'drift 30s ease-in-out infinite reverse',
         sheen: 'sheen 6s ease-in-out infinite',
         halo: 'halo 5s ease-in-out infinite',
+        'check-draw': 'check-draw 0.5s ease-out 0.25s both',
+        pop: 'pop 0.45s cubic-bezier(0.22,1,0.36,1) both',
+        confetti: 'confetti 1.1s cubic-bezier(0.15,0.6,0.35,1) both',
+        'row-flash': 'row-flash 1.6s ease-out 2',
+        'step-in': 'step-in 0.3s ease-out both',
       },
     },
   },

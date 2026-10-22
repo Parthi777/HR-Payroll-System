@@ -647,6 +647,18 @@ GET    /api/admin/reports/employee/:id?month=&year=
 GET    /api/admin/reports/late?month=&year=
 ```
 
+### Monitoring dashboards
+`services/dashboard/insights.service.ts`. The console's two are cross-dealer and
+carry **counts and states only** — no employee names, no salary figures
+(pinned by `tests/monitoring.test.ts`). Master Control's shows the last
+payroll's totals only to SUPER_ADMIN / PAYROLL_ADMIN, and a BRANCH_MANAGER sees
+only their branch. `AdminUser.lastSignInAt` is set on each completed sign-in.
+```
+GET    /api/platform/overview                 # Totals, per-dealer activity/billing/health, 30–90 day series
+GET    /api/platform/tenants/:id/insights     # One dealer: check-ins, punch mix, branches, leave, claims, payroll runs, kiosks
+GET    /api/admin/dashboard/insights?days=7|30 # Master Control: rate, arrival times, queues, late list, upcoming leave, payroll
+```
+
 ### Audit trail
 Every administrative action inside a workspace is recorded — approvals, payroll
 runs, salary changes, geofence edits, face enrolment, account changes. Written

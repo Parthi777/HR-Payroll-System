@@ -493,6 +493,10 @@ model AdminUser {
   resetLinkHash      String?   @unique
   resetLinkExpiresAt DateTime?
 
+  /// When this login last completed sign-in (password + code). For the
+  /// platform console's health view; null = never since this was added.
+  lastSignInAt DateTime?
+
   auditLogs AuditLog[]
 
   createdAt DateTime @default(now())

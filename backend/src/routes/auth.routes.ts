@@ -243,6 +243,15 @@ export async function authRoutes(app: FastifyInstance) {
     });
   }
 
+  /** A completed sign-in: noted on the account (for the console's health view), then the session. */
+  async function startAdminSession(
+    tenant: { id: string; slug: string; name: string },
+    admin: { id: string; role: string; branchId: string | null; email: string; name: string },
+  ) {
+    await app.prisma.adminUser.update({ where: { id: admin.id }, data: { lastSignInAt: new Date() } });
+    return signAdminSession(tenant, admin);
+  }
+
   /** The session — the same token admin sign-in always returned, now proven by a second step. */
   function signAdminSession(
     tenant: { id: string; slug: string; name: string },
@@ -291,7 +300,7 @@ export async function authRoutes(app: FastifyInstance) {
 
       if (looksLikeTotp(code)) {
         if (!(await acceptTotp(app.prisma, 'admin', admin, admin.totpSecret, code))) return wrongCode(req, admin);
-        return signAdminSession(tenant, admin);
+        return startAdminSession(tenant, admin);
       }
 
       const left = await consumeRecoveryCode(app.prisma, 'admin', admin, code);
@@ -301,7 +310,7 @@ export async function authRoutes(app: FastifyInstance) {
       await recordAudit(req, 'ADMIN_RECOVERY_CODE_USED', 'AdminUser', {
         actorId: admin.id, entityId: admin.id, metadata: { account: admin.email, left },
       });
-      return { ...signAdminSession(tenant, admin), recoveryCodesLeft: left };
+      return { ...(await startAdminSession(tenant, admin)), recoveryCodesLeft: left };
     });
   });
 
@@ -326,7 +335,7 @@ export async function authRoutes(app: FastifyInstance) {
       await recordAudit(req, 'ADMIN_TWO_STEP_ENABLED', 'AdminUser', {
         actorId: admin.id, entityId: admin.id, metadata: { account: admin.email },
       });
-      return { ...signAdminSession(tenant, admin), recoveryCodes };
+      return { ...(await startAdminSession(tenant, admin)), recoveryCodes };
     });
   });
 
