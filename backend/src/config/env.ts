@@ -101,9 +101,9 @@ const envSchema = z.object({
   // to a new dealership. Falls back to a relative path when unset.
   PUBLIC_SITE_URL: z.string().optional(),
 
-  // "Sign in with Google" on the PLATFORM CONSOLE only — the Web-application
-  // OAuth client id, the audience Google ID tokens are checked against. Master
-  // Control and the app have no Google sign-in. Unset = the button is refused.
+  // "Sign up with Google" on the public sign-up page — the Web-application
+  // OAuth client id, the audience Google ID tokens are checked against.
+  // Nothing signs in with Google. Unset = sign-up takes a typed email only.
   GOOGLE_WEB_CLIENT_ID: z.string().optional(),
 
   // Outgoing email (SMTP) — for now only "Forgot password?" on Master Control.

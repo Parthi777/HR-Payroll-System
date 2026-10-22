@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Script from 'next/script';
 import { Building2, KeyRound, ScrollText } from 'lucide-react';
 import { PasswordInput } from '@/components/password-input';
 import { BrandLogo } from '@/components/brand-logo';
@@ -13,12 +12,6 @@ import {
   type PasswordStep,
   type PlatformSession,
 } from '@/lib/platform-api';
-
-/**
- * "Sign in with Google" — the console only; Master Control has none. Build-time,
- * like every NEXT_PUBLIC_ value: unset, the button is simply not drawn.
- */
-const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 type Stage =
   | { kind: 'password' }
@@ -177,27 +170,6 @@ function PasswordForm({ onNext }: { onNext: (res: PasswordStep) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { busy, error, run } = useSubmit();
-  const googleDiv = useRef<HTMLDivElement>(null);
-  const [gsiReady, setGsiReady] = useState(false);
-
-  // Google stands in for the password only: the server answers with the same
-  // challenge, and the authenticator code is still asked for next.
-  useEffect(() => {
-    if (!gsiReady || !GOOGLE_CLIENT_ID || !window.google || !googleDiv.current) return;
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: ({ credential }) =>
-        void run(async () => onNext(await platformApi.post<PasswordStep>('/auth/google', { credential }))),
-    });
-    window.google.accounts.id.renderButton(googleDiv.current, {
-      theme: 'outline',
-      size: 'large',
-      width: 336,
-      text: 'signin_with',
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gsiReady]);
-
   return (
     <form
       onSubmit={(e) => {
@@ -207,20 +179,9 @@ function PasswordForm({ onNext }: { onNext: (res: PasswordStep) => void }) {
     >
       <h2 className="text-[1.6rem] font-bold leading-tight tracking-tight">Welcome back</h2>
       <p className="mb-7 mt-1.5 text-sm text-muted-foreground">
-        Sign in with {GOOGLE_CLIENT_ID ? 'Google or your password' : 'your password'}, then a code from your authenticator app.
+        Sign in with your password, then a code from your authenticator app.
       </p>
 
-      {GOOGLE_CLIENT_ID && (
-        <>
-          <Script src="https://accounts.google.com/gsi/client" onReady={() => setGsiReady(true)} />
-          <div ref={googleDiv} className="flex min-h-[44px] justify-center [color-scheme:light]" />
-          <div className="my-6 flex items-center gap-4 text-xs font-medium text-muted-foreground">
-            <div className="h-px flex-1 bg-border" />
-            or with email and password
-            <div className="h-px flex-1 bg-border" />
-          </div>
-        </>
-      )}
 
       <label className="mb-1 block text-sm font-medium">Email</label>
       <input

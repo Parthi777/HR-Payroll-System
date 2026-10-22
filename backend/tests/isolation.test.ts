@@ -515,7 +515,6 @@ suite('cross-tenant isolation', () => {
    */
   const PLATFORM_SURFACE = [
     'POST /api/platform/auth/login',
-    'POST /api/platform/auth/google',
     'POST /api/platform/auth/two-step/verify',
     'POST /api/platform/auth/two-step/setup',
     'POST /api/platform/auth/two-step/enable',

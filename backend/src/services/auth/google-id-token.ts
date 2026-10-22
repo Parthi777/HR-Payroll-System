@@ -1,12 +1,9 @@
 /**
  * Google ID tokens — the verified email inside one, checked by the server.
  *
- * Two uses, both of which trust Google for an address and nothing more:
- *  - the platform console's "Sign in with Google", in place of the password
- *    (the PlatformUser table still decides who gets in, and the authenticator
- *    code still follows — the console reaches every dealer);
- *  - the public sign-up page, where the address a dealership signs up with is
- *    taken from Google instead of typed, so it is known to be theirs.
+ * Used by the public sign-up page only: the address a dealership signs up with
+ * is taken from Google instead of typed, so it is known to be theirs. Nothing
+ * signs in with Google — not the console, Master Control or the app.
  */
 import { OAuth2Client } from 'google-auth-library';
 import { env } from '../../config/env.js';
