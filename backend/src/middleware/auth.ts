@@ -376,7 +376,8 @@ export async function assertManages(
 }
 
 /** Models whose ids may arrive in a request body and must be ownership-checked. */
-type OwnedModel = 'branch' | 'department' | 'designation' | 'shift' | 'employee' | 'claim' | 'attendance' | 'leave';
+type OwnedModel =
+  | 'branch' | 'department' | 'designation' | 'shift' | 'employee' | 'claim' | 'attendance' | 'leave' | 'adminUser';
 
 /**
  * Confirm an id supplied by the caller belongs to the caller's tenant.

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { assertOwned, authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { requireTenantId } from '../context/tenant-context.js';
 import { recordAudit } from '../services/audit/audit.service.js';
@@ -62,6 +62,9 @@ export async function shiftRoutes(app: FastifyInstance) {
 
   app.post('/admin/shifts/assign', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
     const { shiftId, employeeIds } = z.object({ shiftId: z.string(), employeeIds: z.array(z.string()) }).parse(req.body);
+    // The employees are filtered to this dealer by the update itself; the shift
+    // is only a value being written, so nothing would stop another dealer's id.
+    await assertOwned(app.prisma, 'shift', shiftId);
     await app.prisma.employee.updateMany({ where: { id: { in: employeeIds } }, data: { shiftId } });
     const shift = await app.prisma.shift.findUnique({ where: { id: shiftId }, select: { name: true } });
     await recordAudit(req, 'SHIFT_ASSIGNED', 'Shift', {

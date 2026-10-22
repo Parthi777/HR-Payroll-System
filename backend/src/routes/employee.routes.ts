@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto';
 import path from 'path';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
-import { requireRole, type JwtRole } from '../middleware/auth.js';
+import { assertOwned, requireRole, type JwtRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { enrollFace, removeFace, verifyFace, isFaceMatchEnabled } from '../services/ai/face.service.js';
 import { env } from '../config/env.js';
@@ -140,6 +140,28 @@ function stripOwnerOnly<T extends Record<string, unknown>>(data: T, role: string
   return out;
 }
 
+/**
+ * Every id the employee form can name must belong to this dealer.
+ *
+ * The foreign keys are plain ones, so the database would accept another
+ * dealer's branch or shift — and the employee list's `include: { branch }`
+ * would then show this dealer that branch's name and address. Bulk import needs
+ * none of this: it resolves names against this dealer's own lists.
+ */
+async function assertRefsOwned(
+  prisma: FastifyInstance['prisma'],
+  refs: {
+    branchId?: string; departmentId?: string; designationId?: string; shiftId?: string;
+    reportingManagerId?: string | null;
+  },
+): Promise<void> {
+  await assertOwned(prisma, 'branch', refs.branchId);
+  await assertOwned(prisma, 'department', refs.departmentId);
+  await assertOwned(prisma, 'designation', refs.designationId);
+  await assertOwned(prisma, 'shift', refs.shiftId);
+  await assertOwned(prisma, 'adminUser', refs.reportingManagerId);
+}
+
 /** Minimal CSV parser (handles quoted fields with commas). Returns rows of cells. */
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -195,6 +217,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     const { password, ...parsed } = createEmployeeSchema.parse(req.body);
     const rest = stripOwnerOnly(parsed, req.user.role);
     rest.phone = normalizePhone(rest.phone);
+    await assertRefsOwned(app.prisma, rest);
 
     // Auto-generate the code when the form leaves it blank.
     const employeeCode = rest.employeeCode?.trim() || (await nextEmployeeCode(app.prisma, await codePrefix(app.prisma)));
@@ -324,6 +347,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     const { password, ...parsed } = createEmployeeSchema.partial().parse(req.body);
     const rest = stripOwnerOnly(parsed, req.user.role);
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
+    await assertRefsOwned(app.prisma, rest);
     // Setting a password through the edit form is the same authority as the
     // reset-password route, and is gated the same way.
     const mayResetPassword = CREDENTIAL_ROLES.includes(req.user.role);

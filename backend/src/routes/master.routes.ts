@@ -9,9 +9,11 @@ import { recordAudit } from '../services/audit/audit.service.js';
 const branchSchema = z.object({
   name: z.string().min(1),
   address: z.string().min(1),
-  geofenceLat: z.number(),
-  geofenceLng: z.number(),
-  geofenceRadius: z.number().default(100),
+  // The same bounds as PUT /admin/geofence/:branchId — this route writes the
+  // same fields, so it must not accept a fence that one refuses.
+  geofenceLat: z.number().min(-90).max(90),
+  geofenceLng: z.number().min(-180).max(180),
+  geofenceRadius: z.number().min(0.5).max(10000).default(100),
   strictMode: z.boolean().default(false),
 });
 
@@ -109,6 +111,12 @@ const companySchema = z.object({
 export async function masterRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER'));
 
+  // Branch managers read the master lists (they fill the employee form) but do
+  // not reshape them. A branch carries its geofence, and PUT /admin/geofence is
+  // already SUPER_ADMIN / HR_MANAGER — leaving this route open to a branch
+  // manager let them move, widen or un-strict the fence their own staff punch in.
+  const setupWriters = { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') };
+
   // This dealer's settings — company profile plus the attendance and payroll
   // policy that used to be deployment-wide env vars. One row per tenant, found
   // by the tenant filter rather than by a fixed id.
@@ -165,7 +173,7 @@ export async function masterRoutes(app: FastifyInstance) {
   app.get('/admin/branches', async () => ({
     branches: await app.prisma.branch.findMany({ orderBy: { name: 'asc' } }),
   }));
-  app.post('/admin/branches', async (req) => {
+  app.post('/admin/branches', setupWriters, async (req) => {
     const data = branchSchema.parse(req.body);
     const branch = await app.prisma.branch.create({ data: { ...data, tenantId: requireTenantId() } });
     await recordAudit(req, 'BRANCH_CREATED', 'Branch', {
@@ -174,14 +182,14 @@ export async function masterRoutes(app: FastifyInstance) {
     });
     return { branch };
   });
-  app.put('/admin/branches/:id', async (req) => {
+  app.put('/admin/branches/:id', setupWriters, async (req) => {
     const { id } = req.params as { id: string };
     const data = branchSchema.partial().parse(req.body);
     const branch = await app.prisma.branch.update({ where: { id }, data });
     await recordAudit(req, 'BRANCH_UPDATED', 'Branch', { entityId: branch.id, metadata: { name: branch.name, ...data } });
     return { branch };
   });
-  app.delete('/admin/branches/:id', async (req) => {
+  app.delete('/admin/branches/:id', setupWriters, async (req) => {
     const { id } = req.params as { id: string };
     const staff = await app.prisma.employee.count({ where: { branchId: id } });
     if (staff > 0) {
@@ -199,13 +207,13 @@ export async function masterRoutes(app: FastifyInstance) {
   app.get('/admin/departments', async () => ({
     departments: await app.prisma.department.findMany({ orderBy: { name: 'asc' } }),
   }));
-  app.post('/admin/departments', async (req) => {
+  app.post('/admin/departments', setupWriters, async (req) => {
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
     const department = await app.prisma.department.create({ data: { name, tenantId: requireTenantId() } });
     await recordAudit(req, 'DEPARTMENT_CREATED', 'Department', { entityId: department.id, metadata: { name } });
     return { department };
   });
-  app.put('/admin/departments/:id', async (req) => {
+  app.put('/admin/departments/:id', setupWriters, async (req) => {
     const { id } = req.params as { id: string };
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
     const before = await app.prisma.department.findUnique({ where: { id }, select: { name: true } });
@@ -216,7 +224,7 @@ export async function masterRoutes(app: FastifyInstance) {
     });
     return { department };
   });
-  app.delete('/admin/departments/:id', async (req) => {
+  app.delete('/admin/departments/:id', setupWriters, async (req) => {
     const { id } = req.params as { id: string };
     const staff = await app.prisma.employee.count({ where: { departmentId: id } });
     if (staff > 0) {
@@ -232,13 +240,13 @@ export async function masterRoutes(app: FastifyInstance) {
   app.get('/admin/designations', async () => ({
     designations: await app.prisma.designation.findMany({ orderBy: { name: 'asc' } }),
   }));
-  app.post('/admin/designations', async (req) => {
+  app.post('/admin/designations', setupWriters, async (req) => {
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
     const designation = await app.prisma.designation.create({ data: { name, tenantId: requireTenantId() } });
     await recordAudit(req, 'DESIGNATION_CREATED', 'Designation', { entityId: designation.id, metadata: { name } });
     return { designation };
   });
-  app.put('/admin/designations/:id', async (req) => {
+  app.put('/admin/designations/:id', setupWriters, async (req) => {
     const { id } = req.params as { id: string };
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
     const before = await app.prisma.designation.findUnique({ where: { id }, select: { name: true } });
@@ -249,7 +257,7 @@ export async function masterRoutes(app: FastifyInstance) {
     });
     return { designation };
   });
-  app.delete('/admin/designations/:id', async (req) => {
+  app.delete('/admin/designations/:id', setupWriters, async (req) => {
     const { id } = req.params as { id: string };
     const staff = await app.prisma.employee.count({ where: { designationId: id } });
     if (staff > 0) {

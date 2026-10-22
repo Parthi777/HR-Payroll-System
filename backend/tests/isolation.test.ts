@@ -25,6 +25,10 @@ interface Seeded {
   slug: string;
   tenantId: string;
   branchId: string;
+  departmentId: string;
+  designationId: string;
+  shiftId: string;
+  adminId: string;
   employeeId: string;
   attendanceId: string;
   claimId: string;
@@ -74,7 +78,7 @@ suite('cross-tenant isolation', () => {
         const shift = await prisma.shift.create({
           data: { name: 'General', startTime: '09:00', endTime: '18:00', tenantId: tenant.id },
         });
-        await prisma.adminUser.create({
+        const admin = await prisma.adminUser.create({
           data: { name: `${slug} admin`, email: SHARED.email, passwordHash, role: 'SUPER_ADMIN', tenantId: tenant.id },
         });
         const employee = await prisma.employee.create({
@@ -103,7 +107,9 @@ suite('cross-tenant isolation', () => {
             toDate: new Date('2026-07-10'), days: 1, reason: 'x', status: 'PENDING', tenantId: tenant.id,
           },
         });
-        return { branchId: branch.id, employeeId: employee.id, attendanceId: attendance.id, claimId: claim.id, leaveId: leave.id };
+        return {
+          branchId: branch.id, departmentId: dept.id, designationId: desig.id, shiftId: shift.id, adminId: admin.id,
+          employeeId: employee.id, attendanceId: attendance.id, claimId: claim.id, leaveId: leave.id };
       },
     );
 
@@ -302,6 +308,64 @@ suite('cross-tenant isolation', () => {
     });
   });
 
+  /**
+   * Ids that arrive in a request body. The scoping extension filters the rows a
+   * query reads, but a foreign key being *written* is just a value, and the
+   * foreign keys are plain ones — so these routes check each id resolves inside
+   * the caller's own dealer (assertOwned) and answer 404 when it does not.
+   */
+  describe('another tenant’s id in a request body is refused', () => {
+    const newEmployee = (over: Record<string, unknown>) => ({
+      name: 'New Person', phone: '+919000000099', joiningDate: '2026-01-01', salary: 20000,
+      branchId: A.branchId, departmentId: A.departmentId, designationId: A.designationId, shiftId: A.shiftId,
+      ...over,
+    });
+
+    it('POST /api/admin/employees accepts its own ids (control)', async () => {
+      const res = await as(A.adminToken, A.slug, 'POST', '/api/admin/employees', newEmployee({ reportingManagerId: A.adminId }));
+      expect(res.statusCode, res.body).toBe(200);
+      const { runUnscoped } = await import('../src/context/tenant-context.js');
+      await runUnscoped('test cleanup', () => app.prisma.employee.delete({ where: { id: res.json().employee.id } }));
+    });
+
+    for (const field of ['branchId', 'departmentId', 'designationId', 'shiftId', 'reportingManagerId'] as const) {
+      it(`POST /api/admin/employees refuses bravo’s ${field}`, async () => {
+        const foreign = { branchId: B.branchId, departmentId: B.departmentId, designationId: B.designationId, shiftId: B.shiftId, reportingManagerId: B.adminId }[field];
+        const res = await as(A.adminToken, A.slug, 'POST', '/api/admin/employees', newEmployee({ [field]: foreign }));
+        expect(res.statusCode, res.body).toBe(404);
+        const list = await as(A.adminToken, A.slug, 'GET', '/api/admin/employees');
+        expect(list.json().employees).toHaveLength(1);
+      });
+
+      it(`PUT /api/admin/employees/:id refuses bravo’s ${field}`, async () => {
+        const foreign = { branchId: B.branchId, departmentId: B.departmentId, designationId: B.designationId, shiftId: B.shiftId, reportingManagerId: B.adminId }[field];
+        const res = await as(A.adminToken, A.slug, 'PUT', `/api/admin/employees/${A.employeeId}`, { [field]: foreign });
+        expect(res.statusCode, res.body).toBe(404);
+        const check = await as(A.adminToken, A.slug, 'GET', `/api/admin/employees/${A.employeeId}`);
+        expect(check.json().employee[field] ?? null).not.toBe(foreign);
+      });
+    }
+
+    it('POST /api/admin/users refuses bravo’s branch', async () => {
+      const res = await as(A.adminToken, A.slug, 'POST', '/api/admin/users', {
+        name: 'Branch Boss', email: 'boss@example.com', role: 'BRANCH_MANAGER', password: 'long-enough-pw', branchId: B.branchId,
+      });
+      expect(res.statusCode, res.body).toBe(404);
+    });
+
+    it('PUT /api/admin/users/:id refuses bravo’s branch', async () => {
+      const res = await as(A.adminToken, A.slug, 'PUT', `/api/admin/users/${A.adminId}`, { branchId: B.branchId });
+      expect(res.statusCode, res.body).toBe(404);
+    });
+
+    it('POST /api/admin/shifts/assign refuses bravo’s shift', async () => {
+      const res = await as(A.adminToken, A.slug, 'POST', '/api/admin/shifts/assign', { shiftId: B.shiftId, employeeIds: [A.employeeId] });
+      expect(res.statusCode, res.body).toBe(404);
+      const check = await as(A.adminToken, A.slug, 'GET', `/api/admin/employees/${A.employeeId}`);
+      expect(check.json().employee.shiftId).toBe(A.shiftId);
+    });
+  });
+
   describe('per-tenant numbering', () => {
     it('each tenant has its own claim number 1', async () => {
       const a = await as(A.adminToken, A.slug, 'GET', `/api/claims/${A.claimId}`);
@@ -339,6 +403,10 @@ suite('cross-tenant isolation', () => {
     'GET /api/admin/audit',
     'GET /api/admin/employees/:id',
     'PUT /api/admin/employees/:id',
+    'POST /api/admin/employees',
+    'POST /api/admin/users',
+    'PUT /api/admin/users/:id',
+    'POST /api/admin/shifts/assign',
     'GET /api/claims/:id',
     'PATCH /api/admin/claims/:id/approve',
     'PATCH /api/admin/attendance/:id/approve',
@@ -474,15 +542,12 @@ suite('cross-tenant isolation', () => {
     'POST /api/admin/branches',
     'POST /api/admin/departments',
     'POST /api/admin/designations',
-    'POST /api/admin/employees',
     'POST /api/admin/employees/:id/enroll-face',
     'POST /api/admin/holidays',
     'POST /api/admin/employees/bulk-import',
     'POST /api/admin/employees/:id/reset-password',
     'POST /api/admin/payroll/send-slips',
     'POST /api/admin/shifts',
-    'POST /api/admin/shifts/assign',
-    'POST /api/admin/users',
     'POST /api/admin/whatsapp/broadcast',
     'POST /api/admin/whatsapp/send',
     'POST /api/attendance/checkin',
@@ -500,7 +565,6 @@ suite('cross-tenant isolation', () => {
     'PUT /api/admin/designations/:id',
     'PUT /api/admin/leaves/balances/:employeeId',
     'PUT /api/admin/shifts/:id',
-    'PUT /api/admin/users/:id',
     // Two-step after sign-in. The /me pair only ever touches the caller's own
     // row; the reset is refused across workspaces in tests/sign-in.test.ts.
     'GET /api/admin/me/two-step',

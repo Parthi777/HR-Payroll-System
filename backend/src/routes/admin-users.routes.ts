@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
-import { requireRole } from '../middleware/auth.js';
+import { assertOwned, requireRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { requireTenantId } from '../context/tenant-context.js';
 import { changed, recordAudit } from '../services/audit/audit.service.js';
@@ -40,6 +40,7 @@ export async function adminUsersRoutes(app: FastifyInstance) {
 
   app.post('/admin/users', async (req) => {
     const { password, ...rest } = createSchema.parse(req.body);
+    await assertOwned(app.prisma, 'branch', rest.branchId);
     const passwordHash = await bcrypt.hash(password, 12);
     const admin = await app.prisma.adminUser.create({ data: { ...rest, passwordHash, tenantId: requireTenantId() }, select: safeSelect });
     await recordAudit(req, 'ADMIN_CREATED', 'AdminUser', {
@@ -52,6 +53,7 @@ export async function adminUsersRoutes(app: FastifyInstance) {
   app.put('/admin/users/:id', async (req) => {
     const { id } = req.params as { id: string };
     const { password, ...rest } = updateSchema.parse(req.body);
+    await assertOwned(app.prisma, 'branch', rest.branchId);
 
     if (id === req.user.sub && rest.isActive === false) {
       throw new AppError('You cannot disable your own account', 400);
