@@ -37,7 +37,7 @@ export function proxy(request: NextRequest) {
   // to Master Control, which would send a prospect to a sign-in form.
   const isPublicSite =
     pathname === '/' ||
-    ['/features', '/pricing', '/signup'].some((p) => pathname === p || pathname.startsWith(`${p}/`));
+    ['/features', '/pricing', '/signup', '/privacy', '/terms'].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   // Built from the public host rather than request.url: behind the platform's
   // proxy the URL Next sees can name an internal address.

@@ -293,7 +293,9 @@ function SignupForm() {
           {!busy && <ArrowRight className="h-4 w-4" />}
         </button>
         <span className="text-xs text-muted-foreground">
-          No payment now. Our team contacts you first.
+          No payment now. Our team contacts you first. By signing up you agree to our{' '}
+          <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">Terms</Link> and{' '}
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">Privacy Policy</Link>.
         </span>
       </div>
     </form>

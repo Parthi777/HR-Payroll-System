@@ -46,6 +46,13 @@ export function SiteFooter() {
           </p>
         </div>
       </div>
+      <div className="border-t border-border">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-5 gap-y-2 px-6 py-4 text-xs text-muted-foreground">
+          <span>© {new Date().getFullYear()} Kayaazh Payroll</span>
+          <Link href="/privacy" className="hover:text-foreground hover:underline">Privacy Policy</Link>
+          <Link href="/terms" className="hover:text-foreground hover:underline">Terms of Service</Link>
+        </div>
+      </div>
     </footer>
   );
 }
