@@ -151,27 +151,15 @@ suite('refresh tokens', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('still accepts one signed the old way, so nobody in the field is signed out', async () => {
-    // LEGACY PATH — expected to be removed after 2026-10-15, at which point
-    // this test should be deleted with it and the one below kept.
+  it('no longer accepts a refresh token signed with the access secret', async () => {
+    // The transition window for tokens signed before the secrets were split
+    // closed on 2026-10-15; one presented now is refused like any other forgery.
     const legacy = app.jwt.sign(
       { sub: employeeId, role: 'EMPLOYEE', tenantId: (await tenantId()), typ: 'refresh' },
       { expiresIn: '30d' },
     );
     const res = await post('/api/auth/refresh-token', { refreshToken: legacy });
-    expect(res.statusCode, res.body).toBe(200);
-  });
-
-  it('refuses an access token even on the legacy path', async () => {
-    // The `typ` claim is what keeps the transition from being a way in: an old
-    // access token is signed with the very secret the legacy branch accepts.
-    const legacyAccess = app.jwt.sign(
-      { sub: employeeId, role: 'EMPLOYEE', tenantId: await tenantId() },
-      { expiresIn: '7d' },
-    );
-    const res = await post('/api/auth/refresh-token', { refreshToken: legacyAccess });
     expect(res.statusCode).toBe(401);
-    expect(res.json().message).toContain('Not a refresh token');
   });
 
   it('refuses a token signed with neither secret', async () => {

@@ -109,6 +109,36 @@ suite('master data is the owner’s and HR’s to change', () => {
     for (const res of await Promise.all(attempts)) expect(res.statusCode, res.body).toBe(403);
   });
 
+  it('a branch manager edits their own branch’s staff, and only theirs', async () => {
+    const lists = await Promise.all(['departments', 'designations'].map((k) => as(owner, 'GET', `/api/admin/${k}`)));
+    const [departmentId, designationId] = [lists[0].json().departments[0].id, lists[1].json().designations[0].id];
+    const shiftId = (await as(owner, 'GET', '/api/shifts')).json().shifts[0].id;
+    const other = await as(owner, 'POST', '/api/admin/branches', { name: 'Other', address: 'Y', geofenceLat: 11, geofenceLng: 77 });
+    expect(other.statusCode, other.body).toBe(200);
+
+    const hire = async (phone: string, atBranch: string) => {
+      const res = await as(owner, 'POST', '/api/admin/employees', {
+        name: `Staff ${phone}`, phone, joiningDate: '2026-01-01', salary: 20000,
+        branchId: atBranch, departmentId, designationId, shiftId,
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      return res.json().employee.id as string;
+    };
+    const mine = await hire('+919000000101', branchId);
+    const theirs = await hire('+919000000102', other.json().branch.id);
+
+    const own = await as(manager, 'PUT', `/api/admin/employees/${mine}`, { name: 'Renamed' });
+    expect(own.statusCode, own.body).toBe(200);
+
+    for (const res of [
+      await as(manager, 'PUT', `/api/admin/employees/${theirs}`, { name: 'Renamed' }),
+      await as(manager, 'POST', `/api/admin/employees/${theirs}/enroll-face`),
+      await as(manager, 'DELETE', `/api/admin/employees/${theirs}/face`),
+    ]) expect(res.statusCode, res.body).toBe(403);
+    const check = await as(owner, 'GET', `/api/admin/employees/${theirs}`);
+    expect(check.json().employee.name).toBe('Staff +919000000102');
+  });
+
   it('the owner still can, within the geofence route’s bounds', async () => {
     const ok = await as(owner, 'PUT', `/api/admin/branches/${branchId}`, { geofenceRadius: 250 });
     expect(ok.statusCode, ok.body).toBe(200);

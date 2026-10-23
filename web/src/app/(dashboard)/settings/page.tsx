@@ -4,6 +4,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { fetcher, api } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
+import { can, SETUP_ROLES } from '@/lib/permissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Building2, GitBranch, Briefcase, Plus, Loader2, Pencil, Trash2, Check, X, CalendarDays, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 
@@ -468,6 +469,7 @@ function ListManager({ title, icon: Icon, endpoint, listKey }: { title: string; 
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const singular = title.slice(0, -1).toLowerCase();
+  const canEdit = can(SETUP_ROLES);
 
   async function add() {
     if (!name.trim()) return;
@@ -530,17 +532,20 @@ function ListManager({ title, icon: Icon, endpoint, listKey }: { title: string; 
             ) : (
               <>
                 <span className="flex-1 truncate">{i.name}</span>
+                {canEdit && (<>
                 <button onClick={() => setEditing({ id: i.id, name: i.name })} title="Rename" className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground">
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
                 <button onClick={() => remove(i)} title="Delete" className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
+                </>)}
               </>
             )}
           </div>
         ))}
         {!isLoading && items.length === 0 && <div className="text-sm text-muted-foreground">None yet.</div>}
+        {canEdit && (
         <div className="flex gap-2 pt-2">
           <input
             value={name}
@@ -553,6 +558,7 @@ function ListManager({ title, icon: Icon, endpoint, listKey }: { title: string; 
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           </button>
         </div>
+        )}
       </CardContent>
     </Card>
   );

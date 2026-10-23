@@ -111,7 +111,8 @@ async function buildServer() {
 
   // Socket.io live feed (attendance dashboard) shares Fastify's HTTP server.
   // Must be decorated BEFORE listen() — Fastify forbids decorating a started instance.
-  const io = new SocketServer(app.server, { cors: { origin: '*' } });
+  // The same origins the REST API allows — not '*'.
+  const io = new SocketServer(app.server, { cors: { origin: corsOrigin(), credentials: true } });
   io.on('connection', (socket) => {
     logger.info({ id: socket.id }, 'Socket connected');
   });

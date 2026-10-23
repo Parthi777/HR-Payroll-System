@@ -24,6 +24,29 @@ const nextConfig = {
   // fetch and re-serve on request, which is the surface of the Next 15 image
   // DoS advisory.
 
+  // Baseline hardening on every response. Deliberately no Content-Security-
+  // Policy yet: Google sign-up, Razorpay checkout, map tiles and the kiosk's
+  // AWS liveness each load from their own origins, and a CSP that misses one
+  // breaks that page silently. These four cannot break any of them:
+  //   - SAMEORIGIN: no other site can frame Master Control (clickjacking).
+  //   - nosniff: an uploaded file is never run as a script.
+  //   - the referrer stops at our origin, so a reset-password link's token
+  //     never reaches a third party in a Referer header.
+  //   - HSTS: once seen over HTTPS, the browser refuses plain HTTP here.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+        ],
+      },
+    ];
+  },
+
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
     NEXT_PUBLIC_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL,

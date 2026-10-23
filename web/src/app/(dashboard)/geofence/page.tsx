@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import dynamic from 'next/dynamic';
 import { fetcher, api } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
+import { can, SETUP_ROLES } from '@/lib/permissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Loader2, Pencil, Trash2, Plus, X, LocateFixed } from 'lucide-react';
 
@@ -132,12 +133,15 @@ export default function GeofencePage() {
     }
   }
 
+  // Branch managers see the fences; only the owner and HR move them (the API refuses anyone else).
+  const canEdit = can(SETUP_ROLES);
+
   return (
     <div className="space-y-6">
       <PageHero title="Geofence" subtitle="Flexible work zones — click the map to move a fence · live">
-        <button onClick={startNew} className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90">
+        {canEdit && <button onClick={startNew} className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-600 hover:bg-white/90">
           <Plus className="h-4 w-4" /> Add Branch
-        </button>
+        </button>}
       </PageHero>
 
       {!isLoading && !error && (
@@ -264,14 +268,14 @@ export default function GeofencePage() {
                     </div>
                   </div>
                   <span className={`chip ${b.strictMode ? 'chip-off' : 'chip-present'}`}>{b.strictMode ? 'Strict' : 'Soft'}</span>
-                  <div className="flex gap-2">
+                  {canEdit && <div className="flex gap-2">
                     <button onClick={() => startEdit(b)} title="Edit branch & geofence" className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground">
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button onClick={() => remove(b)} title="Delete branch" className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100">
                       <Trash2 className="h-4 w-4" />
                     </button>
-                  </div>
+                  </div>}
                 </div>
               ))}
             </CardContent>

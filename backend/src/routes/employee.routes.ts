@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto';
 import path from 'path';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
-import { assertOwned, requireRole, type JwtRole } from '../middleware/auth.js';
+import { assertManages, assertOwned, requireRole, type JwtRole } from '../middleware/auth.js';
 import { AppError } from '../utils/AppError.js';
 import { enrollFace, removeFace, verifyFace, isFaceMatchEnabled } from '../services/ai/face.service.js';
 import { env } from '../config/env.js';
@@ -345,6 +345,9 @@ export async function employeeRoutes(app: FastifyInstance) {
   app.put('/:id', async (req) => {
     const { id } = req.params as { id: string };
     const { password, ...parsed } = createEmployeeSchema.partial().parse(req.body);
+    // A branch manager edits their own team, as with approvals — not anyone in
+    // the dealership. Owner and HR pass straight through.
+    await assertManages(app.prisma, req.user, id);
     const rest = stripOwnerOnly(parsed, req.user.role);
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
     await assertRefsOwned(app.prisma, rest);
@@ -428,6 +431,9 @@ export async function employeeRoutes(app: FastifyInstance) {
 
   app.post('/:id/enroll-face', async (req) => {
     const { id } = req.params as { id: string };
+    // Whoever enrols a face decides who can punch as this person, so a branch
+    // manager may only do it for their own team.
+    await assertManages(app.prisma, req.user, id);
     if (!isFaceMatchEnabled()) throw new AppError('Face recognition is not configured (set AWS keys)', 503);
     const existing = await app.prisma.employee.findUnique({ where: { id }, select: { faceTemplateId: true } });
     if (!existing) throw AppError.notFound('Employee');
@@ -494,6 +500,7 @@ export async function employeeRoutes(app: FastifyInstance) {
   // Attendance then blocks with "face not enrolled" until a new photo is added.
   app.delete('/:id/face', async (req) => {
     const { id } = req.params as { id: string };
+    await assertManages(app.prisma, req.user, id);
     const employee = await app.prisma.employee.findUnique({
       where: { id },
       select: { faceTemplateId: true, faceTemplateUrl: true, name: true },

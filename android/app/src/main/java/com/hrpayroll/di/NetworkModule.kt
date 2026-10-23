@@ -26,8 +26,11 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttp(tokenStore: TokenStore): OkHttpClient {
+        // BASIC — method, URL, status, timing — never BODY or HEADERS. The APK
+        // handed to staff is a debug build, so BuildConfig.DEBUG is true on their
+        // phones; BODY wrote every password, JWT and refresh token to logcat.
         val logging = HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
             else HttpLoggingInterceptor.Level.NONE
         }
         return OkHttpClient.Builder()

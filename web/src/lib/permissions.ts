@@ -64,6 +64,13 @@ export const OWNER_ONLY_ROLES: AdminRole[] = ['SUPER_ADMIN'];
  */
 export const CREDENTIAL_ROLES: AdminRole[] = ['SUPER_ADMIN', 'HR_MANAGER'];
 
+/**
+ * Adding, editing or deleting branches (and so their geofences), departments
+ * and designations. Mirrors `setupWriters` in master.routes.ts — a branch
+ * manager reads these lists for the employee form but does not reshape them.
+ */
+export const SETUP_ROLES: AdminRole[] = ['SUPER_ADMIN', 'HR_MANAGER'];
+
 /** Claims actions, mirroring approveGuard / payGuard on the server. */
 export const APPROVE_ROLES: AdminRole[] = ['SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'PAYROLL_ADMIN'];
 export const PAY_ROLES: AdminRole[] = ['SUPER_ADMIN', 'PAYROLL_ADMIN', 'CASHIER'];

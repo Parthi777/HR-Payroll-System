@@ -85,22 +85,14 @@ export async function authRoutes(app: FastifyInstance) {
     try {
       decoded = app.jwt.refresh.verify<Refresh>(refreshToken);
     } catch {
-      // LEGACY, REMOVE AFTER 2026-10-15 (30 days — one REFRESH_TTL — from the
-      // deploy that split the secrets). Refresh tokens used to be signed with
-      // JWT_SECRET. Rejecting them outright would sign out every employee in
-      // the field the moment their 7-day access token expired, so they are
-      // still accepted until the last one issued has expired on its own. The
-      // `typ` check below still applies, so this is not a way in for an access
-      // token.
-      try {
-        decoded = app.jwt.verify<Refresh>(refreshToken);
-      } catch {
-        throw AppError.unauthorized('Invalid or expired refresh token');
-      }
+      // Only JWT_REFRESH_SECRET. Refresh tokens signed with JWT_SECRET were
+      // accepted for one REFRESH_TTL after the secrets were split; that window
+      // closed on 2026-10-15, so every such token has expired on its own.
+      throw AppError.unauthorized('Invalid or expired refresh token');
     }
-    // An access token must never be spendable as a refresh token. This mattered
-    // more when both were signed with the same secret; it still guards the
-    // legacy path above, and costs nothing once that is gone.
+    // An access token must never be spendable as a refresh token. The secrets
+    // differ, so the signature check already refuses one; this costs nothing
+    // and holds even if the two were ever set to the same value.
     if (decoded.typ !== 'refresh') throw AppError.unauthorized('Not a refresh token');
     if (!decoded.tenantId) throw AppError.unauthorized('Session is out of date — please sign in again');
 
