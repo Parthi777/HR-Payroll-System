@@ -21,9 +21,9 @@ export interface Plan {
 export type PlanCode = 'STARTER' | 'GROWTH' | 'ENTERPRISE';
 
 export const PLANS: Plan[] = [
-  { code: 'STARTER', name: 'Starter', priceMonthly: 1499, staffLimit: 25 },
-  { code: 'GROWTH', name: 'Growth', priceMonthly: 3999, staffLimit: 100 },
-  { code: 'ENTERPRISE', name: 'Enterprise', priceMonthly: 7999, staffLimit: null },
+  { code: 'STARTER', name: 'Starter', priceMonthly: 1999, staffLimit: 25 },
+  { code: 'GROWTH', name: 'Growth', priceMonthly: 4999, staffLimit: 100 },
+  { code: 'ENTERPRISE', name: 'Enterprise', priceMonthly: 9999, staffLimit: null },
 ];
 
 export const PLAN_CODES = PLANS.map((p) => p.code) as [PlanCode, ...PlanCode[]];

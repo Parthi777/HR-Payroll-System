@@ -44,10 +44,18 @@ export interface ProvisionedTenant {
   loginUrl: string;
 }
 
-/** Where this dealer's people sign in. */
+/**
+ * Where this dealer's people sign in — a link the console hands over as is.
+ *
+ * With subdomains, the dealer's own host. Without, Master Control's address
+ * plus `?tenant=`, which fills the workspace in on the sign-in page. Only when
+ * no address is configured at all does this fall back to a relative path.
+ */
 export function tenantLoginUrl(slug: string): string {
   const base = process.env.APP_BASE_DOMAIN;
-  return base ? `https://${slug}.${base}/login` : `/login?tenant=${slug}`;
+  if (base) return `https://${slug}.${base}/login`;
+  const site = (process.env.ADMIN_APP_URL || process.env.PUBLIC_SITE_URL)?.trim().replace(/\/+$/, '');
+  return `${site ?? ''}/login?tenant=${slug}`;
 }
 
 export async function provisionTenant(

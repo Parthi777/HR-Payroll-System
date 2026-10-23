@@ -45,7 +45,7 @@ const APPLICANT = {
 };
 
 /** The Growth plan, in paise, as backend/src/services/subscription/plans.ts holds it. */
-const GROWTH_PAISE = 3999 * 100;
+const GROWTH_PAISE = 4999 * 100;
 
 suite('signing up without being invited', () => {
   let app: FastifyInstance;
@@ -333,7 +333,7 @@ suite('signing up without being invited', () => {
       const approved = await asPlatform('PATCH', `/api/platform/signups/${signup.id}/approve`, { password: DEALER_ADMIN_PASSWORD });
       expect(approved.statusCode, approved.body).toBe(200);
       workspaceId = approved.json().tenant.id;
-      expect(approved.json().subscription.amountPaise).toBe(1499 * 100);
+      expect(approved.json().subscription.amountPaise).toBe(1999 * 100);
 
       const paid = await asPlatform('PATCH', `/api/platform/subscriptions/${workspaceId}/mark-paid`);
       expect(paid.statusCode, paid.body).toBe(200);

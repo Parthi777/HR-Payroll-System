@@ -25,7 +25,7 @@ export const PLANS: Plan[] = [
   {
     code: 'STARTER',
     name: 'Starter',
-    priceMonthly: 1499,
+    priceMonthly: 1999,
     staffLimit: 25,
     blurb: 'A single showroom or workshop finding its feet.',
     highlights: [
@@ -40,7 +40,7 @@ export const PLANS: Plan[] = [
   {
     code: 'GROWTH',
     name: 'Growth',
-    priceMonthly: 3999,
+    priceMonthly: 4999,
     staffLimit: 100,
     blurb: 'A dealership group running several branches at once.',
     highlights: [
@@ -57,7 +57,7 @@ export const PLANS: Plan[] = [
   {
     code: 'ENTERPRISE',
     name: 'Enterprise',
-    priceMonthly: 7999,
+    priceMonthly: 9999,
     staffLimit: null,
     blurb: 'Large groups, or anyone who wants us on the phone.',
     highlights: [

@@ -35,8 +35,10 @@ Tiers live in two places, and are meant to agree:
   charged is read from here, never from the browser.
 - `web/src/lib/plans.ts` — what the pricing page and signup form display.
 
-The figures shipped (₹1,499 / ₹3,999 / ₹7,999 per month, excluding GST) are
-**placeholders**. Change both files before taking a real payment.
+Current prices (set 2026-10-23, per month, excluding GST): Starter ₹1,999
+(25 staff), Growth ₹4,999 (100 staff), Enterprise ₹9,999 (no cap). Change
+both files together. A subscription keeps the amount it was issued with at
+approval, so a price change applies to new approvals only.
 
 ## Turning on card payment
 
