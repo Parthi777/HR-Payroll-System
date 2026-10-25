@@ -26,6 +26,54 @@ data class AttendanceDto(
     val faceMatchScore: Double? = null,
     val approvalStatus: String? = null, // PENDING when late or outside geofence, awaiting approval
     val flagReason: String? = null,
+    /** Live tracking for this day: start it (check-in), or say it stopped (check-out). */
+    val tracking: TrackingDto? = null,
+)
+
+/**
+ * Whether the phone records location for the open day. On a check-in response
+ * `enabled` starts it; on a check-out `wasTracked` says monitoring has stopped.
+ */
+@JsonClass(generateAdapter = true)
+data class TrackingDto(
+    val enabled: Boolean = false,
+    val intervalSec: Int = 120,
+    val attendanceId: String? = null,
+    val wasTracked: Boolean = false,
+)
+
+/** The consent screen was agreed to: which wording, and when (ISO). */
+@JsonClass(generateAdapter = true)
+data class ConsentRequest(val version: Int, val acceptedAt: String)
+
+@JsonClass(generateAdapter = true)
+data class LatLngDto(val lat: Double = 0.0, val lng: Double = 0.0)
+
+@JsonClass(generateAdapter = true)
+data class GpsPointDto(
+    val ts: String,
+    val lat: Double,
+    val lng: Double,
+    val accuracy: Float? = null,
+    val mock: Boolean = false,
+)
+
+@JsonClass(generateAdapter = true)
+data class GpsEventDto(val ts: String, val kind: String)
+
+@JsonClass(generateAdapter = true)
+data class GpsBatchRequest(
+    val attendanceId: String,
+    val points: List<GpsPointDto>,
+    val events: List<GpsEventDto>,
+)
+
+@JsonClass(generateAdapter = true)
+data class GpsBatchResponse(
+    /** False: stop — checked out, switched off, or exempted. */
+    val tracking: Boolean = true,
+    val intervalSec: Int = 120,
+    val accepted: Int = 0,
 )
 
 @JsonClass(generateAdapter = true)
@@ -545,6 +593,10 @@ data class MeDto(
     val hr: HrContactDto? = null,
     /** The dealer shares payroll with staff: show the Payroll tab. Off unless they turned it on. */
     val payrollVisible: Boolean = false,
+    /** The dealer live-tracks this employee's check-ins: say so in the check-in dialog. */
+    val tracking: TrackingDto? = null,
+    /** The branch's pin — where the weather card looks when the phone has no fix. */
+    val branchLocation: LatLngDto? = null,
 )
 
 @JsonClass(generateAdapter = true)

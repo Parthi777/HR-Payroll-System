@@ -5,6 +5,7 @@ import { AppError } from '../utils/AppError.js';
 import { clearCachedPolicy, requireTenantId } from '../context/tenant-context.js';
 import { defaultPolicy } from '../services/settings/tenant-settings.service.js';
 import { recordAudit } from '../services/audit/audit.service.js';
+import { closeOpenTracking } from '../services/tracking/tracking.service.js';
 
 const branchSchema = z.object({
   name: z.string().min(1),
@@ -92,6 +93,9 @@ const companySchema = z.object({
   punchRemindersOn: z.boolean().optional(),
   punchOutReminderAt: z.string().regex(/^\d{2}:\d{2}$/).optional(),
 
+  // Live location tracking between check-in and check-out.
+  liveTrackingOn: z.boolean().optional(),
+
   // The basis a new employee inherits when their own is not set.
   defaultPayrollBasis: z.enum(['MONTHLY', 'PRESENT_DAYS']).optional(),
   monthDivisor: z.number().int().min(28).max(31).optional(),
@@ -137,6 +141,7 @@ export async function masterRoutes(app: FastifyInstance) {
         manualPunchLatest: d.attendance.manualPunchLatest,
         punchRemindersOn: d.attendance.punchRemindersOn,
         punchOutReminderAt: d.attendance.punchOutReminderAt,
+        liveTrackingOn: d.attendance.liveTrackingOn,
         defaultPayrollBasis: d.payroll.defaultPayrollBasis,
         monthDivisor: d.payroll.monthDivisor,
         clPerYear: d.payroll.clPerYear,
@@ -154,6 +159,7 @@ export async function masterRoutes(app: FastifyInstance) {
 
   app.put('/admin/company', { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER') }, async (req) => {
     const data = companySchema.parse(req.body);
+    const before = await app.prisma.tenantSettings.findFirst({ select: { liveTrackingOn: true } });
     const company = await app.prisma.tenantSettings.upsert({
       where: { tenantId: requireTenantId() },
       update: data,
@@ -162,6 +168,11 @@ export async function masterRoutes(app: FastifyInstance) {
     // The per-request memo now holds the pre-write values; drop it so anything
     // later in this request (a PDF header, a re-read) sees what was just saved.
     clearCachedPolicy();
+    // Switching tracking off ends today's tracked windows now, so the report
+    // does not count the rest of the shift as "no signal".
+    if (before?.liveTrackingOn && data.liveTrackingOn === false) {
+      await closeOpenTracking(app.prisma, {});
+    }
     await recordAudit(req, 'COMPANY_UPDATED', 'Company', {
       entityId: company.tenantId,
       metadata: data,

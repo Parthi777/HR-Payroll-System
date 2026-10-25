@@ -449,6 +449,15 @@ suite('cross-tenant isolation', () => {
     'POST /api/integration/v1/claims/:id/paid',
     'GET /api/integration/v1/attendance',
     'GET /api/integration/v1/payroll/:year/:month',
+    // Live tracking — tests/live-tracking.test.ts proves a phone adds fixes only
+    // to its own open day, a branch manager watches only their branch, and one
+    // dealer's map, tracks and report show nothing of another's.
+    'POST /api/attendance/gps-log',
+    'GET /api/attendance/tracking',
+    'GET /api/admin/tracking/live',
+    'GET /api/admin/tracking/:attendanceId/track',
+    'GET /api/admin/reports/tracking',
+    'POST /api/me/consent',
   ];
 
   const NO_TENANT_DATA = [

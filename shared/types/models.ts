@@ -22,19 +22,30 @@ export interface Employee {
   faceTemplateUrl?: string | null;
   faceTemplateId?: string | null;
   deviceId?: string | null;
+  /** Never live-tracked, even when the dealer tracks. */
+  trackingExempt?: boolean;
   status: EmployeeStatus;
   joiningDate: string; // ISO date
   salary: number;
   createdAt: string;
 }
 
+/** FIX is a location; the rest are status events from the phone, with no coordinates. */
+export type TrackKind = 'FIX' | 'GPS_OFF' | 'GPS_ON' | 'NO_PERMISSION' | 'STOPPED';
+
 export interface GPSLog {
   id: string;
   attendanceId: string;
-  lat: number;
-  lng: number;
+  employeeId: string;
+  kind: TrackKind;
+  lat?: number | null;
+  lng?: number | null;
   accuracy?: number | null;
+  geofenceStatus?: GeofenceStatus | null;
+  distance?: number | null;
+  isMock: boolean;
   timestamp: string;
+  receivedAt: string;
 }
 
 export interface Attendance {
@@ -56,6 +67,9 @@ export interface Attendance {
   workingMinutes?: number | null;
   isFlagged: boolean;
   flagReason?: string | null;
+  /** Live tracking window — null trackingFrom means the day was not tracked. */
+  trackingFrom?: string | null;
+  trackingTo?: string | null;
   gpsLogs?: GPSLog[];
 }
 

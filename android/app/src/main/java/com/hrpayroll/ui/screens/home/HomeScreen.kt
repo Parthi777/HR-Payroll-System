@@ -36,8 +36,6 @@ import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -97,7 +95,7 @@ fun HomeScreen(
 ) {
     val s by viewModel.uiState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
-    var locationOn by remember { mutableStateOf(true) }
+    val trackingActive by viewModel.trackingActive.collectAsState()
     var confirmLogout by remember { mutableStateOf(false) }
     var showHr by remember { mutableStateOf(false) }
 
@@ -203,6 +201,22 @@ fun HomeScreen(
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp),
                 )
             }
+            // The dealer's live tracking is recording this shift — always said, never hidden.
+            if (trackingActive) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp),
+                ) {
+                    Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = BrandGreenDark, modifier = Modifier.size(16.dp))
+                    Text(
+                        "Location monitoring on until you check out",
+                        color = BrandGreenDark,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
+            }
 
             // ── This month ──
             SectionTitle(
@@ -249,21 +263,14 @@ fun HomeScreen(
                 }
             }
 
-            // ── Location ──
-            AnimatedEntrance(index = 3) {
-                SectionCard(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconBubble(Icons.Outlined.LocationOn, StatusOff)
-                        Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
-                            Text("Location", fontWeight = FontWeight.SemiBold, color = Ink, fontSize = 15.sp)
-                            Text("Used to verify you are at your branch when you check in", fontSize = 12.sp, color = MutedText)
-                        }
-                        Switch(
-                            checked = locationOn,
-                            onCheckedChange = { locationOn = it },
-                            colors = SwitchDefaults.colors(checkedTrackColor = BrandGreen, checkedThumbColor = Color.White),
-                        )
-                    }
+            // ── Weather ──
+            s.weather?.let { w ->
+                AnimatedEntrance(index = 3) {
+                    WeatherCard(
+                        weather = w,
+                        place = if (s.weatherAtBranch && s.branch.isNotBlank()) "Today at ${s.branch}" else "Today at your location",
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                    )
                 }
             }
             Spacer(Modifier.height(28.dp))

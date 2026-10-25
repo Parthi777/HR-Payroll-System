@@ -20,6 +20,7 @@ single-tenant deployment behaves exactly as it did before.
 | `halfDayWindowStart` / `End` | `12:30` / `14:00` | a punch inside this window makes the day a half day |
 | `lateRequiresApproval` | `true` | a late punch is held for the reporting manager before it is paid |
 | `openPunchLookbackDays` | `7` | how far back a forgotten check-out blocks the next check-in |
+| `liveTrackingOn` | `false` | record each employee's location every 2 minutes from check-in to check-out, for the Live Tracking page. Switching it off closes today's open windows at once — see `docs/LIVE-TRACKING.md` |
 | `monthDivisor` | `30` | per-day salary = monthly ÷ this |
 | `clPerYear` | `12` | paid casual leave before it becomes LOP |
 | `otHoursPerDay` | `10` | OT hours that add up to one day's pay |

@@ -16,6 +16,8 @@ import javax.inject.Inject
 class AuthRepository @Inject constructor(
     private val api: HrApi,
     private val tokenStore: TokenStore,
+    private val tracking: TrackingController,
+    private val consent: com.hrpayroll.data.local.ConsentPrefs,
 ) {
     /**
      * Employee login with their user ID — employee code (EMP001) or phone
@@ -94,7 +96,14 @@ class AuthRepository @Inject constructor(
 
     fun isAdmin(): Boolean = tokenStore.isAdmin()
 
-    fun logout() = tokenStore.clear()
+    /** Signing out also ends live tracking — nobody is followed after leaving the app. */
+    fun logout() {
+        tracking.stopForLogout()
+        // The agreement stays with the phone, but the next person to sign in has
+        // it recorded against them too.
+        consent.resetSync()
+        tokenStore.clear()
+    }
 
     /**
      * A phone number is normalised to "+91…" (spaces and dashes stripped, +91

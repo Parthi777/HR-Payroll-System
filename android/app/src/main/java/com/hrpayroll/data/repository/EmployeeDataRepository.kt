@@ -14,6 +14,9 @@ class EmployeeDataRepository @Inject constructor(
     private val api: HrApi,
 ) {
     suspend fun me(): MeDto = api.me()
+    suspend fun recordConsent(version: Int, acceptedAtMs: Long) {
+        api.recordConsent(com.hrpayroll.data.remote.dto.ConsentRequest(version, java.time.Instant.ofEpochMilli(acceptedAtMs).toString())).close()
+    }
     suspend fun applyLeave(req: ApplyLeaveRequest): LeaveDto? = api.applyLeave(req).leave
     suspend fun myLeaves(): List<LeaveDto> = api.myLeaves().leaves
     suspend fun leaveBalance(): List<LeaveBalanceDto> = api.leaveBalance().balances

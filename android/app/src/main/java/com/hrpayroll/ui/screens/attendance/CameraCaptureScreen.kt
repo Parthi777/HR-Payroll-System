@@ -69,6 +69,12 @@ private fun hasAllPermissions(context: Context) = REQUIRED_PERMISSIONS.all {
     ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
 }
 
+/** Android 10+ asks for "all the time" separately; older phones grant it with location. */
+private fun needsBackgroundLocation(context: Context) =
+    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) !=
+        PackageManager.PERMISSION_GRANTED
+
 /**
  * Selfie capture: front CameraX preview + ML Kit single-face gate + GPS, then uploads
  * to the backend check-in endpoint via [CheckInViewModel]. Calls [onDone] on success.
@@ -90,11 +96,6 @@ fun CameraCaptureScreen(
 
     LaunchedEffect(Unit) { if (!hasPermissions) permissionLauncher.launch(REQUIRED_PERMISSIONS) }
 
-    // On a normal check-in, finish immediately. When the punch is held for approval
-    // (late arrival / out-of-zone), show a warning first, then finish on OK.
-    val needsApprovalNotice = state.success && state.approvalStatus == "PENDING"
-    LaunchedEffect(state.success) { if (state.success && state.approvalStatus != "PENDING") onDone() }
-
     // An earlier day was left open: the check-in cannot go through, so say so
     // before the selfie rather than after it.
     state.blockedMessage?.let { blocked ->
@@ -110,21 +111,61 @@ fun CameraCaptureScreen(
         )
     }
 
-    if (needsApprovalNotice) {
+    // One confirmation for every successful punch: the time the server
+    // recorded, whether location monitoring started or stopped, and — when the
+    // punch is held for approval — why. OK closes the screen.
+    var askBackground by remember { mutableStateOf(false) }
+    val backgroundLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { onDone() }
+    if (state.success && !askBackground) {
         val isLate = state.resultStatus == "LATE"
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { onDone() },
-            title = { androidx.compose.material3.Text(if (isLate) "You are late today" else "Approval needed") },
-            text = {
-                androidx.compose.material3.Text(
+        val lines = buildList {
+            if (state.trackingStarted) add("Your location is being monitored until you check out.")
+            if (state.trackingStopped) add("Location monitoring has stopped.")
+            if (state.approvalStatus == "PENDING") {
+                add(
                     if (isLate)
-                        "You need approval from your reporting manager to be paid for today. " +
-                            "Without approval, today will be marked as leave."
+                        "You are late today. You need approval from your reporting manager to be paid for today — " +
+                            "without it, today will be marked as leave."
                     else
                         "Your check-in is outside the work zone and needs HR approval to count for today.",
                 )
+            }
+            if (isEmpty()) add(if (viewModel.isCheckOut) "See you tomorrow." else "Have a good day.")
+        }
+        val finish = {
+            // Monitoring runs fine while the app is open or in the background; "all
+            // the time" is what lets it pick up again after a restart.
+            if (state.trackingStarted && needsBackgroundLocation(context)) askBackground = true else onDone()
+        }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = finish,
+            title = {
+                androidx.compose.material3.Text(
+                    (if (viewModel.isCheckOut) "Checked out" else "Checked in") + (state.timeLabel?.let { " at $it" } ?: ""),
+                )
             },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { onDone() }) { androidx.compose.material3.Text("OK, got it") } },
+            text = { androidx.compose.material3.Text(lines.joinToString("\n\n")) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = finish) { androidx.compose.material3.Text("OK, got it") } },
+        )
+    }
+    if (askBackground) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { onDone() },
+            title = { androidx.compose.material3.Text("Allow location all the time") },
+            text = {
+                androidx.compose.material3.Text(
+                    "So monitoring keeps working if your phone restarts or the app is closed. " +
+                        "On the next screen choose \"Allow all the time\".",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                }) { androidx.compose.material3.Text("Allow") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { onDone() }) { androidx.compose.material3.Text("Not now") }
+            },
         )
     }
 

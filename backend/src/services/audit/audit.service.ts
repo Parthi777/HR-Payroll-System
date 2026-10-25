@@ -57,6 +57,8 @@ export type AuditAction =
   | 'ATTENDANCE_APPROVED'
   | 'ATTENDANCE_REJECTED'
   | 'ATTENDANCE_MANUAL_PUNCH'
+  /** Someone downloaded the location report — where staff were, as a file. */
+  | 'TRACKING_REPORT_EXPORTED'
   // Leave
   | 'LEAVE_APPROVED'
   | 'LEAVE_REJECTED'

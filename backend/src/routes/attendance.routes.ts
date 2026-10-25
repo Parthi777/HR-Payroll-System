@@ -148,7 +148,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
   app.post('/attendance/checkin', { preHandler: authenticate }, async (req) => {
     const { selfie, lat, lng, accuracy } = await parseCheckinParts(req);
     // TODO: WhatsApp check-in confirmation via BullMQ queue.
-    return markCheckIn(app.prisma, req.user.sub, selfie, lat, lng, accuracy);
+    return markCheckIn(app.prisma, req.user.sub, selfie, lat, lng, accuracy, { track: true });
   });
 
   app.post('/attendance/checkout', { preHandler: authenticate }, async (req) => {

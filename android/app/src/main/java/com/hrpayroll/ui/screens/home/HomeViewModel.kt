@@ -1,5 +1,6 @@
 package com.hrpayroll.ui.screens.home
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.BuildConfig
@@ -7,7 +8,13 @@ import com.hrpayroll.data.local.TokenStore
 import com.hrpayroll.data.repository.AttendanceRepository
 import com.hrpayroll.data.repository.AuthRepository
 import com.hrpayroll.data.repository.EmployeeDataRepository
+import com.hrpayroll.data.repository.TrackingController
+import com.hrpayroll.data.repository.Weather
+import com.hrpayroll.data.repository.WeatherRepository
+import com.hrpayroll.utils.LocationUtils
+import com.hrpayroll.utils.formatIsoTime
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +54,11 @@ data class HomeUiState(
     val photoUrl: String = "",
     /** The dealer shares payroll with staff: offer the Payslips shortcut. */
     val payrollVisible: Boolean = false,
+    /** Today's weather for the Home card; null hides it. */
+    val weather: Weather? = null,
+    /** True when the weather is for the branch, because the phone gave no location. */
+    val weatherAtBranch: Boolean = false,
+    val branch: String = "",
 )
 
 @HiltViewModel
@@ -54,14 +66,21 @@ class HomeViewModel @Inject constructor(
     private val employeeRepo: EmployeeDataRepository,
     private val attendanceRepo: AttendanceRepository,
     private val authRepository: AuthRepository,
-    tokenStore: TokenStore,
+    private val tokenStore: TokenStore,
     private val payrollAccess: com.hrpayroll.data.local.PayrollAccess,
+    private val tracking: TrackingController,
+    private val weatherRepo: WeatherRepository,
+    private val consent: com.hrpayroll.data.local.ConsentPrefs,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     val authToken: String? = tokenStore.getToken()
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    /** Live tracking is recording right now — Home shows a chip under Today. */
+    val trackingActive: StateFlow<Boolean> = tracking.isActive
 
     fun logout() {
         payrollAccess.set(false)
@@ -116,18 +135,36 @@ class HomeViewModel @Inject constructor(
                 // distinct cache key so employee B never sees employee A's cached photo.
                 photoUrl = me?.employeeCode?.let { "${BuildConfig.API_BASE_URL}me/photo?e=$it" } ?: "",
                 payrollVisible = me?.payrollVisible == true,
+                // Kept across a refresh so the card does not blink out while it reloads.
+                weather = _uiState.value.weather,
+                weatherAtBranch = _uiState.value.weatherAtBranch,
+                branch = _uiState.value.branch,
             )
             // Only a successful /me moves the switch; a failed one keeps what we had.
             if (me != null) payrollAccess.set(me.payrollVisible)
+
+            // Pick live tracking back up if the app was killed mid-shift, or stop it
+            // if the day closed elsewhere (a kiosk check-out, Settings switched off).
+            if (me != null && !tokenStore.isAdmin()) launch { runCatching { tracking.resume() } }
+            // The consent screen was agreed to before sign-in; now there is
+            // someone to record it against. Retried on every Home load until it lands.
+            if (me != null && !tokenStore.isAdmin() && consent.needsSync) launch {
+                runCatching { employeeRepo.recordConsent(consent.acceptedVersion, consent.acceptedAt) }
+                    .onSuccess { consent.markSynced(consent.acceptedVersion) }
+            }
+            launch { loadWeather(me?.branchLocation?.let { it.lat to it.lng }, me?.branch.orEmpty()) }
         }
     }
 
-    /** ISO instant → "08:57 AM" in the device timezone. */
-    private fun formatIsoTime(iso: String?): String? = iso?.let {
-        runCatching {
-            java.time.format.DateTimeFormatter.ofPattern("hh:mm a")
-                .withZone(java.time.ZoneId.systemDefault())
-                .format(java.time.Instant.parse(it))
-        }.getOrNull()
+    /** The phone's own location when it has one, else the branch's pin. A failure just hides the card. */
+    private suspend fun loadWeather(branch: Pair<Double, Double>?, branchName: String) {
+        val fix = runCatching { LocationUtils.current(context, 5_000) }.getOrNull()?.takeIf { it.hasFix }
+        val (place, atBranch) = when {
+            fix != null -> (fix.lat to fix.lng) to false
+            branch != null -> branch to true
+            else -> return
+        }
+        val weather = runCatching { weatherRepo.today(place.first, place.second) }.getOrNull() ?: return
+        _uiState.value = _uiState.value.copy(weather = weather, weatherAtBranch = atBranch, branch = branchName)
     }
 }

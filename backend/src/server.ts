@@ -17,6 +17,7 @@ import { runInTenant } from './context/tenant-context.js';
 import { closeWhatsAppQueue, isQueueEnabled, startWhatsAppWorker } from './services/queue/whatsapp.queue.js';
 import { runWhatsAppJob } from './services/whatsapp/whatsapp.service.js';
 import { startReminderScheduler } from './services/attendance/reminders.service.js';
+import { startTrackingRetention } from './services/tracking/tracking-retention.service.js';
 import { startIntegrationScheduler } from './services/integration/integration.service.js';
 
 /**
@@ -152,6 +153,8 @@ async function start() {
   const stopReminders = startReminderScheduler(app.prisma);
   // Retries claim announcements to a connected ERP that did not get through.
   const stopIntegration = startIntegrationScheduler(app.prisma);
+  // Purges live-tracking fixes past GPS_RETENTION_DAYS, once a day.
+  const stopRetention = startTrackingRetention(app.prisma);
 
   try {
     await ensureSeedData(app.prisma); // no-op once seeded; makes fresh deploys log-in-ready
@@ -173,6 +176,7 @@ async function start() {
       logger.info({ signal }, 'shutting down');
       stopReminders();
       stopIntegration();
+      stopRetention();
       await closeWhatsAppQueue();
       await app.close();
       process.exit(0);

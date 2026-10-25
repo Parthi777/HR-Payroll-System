@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import useSWR from 'swr';
 import { fetcher, api, apiUpload } from '@/lib/api';
-import { can, CREDENTIAL_ROLES, OWNER_ONLY_ROLES } from '@/lib/permissions';
+import { can, CREDENTIAL_ROLES, OWNER_ONLY_ROLES, SETUP_ROLES } from '@/lib/permissions';
 import { PageHero } from '@/components/page-hero';
 import { Card, CardContent } from '@/components/ui/card';
 import { PasswordInput } from '@/components/password-input';
@@ -37,6 +37,11 @@ interface EmployeeRow {
   payrollBasis?: string | null;
   pfEnabled?: boolean;
   esiEnabled?: boolean;
+  /** Never live-tracked, even when the dealer tracks. */
+  trackingExempt?: boolean;
+  /** The app's consent screen (terms, privacy, location & tracking) — version agreed to, and when. */
+  consentVersion?: number | null;
+  consentAt?: string | null;
   bankAccountName?: string | null;
   /** Masked by the API (••••1234) — never the real number. */
   bankAccountNo?: string | null;
@@ -250,6 +255,7 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
     payrollBasis: employee?.payrollBasis ?? '',
     pfEnabled: employee?.pfEnabled ?? false,
     esiEnabled: employee?.esiEnabled ?? false,
+    trackingExempt: employee?.trackingExempt ?? false,
     bankAccountName: employee?.bankAccountName ?? '',
     // Prefilled with the API's mask. Sent back only if someone types over it —
     // see the save below — so a mask can never be stored as an account number.
@@ -357,6 +363,18 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
             <input type="checkbox" checked={f.esiEnabled} onChange={(e) => setF((p) => ({ ...p, esiEnabled: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
             ESI deduction applies
           </label>}
+          {/* HR's call, not a branch manager's — the server ignores it from anyone else. */}
+          {can(SETUP_ROLES) && <label className="col-span-2 flex cursor-pointer items-center gap-2 text-sm" title="Their location is never recorded between check-in and check-out, even when Live tracking is on in Settings">
+            <input type="checkbox" checked={f.trackingExempt} onChange={(e) => setF((p) => ({ ...p, trackingExempt: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
+            Exempt from live tracking
+          </label>}
+          {editing && (
+            <p className="col-span-2 text-xs text-muted-foreground">
+              {employee?.consentAt
+                ? `Agreed to the app's terms and location consent on ${new Date(employee.consentAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}.`
+                : "Has not yet agreed to the app's terms and location consent — they are asked the next time they open the app."}
+            </p>
+          )}
 
           {isOwner && <div className="col-span-2 border-t border-border/60 pt-3">
             <h4 className="mb-2 text-sm font-semibold">Bank account <span className="font-normal text-muted-foreground">(for the salary transfer file)</span></h4>

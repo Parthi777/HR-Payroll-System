@@ -20,6 +20,7 @@ import { platformRoutes } from './platform.routes.js';
 import { publicRoutes } from './public.routes.js';
 import { kioskRoutes } from './kiosk.routes.js';
 import { integrationRoutes } from './integration.routes.js';
+import { trackingRoutes } from './tracking.routes.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
@@ -52,4 +53,6 @@ export async function registerRoutes(app: FastifyInstance) {
   // The dealer's accounting ERP: Master Control connects it, and its own token
   // opens /api/integration/v1 and nothing else.
   await app.register(integrationRoutes, { prefix: '/api' });
+  // Live location tracking between check-in and check-out.
+  await app.register(trackingRoutes, { prefix: '/api' });
 }

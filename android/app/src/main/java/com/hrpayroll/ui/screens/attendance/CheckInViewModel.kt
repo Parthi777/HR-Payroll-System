@@ -5,11 +5,14 @@ import com.hrpayroll.data.remote.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hrpayroll.data.repository.AttendanceRepository
+import com.hrpayroll.data.repository.TrackingController
+import com.hrpayroll.utils.formatIsoTime
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import javax.inject.Inject
 
@@ -18,6 +21,12 @@ data class CheckInUiState(
     val success: Boolean = false,
     val resultStatus: String? = null, // PRESENT | LATE | ...
     val approvalStatus: String? = null, // PENDING when late / out-of-zone
+    /** "09:02 AM" — the punch time the server recorded, for the confirmation dialog. */
+    val timeLabel: String? = null,
+    /** Check-in: the dealer tracks this day, and monitoring has begun. */
+    val trackingStarted: Boolean = false,
+    /** Check-out: the day was tracked, and monitoring has now stopped. */
+    val trackingStopped: Boolean = false,
     val error: String? = null,
     /**
      * Set when an earlier day was left open — check-in is refused until that
@@ -31,6 +40,7 @@ data class CheckInUiState(
 @HiltViewModel
 class CheckInViewModel @Inject constructor(
     private val repository: AttendanceRepository,
+    private val tracking: TrackingController,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -63,11 +73,34 @@ class CheckInViewModel @Inject constructor(
         if (_uiState.value.isSubmitting) return
         viewModelScope.launch {
             _uiState.value = CheckInUiState(isSubmitting = true)
+            // Send the day's last fixes before closing it, so they land inside
+            // the window; anything that misses is still accepted a little late.
+            if (isCheckOut) withTimeoutOrNull(3_000) { runCatching { tracking.flush() } }
             runCatching {
                 if (isCheckOut) repository.checkOut(selfie, lat, lng)
                 else repository.checkIn(selfie, lat, lng, accuracy)
             }
-                .onSuccess { _uiState.value = CheckInUiState(success = true, resultStatus = it.status, approvalStatus = it.approvalStatus) }
+                .onSuccess {
+                    var started = false
+                    var stopped = false
+                    if (isCheckOut) {
+                        stopped = tracking.isActive.value || it.tracking?.wasTracked == true
+                        tracking.stop()
+                    } else if (it.tracking?.enabled == true && it.id != null) {
+                        // Still in the foreground — Android only lets a location
+                        // service start from here, not later in the background.
+                        tracking.start(it.id, it.tracking.intervalSec)
+                        started = true
+                    }
+                    _uiState.value = CheckInUiState(
+                        success = true,
+                        resultStatus = it.status,
+                        approvalStatus = it.approvalStatus,
+                        timeLabel = formatIsoTime(if (isCheckOut) it.checkOut else it.checkIn),
+                        trackingStarted = started,
+                        trackingStopped = stopped,
+                    )
+                }
                 .onFailure {
                     _uiState.value = CheckInUiState(
                         error = it.userMessage(if (isCheckOut) "Check-out failed" else "Check-in failed"),

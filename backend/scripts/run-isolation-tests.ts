@@ -50,6 +50,7 @@ run(
     'tests/payroll-visibility.test.ts',
     'tests/password-reset.test.ts',
     'tests/monitoring.test.ts',
+    'tests/live-tracking.test.ts',
   ],
   {
     DATABASE_URL: url,

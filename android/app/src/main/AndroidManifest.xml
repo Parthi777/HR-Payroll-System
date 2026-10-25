@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Resume live tracking after a restart (TrackingBootReceiver). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- In-app self-update: hand the downloaded APK to the system installer.
          The app is distributed by direct download, not through Play. -->
@@ -50,11 +52,21 @@
             </intent-filter>
         </activity>
 
-        <!-- Background GPS / shift monitor -->
+        <!-- Live tracking: location every 2 minutes from check-in to check-out,
+             only when the dealer has it on. See docs/LIVE-TRACKING.md. -->
         <service
             android:name=".service.LocationTrackingService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <receiver
+            android:name=".service.TrackingBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- FCM push -->
         <service

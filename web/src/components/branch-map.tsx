@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { MapContainer, TileLayer, Circle, CircleMarker, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { LocateFixed, Loader2 } from 'lucide-react';
@@ -81,6 +81,8 @@ export default function BranchMap({
   height = 360,
   onMapClick,
   draft,
+  scrollZoom,
+  children,
 }: {
   branches: MapBranch[];
   height?: number;
@@ -88,6 +90,10 @@ export default function BranchMap({
   onMapClick?: (lat: number, lng: number) => void;
   /** Live preview of the geofence being edited (dashed indigo circle). */
   draft?: { lat: number; lng: number; radius: number } | null;
+  /** Mouse-wheel zoom. Defaults to on only while editing. */
+  scrollZoom?: boolean;
+  /** Extra layers drawn over the branches — the live-tracking dots and paths. */
+  children?: ReactNode;
 }) {
   const valid = branches.filter((b) => b.geofenceLat && b.geofenceLng);
   const [satellite, setSatellite] = useState(false);
@@ -184,7 +190,7 @@ export default function BranchMap({
       center={center}
       zoom={valid.length > 1 && !draft ? 9 : 14}
       maxZoom={19}
-      scrollWheelZoom={!!onMapClick}
+      scrollWheelZoom={scrollZoom ?? !!onMapClick}
       style={{ height, width: '100%', borderRadius: 16, cursor: onMapClick ? 'crosshair' : undefined }}
     >
       {satellite ? (
@@ -235,6 +241,7 @@ export default function BranchMap({
           </div>
         );
       })}
+      {children}
       {draft && (
         <>
           <Recenter lat={draft.lat} lng={draft.lng} />

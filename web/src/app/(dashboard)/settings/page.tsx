@@ -27,6 +27,8 @@ interface Company {
   /** Whether staff get the punch-in / punch-out reminders on their phones. */
   punchRemindersOn?: boolean;
   punchOutReminderAt?: string;
+  /** Record staff location every 2 minutes between check-in and check-out. Off by default. */
+  liveTrackingOn?: boolean;
   // Payroll policy
   /** Employees see their payslips and a monthly statement in the app. Off by default. */
   payrollVisibleToEmployees?: boolean;
@@ -369,6 +371,15 @@ function CompanyCard() {
               hint="One reminder to everyone still checked in at this time. Default 19:30 — before the self-entered check-out cut-off above, so people can still settle the day themselves."
             >
               <input type="time" className={input} value={c.punchOutReminderAt ?? ''} onChange={(e) => set('punchOutReminderAt', e.target.value)} disabled={c.punchRemindersOn === false} />
+            </Field>
+            <Field
+              label="Live location tracking"
+              hint="On: the app records each employee's location every 2 minutes from check-in until check-out, for the Live Tracking page. Staff are told on their phone when monitoring starts and stops. Kiosk and manual punches are never tracked; exempt individuals on their employee record."
+            >
+              <select className={input} value={String(c.liveTrackingOn ?? false)} onChange={(e) => set('liveTrackingOn', e.target.value === 'true')}>
+                <option value="false">Off — location checked only at check-in</option>
+                <option value="true">On — tracked from check-in to check-out</option>
+              </select>
             </Field>
           </div>
         </div>

@@ -23,6 +23,15 @@ class HrPayrollApp : Application() {
                     NotificationManager.IMPORTANCE_HIGH,
                 ),
             )
+            // The ongoing "location monitoring on" notice while a day is tracked.
+            // Low importance: it must be visible, but never buzz.
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(
+                    TRACKING_CHANNEL_ID,
+                    "Location monitoring",
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply { description = "Shown while your location is recorded, from check-in to check-out" },
+            )
         }
 
         // Manual Firebase init from local.properties-injected BuildConfig — no
@@ -44,5 +53,6 @@ class HrPayrollApp : Application() {
 
     companion object {
         const val PUSH_CHANNEL_ID = "hr_payroll_alerts"
+        const val TRACKING_CHANNEL_ID = "live_tracking"
     }
 }

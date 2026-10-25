@@ -210,6 +210,13 @@ const SHAPES: Record<string, Shape> = {
     detail: (m) =>
       join(who(m), text(m.date), join(text(m.checkIn), text(m.checkOut)), text(m.reason)),
   },
+  TRACKING_REPORT_EXPORTED: {
+    title: 'Location report downloaded',
+    kind: 'attendance',
+    tone: 'neutral',
+    detail: (m) =>
+      join(m.from === m.to ? text(m.from) : `${text(m.from)}–${text(m.to)}`, text(m.view), text(m.format).toUpperCase()),
+  },
 
   // Leave
   LEAVE_APPROVED: {

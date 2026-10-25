@@ -3,6 +3,7 @@ package com.hrpayroll.di
 import android.content.Context
 import androidx.room.Room
 import com.hrpayroll.data.local.AppDatabase
+import com.hrpayroll.data.local.GpsPointDao
 import com.hrpayroll.data.local.PendingAttendanceDao
 import dagger.Module
 import dagger.Provides
@@ -18,8 +19,13 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, "hr_payroll.db").build()
+        Room.databaseBuilder(context, AppDatabase::class.java, "hr_payroll.db")
+            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .build()
 
     @Provides
     fun providePendingAttendanceDao(db: AppDatabase): PendingAttendanceDao = db.pendingAttendanceDao()
+
+    @Provides
+    fun provideGpsPointDao(db: AppDatabase): GpsPointDao = db.gpsPointDao()
 }

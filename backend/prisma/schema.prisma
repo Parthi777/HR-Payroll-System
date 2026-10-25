@@ -40,7 +40,7 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 
 model Employee {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   /// Owning tenant. Every query is filtered by this automatically — see
   /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
   tenantId           String
@@ -62,8 +62,16 @@ model Employee {
   /// default (TenantSettings.defaultPayrollBasis), which is what every existing
   /// employee does, so nobody's pay changes by adding this column.
   payrollBasis       String?
-  pfEnabled          Boolean  @default(false) // PF deduction applies to this employee
-  esiEnabled         Boolean  @default(false) // ESI deduction applies to this employee
+  pfEnabled          Boolean   @default(false) // PF deduction applies to this employee
+  esiEnabled         Boolean   @default(false) // ESI deduction applies to this employee
+  /// Never live-tracked, even when the dealer has live tracking on. Set by
+  /// HR for staff whose day is meant to be off-site — see docs/LIVE-TRACKING.md.
+  trackingExempt     Boolean   @default(false)
+  /// Version of the app's consent screen (terms, privacy, location and live
+  /// tracking) this employee last agreed to, and when. Null = never agreed —
+  /// they have not opened an app version that asks. See docs/LIVE-TRACKING.md.
+  consentVersion     Int?
+  consentAt          DateTime?
   /// Where salary is actually sent. Optional: an employee paid in cash, or one
   /// not yet onboarded to the bank, simply has none — the bank file names them
   /// as excluded rather than exporting a row the bank would reject.
@@ -71,14 +79,14 @@ model Employee {
   bankAccountNo      String?
   bankIfsc           String?
   fcmToken           String? // FCM device token for push notifications
-  status             String   @default("ACTIVE") // EmployeeStatus
+  status             String    @default("ACTIVE") // EmployeeStatus
   joiningDate        DateTime
   salary             Float
 
-  branch        Branch         @relation(fields: [branchId], references: [id])
-  department    Department     @relation(fields: [departmentId], references: [id])
-  designation   Designation    @relation(fields: [designationId], references: [id])
-  shift         Shift          @relation(fields: [shiftId], references: [id])
+  branch        Branch               @relation(fields: [branchId], references: [id])
+  department    Department           @relation(fields: [departmentId], references: [id])
+  designation   Designation          @relation(fields: [designationId], references: [id])
+  shift         Shift                @relation(fields: [shiftId], references: [id])
   attendances   Attendance[]
   leaves        Leave[]
   payslips      Payslip[]
@@ -141,6 +149,13 @@ model Attendance {
   punchMode      String    @default("GEO")
   punchReason    String? // employee's justification for a manual / selfie punch
   raisedBy       String? // admin id when HR raised the punch on the employee's behalf
+  /// When live tracking began for this day. Null = the day was not tracked
+  /// (dealer had it off, employee exempt, kiosk or manual punch).
+  trackingFrom   DateTime?
+  /// When tracking was cut short without a check-out — the dealer switched it
+  /// off or exempted the employee mid-shift. The tracked window is
+  /// [trackingFrom, checkOut ?? trackingTo ?? cut-off]; see tracking.service.
+  trackingTo     DateTime?
 
   employee Employee @relation(fields: [employeeId], references: [id])
   gpsLogs  GPSLog[]
@@ -154,19 +169,33 @@ model Attendance {
 }
 
 model GPSLog {
-  id           String   @id @default(cuid())
+  id             String   @id @default(cuid())
   /// Owning tenant. Every query is filtered by this automatically — see
   /// context/tenant-scope.ts for the rule and plugins/prisma.ts for the wiring.
-  tenantId     String
-  attendanceId String
-  lat          Float
-  lng          Float
-  accuracy     Float?
-  timestamp    DateTime
+  tenantId       String
+  attendanceId   String
+  employeeId     String
+  /// TrackKind: FIX (a location) | GPS_OFF | GPS_ON | NO_PERMISSION | STOPPED.
+  /// Status events carry no coordinates. "No signal" is never stored — it is
+  /// the gap between rows, so it shows even when the phone is dead.
+  kind           String   @default("FIX")
+  lat            Float?
+  lng            Float?
+  accuracy       Float?
+  /// INSIDE | OUTSIDE | BORDERLINE against the employee's branch at ingest.
+  geofenceStatus String?
+  distance       Float? // metres from the fence centre
+  isMock         Boolean  @default(false)
+  timestamp      DateTime // device time of the fix
+  receivedAt     DateTime @default(now())
 
   attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
 
+  /// A batch the phone re-sends after a dropped response lands once.
+  @@unique([attendanceId, kind, timestamp])
   @@index([tenantId, attendanceId])
+  @@index([tenantId, employeeId, timestamp])
+  @@index([tenantId, timestamp])
 }
 
 model Branch {
@@ -579,21 +608,25 @@ model TenantSettings {
   /// all four (three before/around the shift start, one in the evening): a
   /// dealer that finds them nagging turns them off here rather than asking the
   /// platform to stop pushing.
-  punchRemindersOn      Boolean @default(true)
+  punchRemindersOn   Boolean @default(true)
   /// Wall-clock time of the evening "did you punch out?" sweep. Before
   /// `manualPunchLatest` on purpose — after that cut-off an employee can no
   /// longer settle a forgotten check-out themselves and has to ask HR.
-  punchOutReminderAt    String  @default("19:30")
+  punchOutReminderAt String  @default("19:30")
+  /// Record staff's location every two minutes between check-in and
+  /// check-out, for the Live Tracking page. Off until the dealer turns it on;
+  /// staff are told on the phone when monitoring starts and stops.
+  liveTrackingOn     Boolean @default(false)
 
   // ── Payroll policy (was PAYROLL_*, and hardcoded constants) ──
   /// PayrollBasis a new employee gets when their own is not set.
-  defaultPayrollBasis     String @default("MONTHLY")
-  monthDivisor            Int @default(30) // per-day salary = monthly / this
-  clPerYear               Int @default(12) // paid casual leave before it becomes LOP
-  otHoursPerDay           Int @default(10) // OT hours that add up to one day's pay
-  payrollLateShiftAt      Int @default(5) // late punches that push the pay date out
-  payrollPayDay           Int @default(5) // normal pay date, day of the next month
-  payrollPayDayLate       Int @default(8) // shifted pay date
+  defaultPayrollBasis       String  @default("MONTHLY")
+  monthDivisor              Int     @default(30) // per-day salary = monthly / this
+  clPerYear                 Int     @default(12) // paid casual leave before it becomes LOP
+  otHoursPerDay             Int     @default(10) // OT hours that add up to one day's pay
+  payrollLateShiftAt        Int     @default(5) // late punches that push the pay date out
+  payrollPayDay             Int     @default(5) // normal pay date, day of the next month
+  payrollPayDayLate         Int     @default(8) // shifted pay date
   /// Whether employees see their payslips and can download a monthly
   /// punch/leave statement in the app. Off until the dealer chooses to share
   /// pay with staff; the server refuses those requests while it is off.
@@ -801,28 +834,28 @@ model PlatformUser {
 /// reasoning as PlatformAuditLog below, so the tenant-scoping extension can
 /// never mistake this for a row a dealer owns.
 model SignupRequest {
-  id           String    @id @default(cuid())
-  companyName  String
+  id              String    @id @default(cuid())
+  companyName     String
   /// The workspace address they asked for. Only reserved once approved.
-  slug         String
-  contactName  String
-  email        String
-  phone        String
-  staffCount   Int?
-  branchCount  Int?
-  planCode     String // STARTER | GROWTH | ENTERPRISE
-  note         String?
+  slug            String
+  contactName     String
+  email           String
+  phone           String
+  staffCount      Int?
+  branchCount     Int?
+  planCode        String // STARTER | GROWTH | ENTERPRISE
+  note            String?
   /// GSTIN, upper-cased. Copied to the workspace's company profile on approval.
-  gstNumber    String?
+  gstNumber       String?
   /// True when the email came from a Google sign-in rather than being typed.
-  emailFromGoogle Boolean @default(false)
-  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
-  reviewedById String? // PlatformUser
-  reviewedAt   DateTime?
-  reviewNote   String?
-  workspaceId  String? // the Tenant it became, once approved
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  emailFromGoogle Boolean   @default(false)
+  status          String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedById    String? // PlatformUser
+  reviewedAt      DateTime?
+  reviewNote      String?
+  workspaceId     String? // the Tenant it became, once approved
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([status])
   @@index([createdAt])

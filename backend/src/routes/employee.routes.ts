@@ -13,6 +13,7 @@ import { normalizePhone } from '../utils/phone.js';
 import { requireTenantId } from '../context/tenant-context.js';
 import { getTenantPolicy } from '../services/settings/tenant-settings.service.js';
 import { changed, recordAudit } from '../services/audit/audit.service.js';
+import { closeOpenTracking } from '../services/tracking/tracking.service.js';
 
 const CODE_PAD = 3;
 
@@ -65,6 +66,7 @@ const createEmployeeSchema = z.object({
   payrollBasis: z.enum(['MONTHLY', 'PRESENT_DAYS']).nullable().optional(),
   pfEnabled: z.boolean().optional(), // PF deduction applies (only some employees)
   esiEnabled: z.boolean().optional(),
+  trackingExempt: z.boolean().optional(), // never live-tracked, even when the dealer tracks
   // Where salary is sent. Empty string clears the field rather than storing "",
   // so a mistyped account can be removed and the bank file excludes the person
   // instead of failing the bank's whole upload on a malformed line.
@@ -139,6 +141,13 @@ function stripOwnerOnly<T extends Record<string, unknown>>(data: T, role: string
   for (const f of OWNER_ONLY_FIELDS) delete out[f];
   return out;
 }
+
+/**
+ * Who may exempt someone from live tracking. Not a branch manager: the people
+ * being watched are their own team, and "stop watching my staff" is the
+ * dealer's call, made at the level that turned tracking on.
+ */
+const TRACKING_EXEMPT_ROLES: JwtRole[] = ['SUPER_ADMIN', 'HR_MANAGER'];
 
 /**
  * Every id the employee form can name must belong to this dealer.
@@ -349,6 +358,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     // the dealership. Owner and HR pass straight through.
     await assertManages(app.prisma, req.user, id);
     const rest = stripOwnerOnly(parsed, req.user.role);
+    if (!TRACKING_EXEMPT_ROLES.includes(req.user.role)) delete rest.trackingExempt;
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
     await assertRefsOwned(app.prisma, rest);
     // Setting a password through the edit form is the same authority as the
@@ -361,6 +371,8 @@ export async function employeeRoutes(app: FastifyInstance) {
     const before = await app.prisma.employee.findUnique({ where: { id } });
     if (!before) throw AppError.notFound('Employee');
     const employee = await app.prisma.employee.update({ where: { id }, data });
+    // Exempted mid-shift: stop counting today from now on.
+    if (!before.trackingExempt && employee.trackingExempt) await closeOpenTracking(app.prisma, { employeeId: id });
 
     await recordAudit(req, 'EMPLOYEE_UPDATED', 'Employee', {
       entityId: employee.id,
@@ -377,6 +389,7 @@ export async function employeeRoutes(app: FastifyInstance) {
         ...changed('reportingManagerId', before.reportingManagerId, employee.reportingManagerId),
         ...changed('pfEnabled', before.pfEnabled, employee.pfEnabled),
         ...changed('esiEnabled', before.esiEnabled, employee.esiEnabled),
+        ...changed('trackingExempt', before.trackingExempt, employee.trackingExempt),
         ...(password && mayResetPassword ? { passwordReset: true } : {}),
       },
     });

@@ -60,7 +60,10 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Location:</strong> GPS coordinates at check-in and check-out, used to confirm the employee is at
-          their branch, and — where the employer enables it — location during the shift.
+          their branch, and — where the employer enables live tracking — the phone&rsquo;s location every two
+          minutes from check-in until check-out. The app tells the employee when this starts and stops, shows a
+          notification the whole time, and records nothing after check-out or sign-out. Employees agree to this in
+          the app before they first use it.
         </li>
         <li>Attendance times, breaks, leave requests and supporting documents, expense claims and their bills.</li>
         <li>Salary, allowances, deductions (such as PF and ESI) and payslips.</li>
@@ -113,7 +116,7 @@ export default function PrivacyPage() {
       <h2>6. How long we keep it</h2>
       <p>
         Workspace data is kept while the customer&rsquo;s subscription is active, so that attendance and payroll
-        history stays complete. When a customer leaves, we delete its workspace data on its request, except records
+        history stays complete. Live-tracking location history is the exception: it is deleted automatically after 180 days. When a customer leaves, we delete its workspace data on its request, except records
         we must keep by law. Sign-up requests that do not become a workspace are deleted on request. Deactivated
         employees are removed from reports but their past attendance and payroll records stay with the
         customer&rsquo;s history.

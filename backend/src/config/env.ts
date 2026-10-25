@@ -87,6 +87,11 @@ const envSchema = z.object({
   // at any moment from Master Control, which is checked on every request.
   KIOSK_TOKEN_DAYS: z.coerce.number().default(180),
 
+  // How long live-tracking fixes are kept (docs/LIVE-TRACKING.md). The daily
+  // summary in a report is recomputed from them, so older days lose their
+  // away-time figures once their fixes are purged.
+  GPS_RETENTION_DAYS: z.coerce.number().int().min(7).default(180),
+
   // Razorpay (subscription payments). Unset = no online payment: a signup is
   // still approved and provisioned, and the platform records the payment by
   // hand. The key id reaches the browser; neither secret ever does.

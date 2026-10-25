@@ -4,6 +4,7 @@ import path from 'path';
 import { AppError } from '../../utils/AppError.js';
 import { assertManages, type JwtPayload } from '../../middleware/auth.js';
 import { checkGeofence } from '../geofence/geofence.service.js';
+import { TRACK_INTERVAL_SEC } from '../tracking/tracking.service.js';
 import { verifyFace, isFaceMatchEnabled } from '../ai/face.service.js';
 import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
 import { isS3Enabled, tenantKey, uploadImage } from '../storage/storage.service.js';
@@ -165,6 +166,20 @@ export interface MarkResult {
   distance: number;
   /** PENDING when the check-in was outside the geofence and awaits HR approval. */
   approvalStatus: string | null;
+  /**
+   * Live tracking for this day. `enabled` tells the app to start (check-in) —
+   * it is always false on a check-out, where `wasTracked` says whether the
+   * phone should tell the employee monitoring has stopped.
+   */
+  tracking: { enabled: boolean; intervalSec: number; wasTracked: boolean };
+}
+
+export interface CheckInOptions {
+  /**
+   * The punch came from the employee's own phone, which can be tracked. The
+   * kiosk leaves it unset — a shared tablet at the door has nobody to follow.
+   */
+  track?: boolean;
 }
 
 /** Selfie check-in: geofence gate, late/present calc, persist attendance. */
@@ -175,6 +190,7 @@ export async function markCheckIn(
   lat: number,
   lng: number,
   accuracy?: number,
+  opts: CheckInOptions = {},
 ): Promise<MarkResult> {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
@@ -234,6 +250,8 @@ export async function markCheckIn(
   if (geoFlagged) reasons.push(`Geofence ${geo.status} — ${Math.round(geo.distance)}m from ${employee.branch.name}`);
   if (lateNeedsApproval) reasons.push('Late arrival');
   const flagReason = reasons.length ? `${reasons.join('; ')}${approvalStatus ? ' — awaiting approval' : ''}` : null;
+  const tracked = !!opts.track && attendance.liveTrackingOn && !employee.trackingExempt;
+  const trackingFrom = tracked ? now : null;
 
   // Log a geofence violation row when the check-in is outside/borderline the zone.
   if (geoFlagged) {
@@ -247,13 +265,13 @@ export async function markCheckIn(
     update: {
       checkIn: now, checkInLat: lat, checkInLng: lng, checkInSelfie: selfieUrl,
       geofenceStatus: geo.status, status, faceMatchScore,
-      isFlagged: flagged, flagReason, approvalStatus,
+      isFlagged: flagged, flagReason, approvalStatus, trackingFrom, trackingTo: null,
     },
     create: {
       tenantId: requireTenantId(),
       employeeId, date: today, checkIn: now, checkInLat: lat, checkInLng: lng, checkInSelfie: selfieUrl,
       geofenceStatus: geo.status, status, faceMatchScore,
-      isFlagged: flagged, flagReason, approvalStatus,
+      isFlagged: flagged, flagReason, approvalStatus, trackingFrom, trackingTo: null,
     },
   });
 
@@ -284,7 +302,9 @@ export async function markCheckIn(
     ),
   });
 
-  return toResult(record, geo.status, geo.distance, flagged, flagReason, approvalStatus);
+  return toResult(record, geo.status, geo.distance, flagged, flagReason, approvalStatus, {
+    enabled: tracked, intervalSec: TRACK_INTERVAL_SEC, wasTracked: false,
+  });
 }
 
 /** Selfie check-out: compute working minutes, persist. */
@@ -351,7 +371,9 @@ export async function markCheckOut(
     data: { checkOut: now, checkOutLat: lat, checkOutLng: lng, checkOutSelfie: selfieUrl, workingMinutes, status },
   });
 
-  return toResult(record, record.geofenceStatus, 0, record.isFlagged, record.flagReason, record.approvalStatus);
+  return toResult(record, record.geofenceStatus, 0, record.isFlagged, record.flagReason, record.approvalStatus, {
+    enabled: false, intervalSec: TRACK_INTERVAL_SEC, wasTracked: !!existing.trackingFrom && !existing.trackingTo,
+  });
 }
 
 export interface ManualPunchInput {
@@ -589,6 +611,7 @@ function toResult(
   flagged: boolean,
   flagReason: string | null,
   approvalStatus: string | null,
+  tracking: MarkResult['tracking'] = { enabled: false, intervalSec: TRACK_INTERVAL_SEC, wasTracked: false },
 ): MarkResult {
   return {
     id: r.id,
@@ -602,6 +625,7 @@ function toResult(
     geofence,
     distance,
     approvalStatus,
+    tracking,
   };
 }
 

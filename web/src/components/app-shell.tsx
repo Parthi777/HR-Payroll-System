@@ -22,6 +22,7 @@ import {
   Link2,
   Menu,
   X,
+  Radar,
 } from 'lucide-react';
 import useSWR from 'swr';
 import { fetcher, api } from '@/lib/api';
@@ -89,6 +90,7 @@ function NotificationBell() {
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/attendance', label: 'Live Attendance', icon: Clock },
+  { href: '/live-tracking', label: 'Live Tracking', icon: Radar },
   { href: '/employees', label: 'Employees', icon: Users },
   { href: '/geofence', label: 'Geofence', icon: MapPin },
   { href: '/kiosks', label: 'Kiosks', icon: MonitorSmartphone },

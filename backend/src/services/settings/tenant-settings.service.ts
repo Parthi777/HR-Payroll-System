@@ -27,6 +27,8 @@ export interface AttendancePolicy {
   punchRemindersOn: boolean;
   /** "HH:MM" of the evening sweep for people still checked in. */
   punchOutReminderAt: string;
+  /** Record location between check-in and check-out — docs/LIVE-TRACKING.md. */
+  liveTrackingOn: boolean;
 }
 
 /** How pay is arrived at. See CLAUDE.md "Payroll Calculation Engine". */
@@ -100,6 +102,7 @@ export function defaultPolicy(): TenantPolicy {
       manualPunchLatest: process.env.MANUAL_PUNCH_LATEST ?? '20:00',
       punchRemindersOn: process.env.PUNCH_REMINDERS !== 'off',
       punchOutReminderAt: process.env.PUNCH_OUT_REMINDER_AT ?? '19:30',
+      liveTrackingOn: false,
     },
     payroll: {
       defaultPayrollBasis: 'MONTHLY',
@@ -129,7 +132,7 @@ type SettingsRow = {
   timezone: string; halfDayWindowStart: string; halfDayWindowEnd: string;
   lateRequiresApproval: boolean; openPunchLookbackDays: number;
   manualPunchLatest: string;
-  punchRemindersOn: boolean; punchOutReminderAt: string;
+  punchRemindersOn: boolean; punchOutReminderAt: string; liveTrackingOn: boolean;
   defaultPayrollBasis: string;
   monthDivisor: number; clPerYear: number; otHoursPerDay: number;
   payrollLateShiftAt: number;
@@ -155,6 +158,7 @@ function toPolicy(row: SettingsRow): TenantPolicy {
       manualPunchLatest: row.manualPunchLatest,
       punchRemindersOn: row.punchRemindersOn,
       punchOutReminderAt: row.punchOutReminderAt,
+      liveTrackingOn: row.liveTrackingOn,
     },
     payroll: {
       defaultPayrollBasis: row.defaultPayrollBasis === 'PRESENT_DAYS' ? 'PRESENT_DAYS' : 'MONTHLY',

@@ -3,7 +3,7 @@ import { SiteFooter } from '@/components/site-footer';
 
 /** Who to write to about privacy, the terms, or a data request. One place, so it is changed once. */
 export const LEGAL_CONTACT_EMAIL = 'parthimech1993@gmail.com';
-export const LEGAL_EFFECTIVE_DATE = '22 October 2026';
+export const LEGAL_EFFECTIVE_DATE = '26 October 2026';
 
 /** The frame for the privacy policy and the terms: the site's header and footer, readable prose between. */
 export function LegalPage({ title, intro, children }: { title: string; intro: string; children: React.ReactNode }) {

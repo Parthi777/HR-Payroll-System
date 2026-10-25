@@ -33,6 +33,10 @@ import com.hrpayroll.data.remote.dto.AttendanceDecisionResponse
 import com.hrpayroll.data.remote.dto.AttendanceApprovalsResponse
 import com.hrpayroll.data.remote.dto.DailyReportResponse
 import com.hrpayroll.data.remote.dto.MeDto
+import com.hrpayroll.data.remote.dto.GpsBatchRequest
+import com.hrpayroll.data.remote.dto.GpsBatchResponse
+import com.hrpayroll.data.remote.dto.TrackingDto
+import com.hrpayroll.data.remote.dto.ConsentRequest
 import com.hrpayroll.data.remote.dto.EmployeeLoginResponse
 import com.hrpayroll.data.remote.dto.PayslipListResponse
 import com.hrpayroll.data.remote.dto.PerformanceRowDto
@@ -89,8 +93,20 @@ interface HrApi {
     @GET("me")
     suspend fun me(): MeDto
 
+    /** Record that this employee agreed to the consent screen (terms, privacy, location & tracking). */
+    @POST("me/consent")
+    suspend fun recordConsent(@Body body: ConsentRequest): ResponseBody
+
     @GET("attendance/today")
     suspend fun today(): AttendanceDto
+
+    /** Upload recorded fixes and GPS on/off events for the open tracked day. */
+    @POST("attendance/gps-log")
+    suspend fun gpsLog(@Body body: GpsBatchRequest): GpsBatchResponse
+
+    /** The day the phone should be tracking now, if any — resumes after a restart. */
+    @GET("attendance/tracking")
+    suspend fun tracking(): TrackingDto
 
     /**
      * The day the employee forgot to check out of, if any. Check-in stays

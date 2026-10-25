@@ -138,6 +138,10 @@ ai-hr-payroll/
   issued by an administrator (Super Admin or HR Manager); there is no self
   sign-up and no third-party (Google) sign-in
 - Admin mode: email + password + a code from an authenticator app (two-step)
+- First open, before sign-in: a consent screen (terms, privacy, photo and
+  location use incl. live tracking) — both boxes required, declining closes the
+  app. Recorded per employee after sign-in (`POST /api/me/consent` →
+  `Employee.consentVersion`/`consentAt`); bump `ConsentPrefs.CURRENT_VERSION` to re-ask
 - JWT token stored in EncryptedSharedPreferences
 - Auto-logout on token expiry
 
@@ -159,12 +163,17 @@ Open App → GPS Check (within geofence?) → Front Camera Preview
 - Offline queue: if no internet, store locally and sync when connected (WorkManager)
 - Duplicate check: cannot check-in twice without check-out
 
-### 3. GPS & Geofencing (Employee Side)
-- Continuous GPS tracking during shift (ForegroundService)
-- Show employee's live location relative to branch on map
-- Alert if employee leaves geofence during shift
-- GPS track log saved every 5 minutes (configurable)
-- Battery-efficient: use significant location changes, not raw GPS
+### 3. GPS & Geofencing (Employee Side) — live tracking
+Only when the dealer turns on **Settings → Live location tracking**
+(`TenantSettings.liveTrackingOn`, off by default), and never for an employee
+marked `trackingExempt`, a kiosk punch or a manual punch. See `docs/LIVE-TRACKING.md`.
+- A fix every 2 minutes from check-in to check-out (`LocationTrackingService`,
+  a foreground service with a visible notification), queued in Room and uploaded
+  in batches; it stops at check-out, sign-out, or when the server says so
+- Check-in dialog says monitoring has started; check-out dialog says it stopped
+- GPS off / no permission / mock location are reported, never hidden
+- Home also shows today's weather (Open-Meteo, through its own HTTP client so
+  the session token never leaves for a third party)
 
 ### 4. Shift Monitor (Employee View)
 - Today's shift details: start time, end time, type (Morning/Evening/Night)
@@ -231,6 +240,13 @@ the employee payroll routes (and WhatsApp `SLIP`) while it is off.
 - Export: CSV / Excel
 - Flag suspicious entries (GPS mismatch, face mismatch score)
 - Click row → expand: selfie photo, GPS map, device info
+
+### 2a. Live Tracking (`/live-tracking`)
+- Map of tracked staff (green inside, red away, grey GPS off / no signal) and
+  each person's path for the day
+- "Away now" with running durations, "GPS off / no signal", today's totals
+- Report for up to 31 days — per day or per away episode — as Excel / PDF
+- Super Admin / HR Manager / Branch Manager (own branch) only; not Payroll Admin
 
 ### 3. Geofence Management
 - Map interface (Google Maps / Leaflet)
@@ -557,6 +573,19 @@ GET    /api/geofence/check?lat=&lng=&branchId=   # Is point inside geofence?
 GET    /api/admin/geofence                        # All branch geofences
 PUT    /api/admin/geofence/:branchId              # Update geofence config
 GET    /api/admin/geofence/violations             # Violation logs
+```
+
+### Live tracking
+See `docs/LIVE-TRACKING.md`. Away time comes from one pure function,
+`summarizeTrack()`: a fix vouches for 6 minutes, longer gaps are "no signal",
+BORDERLINE counts as inside. Fixes are purged after `GPS_RETENTION_DAYS`.
+```
+POST   /api/attendance/gps-log                    # Employee: a batch of fixes + GPS events for the open day
+GET    /api/attendance/tracking                   # Employee: should this phone be tracking now?
+POST   /api/me/consent                            # Employee: agreed to the app's consent screen { version, acceptedAt }
+GET    /api/admin/tracking/live?branchId=         # Who is tracked, where, and for how long away
+GET    /api/admin/tracking/:attendanceId/track    # One day's path + summary
+GET    /api/admin/reports/tracking?from=&to=&view=summary|episodes&format=  # ≤31 days, audited downloads
 ```
 
 ### Employees
@@ -958,6 +987,7 @@ instance send nothing. Off per dealer in Settings, or platform-wide with
   replacement 5, admin two-step verify / setup / enable 10 each, admin
   recovery-code replacement 5, admin forgot-password 5, admin reset-password 10, employee sign-in 10, workspace lookup 20,
   refresh token 30, webhook handshake 30, APK download 30.
+  Live-tracking upload (`POST /attendance/gps-log`): 60 per minute.
 - **Platform console sign-in is two-step, always.** The password returns a
   challenge (`scope: PLATFORM_CHALLENGE`) that opens no route; only the
   challenge plus a TOTP or recovery code yields a session, and `requirePlatform`
@@ -1041,6 +1071,9 @@ ATTENDANCE_REMINDERS=            # "off" stops the scheduler starting at all
 PUNCH_REMINDERS=                 # "off" = default for a dealer with no settings row
 PUNCH_OUT_REMINDER_AT=19:30      # ditto, for the evening sweep
 
+# Live tracking (see docs/LIVE-TRACKING.md)
+GPS_RETENTION_DAYS=180           # fixes older than this are deleted daily
+
 # Firebase (push notifications)
 FIREBASE_PROJECT_ID=
 FIREBASE_PRIVATE_KEY=
@@ -1103,7 +1136,7 @@ PLATFORM_ALLOWED_IPS=              # backend: console IP allowlist, e.g. "203.0.
 - [ ] Backend: Check-in/out API + AWS Rekognition face match
 - [ ] Backend: Geofence calculation service
 - [ ] Android: Attendance screens (check-in/out flow)
-- [ ] Backend: GPS log storage
+- [x] Backend: GPS log storage (live tracking — `docs/LIVE-TRACKING.md`)
 
 ### Phase 3 — Shift & Leave (Week 5–6)
 - [ ] Backend: Shift management APIs
@@ -1222,6 +1255,8 @@ When working in this repo, Claude should:
 | Employee checks in from home | Geofence will flag; HR to investigate |
 | Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days. Check-out finds nothing open today and falls back to yesterday's open punch (`Shift.isNightShift` only). |
 | Same employee multiple devices | Allowed. Each punch still needs a matching face inside the geofence, which is what stops someone else clocking you in. |
+| Live tracking on, employee refuses "Allow all the time" or switches GPS off | Check-in still works. Tracking runs while the app is open or in the background; the gaps show as "GPS off" / "no signal" on the Live Tracking page and report |
+| Live tracking and a forgotten check-out | Tracking stops at the end of the attendance day (16 h after check-in for a night shift) — nobody is followed home |
 | Staff with no usable phone | A branch kiosk: a paired tablet at the door. Employee number on a keypad, then the camera. Only that branch's staff, only that tablet's branch coordinates — `docs/KIOSK.md`. |
 | Kiosk at a branch with no map location | Every punch is refused with that reason (409), and the Kiosks page flags the branch — a kiosk punches at its branch's coordinates, so there is nothing to punch at until it is placed. |
 | WhatsApp delivery failure | Retry 3 times via BullMQ, then the log row is marked FAILED. Without a queue there is one inline attempt, then FAILED. |

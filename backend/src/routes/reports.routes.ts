@@ -15,8 +15,10 @@ import {
   tableXlsx,
   type TableExport,
 } from '../services/reports/report-export.service.js';
-import { COMPANY_TZ, dayKey } from '../utils/time.js';
+import { COMPANY_TZ, dayKey, formatDuration } from '../utils/time.js';
 import { getCompanyProfile, getTenantPolicy } from '../services/settings/tenant-settings.service.js';
+import { GAP_MS, TRACK_INTERVAL_SEC, trackingReportRows, watchableWhere } from '../services/tracking/tracking.service.js';
+import { recordAudit } from '../services/audit/audit.service.js';
 
 const fmtTime = (d: Date | null) =>
   d ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: COMPANY_TZ }) : null;
@@ -534,4 +536,142 @@ export async function reportsRoutes(app: FastifyInstance) {
       { month, year, rows },
     );
   });
+
+  // ── Live tracking: time inside / away from the fence per tracked day ──
+  // Narrower than the other reports: where people were standing is not
+  // something payroll needs, so PAYROLL_ADMIN is left out, and a branch
+  // manager only ever gets their own people.
+  app.get(
+    '/admin/reports/tracking',
+    { preHandler: requireRole('SUPER_ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') },
+    async (req, reply) => {
+      const { from, to, view, format, ...scope } = z
+        .object({
+          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          view: z.enum(['summary', 'episodes']).default('summary'),
+          ...scopeSchema,
+          format: formatSchema,
+        })
+        .parse(req.query);
+      const [fy, fm, fd] = from.split('-').map(Number);
+      const [ty, tm, td] = to.split('-').map(Number);
+      const fromDay = new Date(fy, fm - 1, fd);
+      const toDay = new Date(ty, tm - 1, td);
+      const spanDays = Math.round((toDay.getTime() - fromDay.getTime()) / 86_400_000);
+      if (spanDays < 0) throw new AppError('"From" must be on or before "To"', 400);
+      if (spanDays > 30) throw new AppError('Pick at most 31 days', 400);
+
+      const rows = await trackingReportRows(app.prisma, {
+        from: fromDay,
+        to: toDay,
+        employee: { ...scopeWhere(scope), AND: [watchableWhere(req.user)] },
+      });
+
+      const ymd = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const hm = (m: number) => formatDuration(m);
+      const range = from === to ? from : `${from} to ${to}`;
+      const gapMin = Math.round(GAP_MS / 60_000);
+      const note =
+        `A location is recorded every ${TRACK_INTERVAL_SEC / 60} minutes from check-in to check-out. ` +
+        `More than ${gapMin} minutes without one counts as "no signal". A reading near the fence edge counts as inside. ` +
+        'GPS off includes time the phone reported location switched off, permission refused, or a mock location.';
+
+      if (format !== 'json') {
+        await recordAudit(req, 'TRACKING_REPORT_EXPORTED', 'Attendance', { metadata: { from, to, view, format, ...scope } });
+      }
+
+      if (view === 'episodes') {
+        const episodes = rows.flatMap((r) =>
+          r.summary.episodes.map((e) => ({
+            date: ymd(r.date), employeeCode: r.employeeCode, name: r.name, branch: r.branch,
+            department: r.department, designation: r.designation,
+            from: fmtTime(e.from), to: fmtTime(e.to), minutes: e.minutes, maxBeyondM: e.maxBeyondM,
+          })),
+        );
+        return respondTable(
+          reply,
+          format,
+          `away-episodes-${from}_${to}`,
+          {
+            title: 'Away From Geofence — Episodes',
+            subtitle: `${range} · ${episodes.length} episode(s)`,
+            company: await company(),
+            columns: [
+              { header: 'Date', width: 12 },
+              { header: 'Code', width: 10 },
+              { header: 'Employee', width: 22 },
+              { header: 'Branch', width: 16 },
+              { header: 'Department', width: 14 },
+              { header: 'Left zone', width: 11 },
+              { header: 'Back / last seen', width: 14 },
+              { header: 'Away', width: 8, align: 'right' },
+              { header: 'Max beyond fence (m)', width: 14, align: 'right' },
+            ],
+            rows: episodes.map((e) => [
+              e.date, e.employeeCode, e.name, e.branch, e.department, e.from, e.to, hm(e.minutes), e.maxBeyondM,
+            ]),
+            note,
+          },
+          { from, to, view, rows: episodes },
+        );
+      }
+
+      const summary = rows.map((r) => ({
+        attendanceId: r.attendanceId,
+        date: ymd(r.date),
+        employeeCode: r.employeeCode,
+        name: r.name,
+        branch: r.branch,
+        department: r.department,
+        designation: r.designation,
+        checkIn: fmtTime(r.checkIn),
+        checkOut: fmtTime(r.checkOut),
+        trackedMin: r.trackedMin,
+        insideMin: r.summary.insideMin,
+        outsideMin: r.summary.outsideMin,
+        episodes: r.summary.episodes.length,
+        longestAwayMin: r.summary.episodes.reduce((m, e) => Math.max(m, e.minutes), 0),
+        offMin: r.summary.offMin,
+        noSignalMin: r.summary.noSignalMin,
+        mockFixes: r.summary.mockFixes,
+      }));
+      return respondTable(
+        reply,
+        format,
+        `live-tracking-${from}_${to}`,
+        {
+          title: 'Live Tracking — Time Away From Geofence',
+          subtitle: `${range} · ${summary.length} tracked day(s)`,
+          company: await company(),
+          columns: [
+            { header: 'Date', width: 11 },
+            { header: 'Code', width: 9 },
+            { header: 'Employee', width: 20 },
+            { header: 'Branch', width: 14 },
+            { header: 'Department', width: 13 },
+            { header: 'Designation', width: 13 },
+            { header: 'In', width: 9 },
+            { header: 'Out', width: 9 },
+            { header: 'Tracked', width: 8, align: 'right' },
+            { header: 'Inside', width: 8, align: 'right' },
+            { header: 'Away', width: 8, align: 'right' },
+            { header: 'Times away', width: 8, align: 'right' },
+            { header: 'Longest away', width: 9, align: 'right' },
+            { header: 'GPS off', width: 8, align: 'right' },
+            { header: 'No signal', width: 8, align: 'right' },
+          ],
+          rows: summary.map((r) => [
+            r.date, r.employeeCode, r.name, r.branch, r.department, r.designation,
+            r.checkIn ?? '-', r.checkOut ?? '-',
+            hm(r.trackedMin), hm(r.insideMin), hm(r.outsideMin), r.episodes, hm(r.longestAwayMin),
+            hm(r.offMin), hm(r.noSignalMin),
+          ]),
+          note,
+        },
+        { from, to, view, rows: summary },
+      );
+    },
+  );
 }
