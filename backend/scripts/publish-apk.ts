@@ -150,7 +150,9 @@ async function main() {
     region: process.env.AWS_REGION ?? 'ap-south-1',
     maxAttempts: 5,
     // Without these a half-open socket hangs forever; fail the part and retry.
-    requestHandler: new NodeHttpHandler({ connectionTimeout: 15_000, requestTimeout: 120_000 }),
+    // Generous per part: a 5 MB part on a ~50 KB/s uplink needs well over two
+    // minutes, and a timeout shorter than that retries the same part forever.
+    requestHandler: new NodeHttpHandler({ connectionTimeout: 15_000, requestTimeout: 600_000 }),
   });
 
   await assertNotOlder(s3, version, force);
@@ -161,7 +163,9 @@ async function main() {
   const upload = new Upload({
     client: s3,
     partSize: PART_SIZE,
-    queueSize: 3,
+    // Parallel parts only split a slow uplink three ways. PUBLISH_QUEUE_SIZE=1
+    // sends one part at a time, each with the whole connection.
+    queueSize: Number(process.env.PUBLISH_QUEUE_SIZE ?? 3),
     leavePartsOnError: false, // abort cleanly so no half upload is billed
     params: {
       Bucket: process.env.AWS_S3_BUCKET,
