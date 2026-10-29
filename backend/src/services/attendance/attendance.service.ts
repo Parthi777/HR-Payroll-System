@@ -250,7 +250,11 @@ export async function markCheckIn(
   if (geoFlagged) reasons.push(`Geofence ${geo.status} — ${Math.round(geo.distance)}m from ${employee.branch.name}`);
   if (lateNeedsApproval) reasons.push('Late arrival');
   const flagReason = reasons.length ? `${reasons.join('; ')}${approvalStatus ? ' — awaiting approval' : ''}` : null;
-  const tracked = !!opts.track && attendance.liveTrackingOn && !employee.trackingExempt;
+  // Agreeing to the app's consent screen is also the sign the phone can track
+  // at all: only 0.9.6+ asks, and an older app checking in would otherwise be
+  // marked tracked and show "no signal" all day without ever sending a fix.
+  const tracked =
+    !!opts.track && attendance.liveTrackingOn && !employee.trackingExempt && employee.consentVersion != null;
   const trackingFrom = tracked ? now : null;
 
   // Log a geofence violation row when the check-in is outside/borderline the zone.

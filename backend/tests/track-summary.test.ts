@@ -128,6 +128,13 @@ describe('summarizeTrack', () => {
     expect(s.last?.ts).toEqual(at(4));
   });
 
+  it('lays the day out as consecutive stretches for the timeline', () => {
+    const rows = [...every2(2, 20, 'INSIDE'), ...every2(20, 30, 'OUTSIDE'), ...every2(30, 40, 'INSIDE')];
+    const s = summarizeTrack({ ...base, to: at(50), rows });
+    expect(s.segments.map((g) => [g.state, (g.from.getTime() - T0.getTime()) / 60_000, (g.to.getTime() - T0.getTime()) / 60_000]))
+      .toEqual([['INSIDE', 0, 20], ['OUTSIDE', 20, 30], ['INSIDE', 30, 44], ['NO_SIGNAL', 44, 50]]);
+  });
+
   it('the four totals add up to the window', () => {
     const rows = [
       ...every2(2, 30, 'INSIDE'), ev(31, 'GPS_OFF'), ev(47, 'GPS_ON'),

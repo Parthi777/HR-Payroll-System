@@ -136,6 +136,13 @@ export interface AwayEpisode {
   maxBeyondM: number;
 }
 
+/** One unbroken stretch of the day in a single state — what the timeline draws. */
+export interface TrackSegment {
+  state: LiveState;
+  from: Date;
+  to: Date;
+}
+
 export interface TrackSummary {
   insideMin: number;
   outsideMin: number;
@@ -146,6 +153,8 @@ export interface TrackSummary {
   current: { state: LiveState; since: Date };
   /** The latest real fix, for the map. */
   last: TrackRow | null;
+  /** The window as consecutive stretches, oldest first. Adds up to the window. */
+  segments: TrackSegment[];
 }
 
 const toState = (status: string | null | undefined): TrackState => (status === 'OUTSIDE' ? 'OUTSIDE' : 'INSIDE');
@@ -254,6 +263,7 @@ export function summarizeTrack(input: SummaryInput): TrackSummary {
       .map((g) => ({ from: new Date(g.from), to: new Date(g.to), minutes: min(g.to - g.from), maxBeyondM: Math.round(g.beyond) })),
     current,
     last,
+    segments: segs.map((g) => ({ state: g.state, from: new Date(g.from), to: new Date(g.to) })),
   };
 }
 
@@ -470,6 +480,8 @@ export async function liveTracking(
       noSignalMin: s.noSignalMin,
       episodes: s.episodes.length,
       mockFixes: s.mockFixes,
+      // The day so far, for the little timeline beside each name.
+      segments: s.segments,
     };
   });
 

@@ -140,6 +140,7 @@ suite('live tracking', () => {
     for (const [key, phone, branchId] of [
       ['e1', '+919000077701', branchA], ['e2', '+919000077702', branchA],
       ['e3', '+919000077703', branchB], ['e4', '+919000077704', branchA],
+      ['e5', '+919000077705', branchA],
     ] as const) {
       const res = await as(tok.owner, 'POST', '/api/admin/employees', {
         name: `Staff ${key}`, phone, password: APP_PASSWORD, branchId,
@@ -153,6 +154,12 @@ suite('live tracking', () => {
       });
       expect(login.statusCode, login.body).toBe(200);
       emp[key] = { id: res.json().employee.id, token: login.json().token };
+      // What 0.9.6+ does after sign-in. e5 stands for a phone on an older app,
+      // which never asks for consent and has no tracking service.
+      if (key !== 'e5') {
+        const agreed = await as(login.json().token, 'POST', '/api/me/consent', { version: 1 });
+        expect(agreed.statusCode, agreed.body).toBe(200);
+      }
     }
   }, 120_000);
 
@@ -190,6 +197,12 @@ suite('live tracking', () => {
     const e3 = await punch(emp.e3.token, 'checkin', B);
     expect(e3.json().tracking.enabled).toBe(true);
     att3 = e3.json().id;
+  });
+
+  it('a phone on an older app — no consent recorded — is not tracked', async () => {
+    const res = await punch(emp.e5.token, 'checkin', A);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().tracking.enabled).toBe(false);
   });
 
   it('an exempt employee is never tracked', async () => {
@@ -243,7 +256,7 @@ suite('live tracking', () => {
     const hr = (await as(tok.hr, 'GET', '/api/admin/tracking/live')).json();
     expect(hr.enabled).toBe(true);
     expect(hr.employees.map((e: { attendanceId: string }) => e.attendanceId).sort()).toEqual([att1, att3].sort());
-    expect(hr.untrackedCheckedIn).toBe(2); // the exempt one and the kiosk punch
+    expect(hr.untrackedCheckedIn).toBe(3); // the exempt one, the kiosk punch, the old app
     const e1 = hr.employees.find((e: { attendanceId: string }) => e.attendanceId === att1);
     expect(e1.state).toBe('OUTSIDE');
     expect(e1.last).toMatchObject({ status: 'OUTSIDE' });
@@ -312,13 +325,13 @@ suite('live tracking', () => {
   });
 
   it("records the app's consent once per version, for the employee only", async () => {
-    const first = await as(emp.e1.token, 'POST', '/api/me/consent', { version: 1, acceptedAt: plus(-60_000) });
+    const first = await as(emp.e5.token, 'POST', '/api/me/consent', { version: 1, acceptedAt: plus(-60_000) });
     expect(first.statusCode, first.body).toBe(200);
     expect(first.json().consentVersion).toBe(1);
 
     // A reinstall agrees again: the first agreement's time stands.
-    await as(emp.e1.token, 'POST', '/api/me/consent', { version: 1 });
-    const row = await inTenant(() => app.prisma.employee.findUniqueOrThrow({ where: { id: emp.e1.id } }));
+    await as(emp.e5.token, 'POST', '/api/me/consent', { version: 1 });
+    const row = await inTenant(() => app.prisma.employee.findUniqueOrThrow({ where: { id: emp.e5.id } }));
     expect(row.consentAt?.toISOString()).toBe(plus(-60_000));
 
     // HR sees it on the employee record.

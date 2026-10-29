@@ -12,6 +12,7 @@ import {
   trackDetail,
   watchableWhere,
 } from '../services/tracking/tracking.service.js';
+import { reverseGeocode } from '../services/geofence/reverse-geocode.service.js';
 
 const gpsBatchSchema = z.object({
   attendanceId: z.string().min(1),
@@ -69,6 +70,19 @@ export async function trackingRoutes(app: FastifyInstance) {
     const { branchId } = z.object({ branchId: z.string().optional() }).parse(req.query);
     return liveTracking(app.prisma, { branchId, watchable: watchableWhere(req.user) });
   });
+
+  // A street address for a point on the map. Coordinates in, a line of text
+  // out — no tenant data is read. Cached and throttled in the service.
+  app.get(
+    '/admin/tracking/address',
+    { preHandler: watchers, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (req) => {
+      const { lat, lng } = z
+        .object({ lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180) })
+        .parse(req.query);
+      return { address: await reverseGeocode(lat, lng) };
+    },
+  );
 
   app.get('/admin/tracking/:attendanceId/track', { preHandler: watchers }, async (req) => {
     const { attendanceId } = z.object({ attendanceId: z.string().min(1) }).parse(req.params);

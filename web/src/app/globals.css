@@ -149,3 +149,63 @@
     @apply rounded-2xl border border-border/60 bg-card shadow-[0_8px_30px_-12px_rgba(0,131,94,0.22)];
   }
 }
+
+/*
+ * Live Tracking map markers (components/live-tracking-map.tsx). Leaflet builds
+ * these as raw HTML outside React, so they are plain CSS rather than Tailwind
+ * classes. The colour arrives as --c; the ring only pulses for someone away.
+ */
+/* Quieter OpenStreetMap tiles, so the coloured markers carry the page. */
+.lt-tiles {
+  filter: saturate(0.45) brightness(1.04) contrast(0.96);
+}
+.lt-person {
+  background: transparent;
+  border: 0;
+}
+.lt-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--c);
+  color: #fff;
+  font: 700 12px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  border: 3px solid #fff;
+  box-shadow: 0 8px 18px -8px rgba(23, 28, 32, 0.55);
+  transition: transform 0.2s ease;
+}
+.lt-pin.lt-selected {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 4px rgba(0, 131, 94, 0.25), 0 10px 22px -8px rgba(23, 28, 32, 0.6);
+}
+.lt-pin.lt-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 2px solid var(--c);
+  animation: lt-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes lt-ping {
+  75%,
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+.lt-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  border-radius: 9999px;
+  background: #fff;
+  color: #171c20;
+  padding: 3px 8px;
+  font: 600 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+  box-shadow: 0 4px 12px -6px rgba(23, 28, 32, 0.45);
+  transform: translate(-50%, -50%);
+}

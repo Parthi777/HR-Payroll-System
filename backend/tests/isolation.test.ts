@@ -494,6 +494,8 @@ suite('cross-tenant isolation', () => {
     // that tenant; the liveness session touches no dealer data at all.
     'POST /api/kiosk/pair',
     'POST /api/kiosk/liveness/session',
+    // A street address for a coordinate pair — reads nothing of any tenant's.
+    'GET /api/admin/tracking/address',
   ];
 
   const NOT_YET_ASSERTED = [

@@ -13,6 +13,10 @@ A day is tracked when **all** of these hold at check-in:
   (`Employee.trackingExempt`, set by Super Admin / HR Manager only);
 - the check-in came from the employee's **own phone**. Kiosk punches and
   manual / selfie punches are never tracked.
+- the employee has **agreed to the app's consent screen**
+  (`Employee.consentVersion` is set). Only app 0.9.6+ asks, so this is also what
+  keeps an older app — which has no tracking service — from being marked
+  tracked and reading "no signal" all day.
 
 That moment is stored as `Attendance.trackingFrom`. The window closes at:
 
@@ -75,6 +79,14 @@ because Android 12+ will not start one from the background.
   the background. Without it, tracking resumes the next time the app is opened,
   and the gap reads as no signal.
 
+## Why someone shows "no signal"
+
+More than 6 minutes without a fix, and the phone never said GPS was off. In
+practice: a battery saver killed the app (App info → Battery → "No
+restrictions"), the app was swiped away or the phone restarted without "Allow
+all the time", the phone is off, or it has no internet — in which case the fixes
+are queued and the gap fills in when it reconnects.
+
 ## How away time is counted
 
 `summarizeTrack()` in `backend/src/services/tracking/tracking.service.ts` is
@@ -120,6 +132,17 @@ paying them needs.
 - today's table — inside, away, times away, GPS off, no signal, last seen;
 - the report — any range up to 31 days, per day or per away episode, as Excel
   or PDF.
+- each person's **current address** and a **Track** button that flies the map
+  to them (also "Google Maps" in their panel).
+
+### Addresses
+
+`GET /api/admin/tracking/address?lat&lng` turns a fix into a short street
+address with OpenStreetMap's Nominatim (`services/geofence/reverse-geocode.service.ts`).
+Free and keyless, but its policy is one request a second with an identifying
+User-Agent, so lookups are queued 1.1 s apart and cached per ~100 m square for
+a week. Only coordinates leave the server — never a name. Point
+`REVERSE_GEOCODE_URL` at another Nominatim-compatible service to change provider.
 
 ## Retention
 

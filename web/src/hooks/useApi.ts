@@ -77,6 +77,14 @@ export interface TrackedEmployee {
   noSignalMin: number;
   episodes: number;
   mockFixes: number;
+  /** The day so far as consecutive stretches — drawn as a small timeline. */
+  segments: TrackSegment[];
+}
+
+export interface TrackSegment {
+  state: TrackState;
+  from: string;
+  to: string;
 }
 
 export interface TrackBranch {
@@ -98,6 +106,21 @@ export type LiveTracking =
       untrackedCheckedIn: number;
       employees: TrackedEmployee[];
     };
+
+/**
+ * A street address for a point. Rounded to ~100 m, the same square the server
+ * caches on, so a person standing still is looked up once, not every poll.
+ */
+export function useAddress(lat: number | null | undefined, lng: number | null | undefined) {
+  const key = lat != null && lng != null ? `/admin/tracking/address?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}` : null;
+  const { data, isLoading } = useSWR<{ address: string | null }>(key, fetcher, {
+    revalidateOnFocus: false,
+    revalidateIfStale: false,
+    dedupingInterval: 10 * 60_000,
+    shouldRetryOnError: false,
+  });
+  return { address: data?.address ?? null, isLoading: !!key && isLoading };
+}
 
 /** Polls every 30s — the phones report every 2 minutes, so faster buys nothing. */
 export function useLiveTracking(branchId: string) {
