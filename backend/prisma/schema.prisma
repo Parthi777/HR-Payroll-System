@@ -67,6 +67,10 @@ model Employee {
   /// Never live-tracked, even when the dealer has live tracking on. Set by
   /// HR for staff whose day is meant to be off-site — see docs/LIVE-TRACKING.md.
   trackingExempt     Boolean   @default(false)
+  /// Works away from the branch (sales on the road, service visits): may
+  /// check in and out anywhere, is never "away" and gets no away alerts. Still
+  /// live-tracked unless trackingExempt.
+  fieldWorker        Boolean   @default(false)
   /// Version of the app's consent screen (terms, privacy, location and live
   /// tracking) this employee last agreed to, and when. Null = never agreed —
   /// they have not opened an app version that asks. See docs/LIVE-TRACKING.md.
@@ -156,6 +160,9 @@ model Attendance {
   /// off or exempted the employee mid-shift. The tracked window is
   /// [trackingFrom, checkOut ?? trackingTo ?? cut-off]; see tracking.service.
   trackingTo     DateTime?
+  /// When the last "please go back to your workstation" alert went out for
+  /// this day. A new trip away, or the repeat interval passing, allows another.
+  awayAlertAt    DateTime?
 
   employee Employee @relation(fields: [employeeId], references: [id])
   gpsLogs  GPSLog[]
@@ -617,6 +624,13 @@ model TenantSettings {
   /// check-out, for the Live Tracking page. Off until the dealer turns it on;
   /// staff are told on the phone when monitoring starts and stops.
   liveTrackingOn     Boolean @default(false)
+  /// Push "please go back to your workstation" to someone tracked who has been
+  /// more than awayAlertMeters outside the fence for awayAlertAfterMin, again
+  /// every awayAlertRepeatMin while they stay away. Their manager is told too.
+  awayAlertOn        Boolean @default(true)
+  awayAlertMeters    Int     @default(100)
+  awayAlertAfterMin  Int     @default(10)
+  awayAlertRepeatMin Int     @default(30)
 
   // ── Payroll policy (was PAYROLL_*, and hardcoded constants) ──
   /// PayrollBasis a new employee gets when their own is not set.

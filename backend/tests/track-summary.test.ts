@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GAP_MS,
+  awayAlertDue,
   classifyFix,
   summarizeTrack,
   trackingWindow,
@@ -209,5 +210,37 @@ describe('trackingWindow', () => {
     const night = { ...row, checkIn: nightIn, trackingFrom: nightIn };
     expect(trackingWindow(night, true, new Date(2026, 9, 27, 5, 0))!.open).toBe(true);
     expect(trackingWindow(night, true, new Date(2026, 9, 27, 15, 0))!.open).toBe(false);
+  });
+});
+
+describe('awayAlertDue', () => {
+  const policy = { awayAlertMeters: 100, awayAlertAfterMin: 10, awayAlertRepeatMin: 30 };
+  const since = at(0);
+  const away = { state: 'OUTSIDE' as const, since };
+  const due = (o: Partial<Parameters<typeof awayAlertDue>[0]>) =>
+    awayAlertDue({ current: away, lastBeyond: 450, lastAlertAt: null, now: at(12), policy, ...o });
+
+  it('waits for the trip to last long enough', () => {
+    expect(due({ now: at(9) })).toBe(false);
+    expect(due({ now: at(10) })).toBe(true);
+  });
+
+  it('ignores someone just outside the fence', () => {
+    expect(due({ lastBeyond: 60 })).toBe(false);
+  });
+
+  it('never alerts someone inside, or a phone that has gone quiet', () => {
+    expect(due({ current: { state: 'INSIDE', since } })).toBe(false);
+    expect(due({ current: { state: 'NO_SIGNAL', since } })).toBe(false);
+  });
+
+  it('repeats only after the interval', () => {
+    expect(due({ lastAlertAt: at(12), now: at(30) })).toBe(false);
+    expect(due({ lastAlertAt: at(12), now: at(42) })).toBe(true);
+  });
+
+  it('a new trip gets its own first alert', () => {
+    // Told at 0:12 on an earlier trip; back in, out again from 0:20.
+    expect(due({ current: { state: 'OUTSIDE', since: at(20) }, lastAlertAt: at(12), now: at(31) })).toBe(true);
   });
 });

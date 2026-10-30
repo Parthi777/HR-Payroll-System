@@ -1261,6 +1261,8 @@ When working in this repo, Claude should:
 | Night shift crosses midnight | Shift date = shift start date; work hours span 2 calendar days. Check-out finds nothing open today and falls back to yesterday's open punch (`Shift.isNightShift` only). |
 | Same employee multiple devices | Allowed. Each punch still needs a matching face inside the geofence, which is what stops someone else clocking you in. |
 | Live tracking on, employee refuses "Allow all the time" or switches GPS off | Check-in still works. Tracking runs while the app is open or in the background; the gaps show as "GPS off" / "no signal" on the Live Tracking page and report |
+| Tracked employee leaves the branch | After 10 min more than 100 m past the fence: push "please go back to your workstation" to them, and a bell + push to their manager; repeats every 30 min while away (per-dealer settings). See `docs/LIVE-TRACKING.md` |
+| Field worker (sales on the road) | `Employee.fieldWorker`: checks in and out anywhere — no geofence block, approval hold, flag or violation (lateness still applies). Tracked but shown "On field", no away alerts, kept out of away totals |
 | Live tracking and a forgotten check-out | Tracking stops at the end of the attendance day (16 h after check-in for a night shift) — nobody is followed home |
 | Staff with no usable phone | A branch kiosk: a paired tablet at the door. Employee number on a keypad, then the camera. Only that branch's staff, only that tablet's branch coordinates — `docs/KIOSK.md`. |
 | Kiosk at a branch with no map location | Every punch is refused with that reason (409), and the Kiosks page flags the branch — a kiosk punches at its branch's coordinates, so there is nothing to punch at until it is placed. |

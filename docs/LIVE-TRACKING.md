@@ -79,6 +79,31 @@ because Android 12+ will not start one from the background.
   the background. Without it, tracking resumes the next time the app is opened,
   and the gap reads as no signal.
 
+## Away alerts
+
+When someone tracked has been more than `awayAlertMeters` (100 m) **past the
+fence edge** for `awayAlertAfterMin` (10 min), the server pushes to their phone:
+"You have been outside your office location for 12 min (about 450 m away).
+Please go back to your workstation." Their reporting manager — or, with none,
+the branch's approvers — gets the same as a Master Control bell entry and push.
+It repeats every `awayAlertRepeatMin` (30 min) while they stay out; coming back
+in and leaving again is a new trip with its own first alert.
+
+Checked on each upload in `ingestTrack()` (`awayAlertDue()` is the pure rule).
+`Attendance.awayAlertAt` records the last alert, claimed with a compare-and-set
+so overlapping uploads send one. Borderline readings and a phone gone quiet
+never alert. All four settings are per dealer, under Settings → Live location
+tracking.
+
+## Field workers
+
+`Employee.fieldWorker` (Super Admin / HR only, on the employee form): sales on
+the road, service visits. They may check in and out anywhere — the fence does
+not block, hold for approval, flag or log a violation (lateness still applies).
+They are still tracked unless also exempt, but outside the fence they show as
+**On field** (sky), never "away", get no away alerts, and are kept out of the
+report's away totals and ranking (marked "Field" / "(field)").
+
 ## Why someone shows "no signal"
 
 More than 6 minutes without a fix, and the phone never said GPS was off. In

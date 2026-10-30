@@ -55,7 +55,8 @@ export function useLiveAttendance(fallback: LiveAttendanceRow[]) {
 }
 
 /** Where a tracked employee is right now — see docs/LIVE-TRACKING.md. */
-export type TrackState = 'INSIDE' | 'OUTSIDE' | 'OFF' | 'NO_SIGNAL';
+/** FIELD: a field worker outside the fence — that is their job, not absence. */
+export type TrackState = 'INSIDE' | 'OUTSIDE' | 'OFF' | 'NO_SIGNAL' | 'FIELD';
 
 export interface TrackedEmployee {
   attendanceId: string;
@@ -67,6 +68,8 @@ export interface TrackedEmployee {
   department: string;
   designation: string;
   checkIn: string | null;
+  /** Checks in anywhere; shown "On field" rather than away. */
+  fieldWorker?: boolean;
   state: TrackState;
   /** ISO — when the current state began ("away for 23 min"). */
   since: string;

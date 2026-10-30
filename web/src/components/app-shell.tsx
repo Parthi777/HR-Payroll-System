@@ -68,9 +68,9 @@ function NotificationBell() {
             {items.length === 0 && <div className="px-3 pb-3 text-sm text-muted-foreground">Nothing yet.</div>}
             <div className="max-h-80 overflow-y-auto">
               {items.map((n) => (
-                <Link key={n.id} href="/claims" onClick={() => setOpen(false)} className="block rounded-xl px-3 py-2 hover:bg-muted/50">
+                <Link key={n.id} href={n.type === 'AWAY_ALERT' ? '/live-tracking' : '/claims'} onClick={() => setOpen(false)} className="block rounded-xl px-3 py-2 hover:bg-muted/50">
                   <div className="flex items-center gap-2">
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${n.type === 'CLAIM_APPROVED' ? 'bg-emerald-500' : 'bg-brand-600'}`} />
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${n.type === 'AWAY_ALERT' ? 'bg-rose-500' : n.type === 'CLAIM_APPROVED' ? 'bg-emerald-500' : 'bg-brand-600'}`} />
                     <span className="truncate text-sm font-semibold">{n.title}</span>
                   </div>
                   <div className="truncate pl-3.5 text-xs text-muted-foreground">{n.body}</div>

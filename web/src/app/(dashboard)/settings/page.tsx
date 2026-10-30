@@ -29,6 +29,11 @@ interface Company {
   punchOutReminderAt?: string;
   /** Record staff location every 2 minutes between check-in and check-out. Off by default. */
   liveTrackingOn?: boolean;
+  /** "Please go back to your workstation" — on/off, how far, after how long, how often. */
+  awayAlertOn?: boolean;
+  awayAlertMeters?: number;
+  awayAlertAfterMin?: number;
+  awayAlertRepeatMin?: number;
   // Payroll policy
   /** Employees see their payslips and a monthly statement in the app. Off by default. */
   payrollVisibleToEmployees?: boolean;
@@ -380,6 +385,29 @@ function CompanyCard() {
                 <option value="false">Off — location checked only at check-in</option>
                 <option value="true">On — tracked from check-in to check-out</option>
               </select>
+            </Field>
+            <Field
+              label="Away alerts"
+              hint="Pushes “please go back to your workstation” to someone tracked who has stayed well outside their branch, and tells their reporting manager. Field workers are never alerted."
+            >
+              <select
+                className={input}
+                value={String(c.awayAlertOn ?? true)}
+                onChange={(e) => set('awayAlertOn', e.target.value === 'true')}
+                disabled={!c.liveTrackingOn}
+              >
+                <option value="true">On</option>
+                <option value="false">Off</option>
+              </select>
+            </Field>
+            <Field label="Alert when outside the fence by (m)" hint="How far past the geofence edge counts as away for an alert. 20–5000, default 100.">
+              <input type="number" min={20} max={5000} className={input} value={c.awayAlertMeters ?? ''} onChange={(e) => num('awayAlertMeters', e.target.value)} disabled={!c.liveTrackingOn || c.awayAlertOn === false} />
+            </Field>
+            <Field label="…for at least (minutes)" hint="A short errand does not trigger it. 2–240, default 10.">
+              <input type="number" min={2} max={240} className={input} value={c.awayAlertAfterMin ?? ''} onChange={(e) => num('awayAlertAfterMin', e.target.value)} disabled={!c.liveTrackingOn || c.awayAlertOn === false} />
+            </Field>
+            <Field label="Repeat every (minutes)" hint="Reminds again while they are still away. 10–480, default 30.">
+              <input type="number" min={10} max={480} className={input} value={c.awayAlertRepeatMin ?? ''} onChange={(e) => num('awayAlertRepeatMin', e.target.value)} disabled={!c.liveTrackingOn || c.awayAlertOn === false} />
             </Field>
           </div>
         </div>

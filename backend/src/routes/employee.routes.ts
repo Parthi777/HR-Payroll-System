@@ -67,6 +67,7 @@ const createEmployeeSchema = z.object({
   pfEnabled: z.boolean().optional(), // PF deduction applies (only some employees)
   esiEnabled: z.boolean().optional(),
   trackingExempt: z.boolean().optional(), // never live-tracked, even when the dealer tracks
+  fieldWorker: z.boolean().optional(), // checks in and out anywhere — no geofence, no away alerts
   // Where salary is sent. Empty string clears the field rather than storing "",
   // so a mistyped account can be removed and the bank file excludes the person
   // instead of failing the bank's whole upload on a malformed line.
@@ -358,7 +359,11 @@ export async function employeeRoutes(app: FastifyInstance) {
     // the dealership. Owner and HR pass straight through.
     await assertManages(app.prisma, req.user, id);
     const rest = stripOwnerOnly(parsed, req.user.role);
-    if (!TRACKING_EXEMPT_ROLES.includes(req.user.role)) delete rest.trackingExempt;
+    // Both loosen what is checked about where someone is: HR's call, not a branch manager's.
+    if (!TRACKING_EXEMPT_ROLES.includes(req.user.role)) {
+      delete rest.trackingExempt;
+      delete rest.fieldWorker;
+    }
     if (rest.phone) rest.phone = normalizePhone(rest.phone);
     await assertRefsOwned(app.prisma, rest);
     // Setting a password through the edit form is the same authority as the
@@ -390,6 +395,7 @@ export async function employeeRoutes(app: FastifyInstance) {
         ...changed('pfEnabled', before.pfEnabled, employee.pfEnabled),
         ...changed('esiEnabled', before.esiEnabled, employee.esiEnabled),
         ...changed('trackingExempt', before.trackingExempt, employee.trackingExempt),
+        ...changed('fieldWorker', before.fieldWorker, employee.fieldWorker),
         ...(password && mayResetPassword ? { passwordReset: true } : {}),
       },
     });

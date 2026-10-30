@@ -22,7 +22,10 @@ import type { JwtPayload } from '../../middleware/auth.js';
 import { requireTenantId } from '../../context/tenant-context.js';
 import { checkGeofence, parsePolygon, type GeofenceConfig } from '../geofence/geofence.service.js';
 import { atCompanyTime, startOfDay } from '../../utils/time.js';
-import { getTenantPolicy } from '../settings/tenant-settings.service.js';
+import { getTenantPolicy, type AttendancePolicy } from '../settings/tenant-settings.service.js';
+import { pushToEmployee } from '../push.service.js';
+import { approverIds, notifyAdmins } from '../notification.service.js';
+import { logger } from '../../utils/logger.js';
 
 /** How often the phone records a fix. */
 export const TRACK_INTERVAL_SEC = 120;
@@ -105,6 +108,8 @@ export function classifyFix(p: { lat: number; lng: number; accuracy?: number | n
 /** BORDERLINE counts as inside; GPS off, no permission and mock fixes are OFF. */
 export type TrackState = 'INSIDE' | 'OUTSIDE' | 'OFF';
 export type LiveState = TrackState | 'NO_SIGNAL';
+/** What the live page shows: a field worker outside the fence is on the field, not away. */
+export type ShownState = LiveState | 'FIELD';
 
 export interface TrackRow {
   ts: Date;
@@ -269,6 +274,87 @@ export function summarizeTrack(input: SummaryInput): TrackSummary {
   };
 }
 
+// ── Away alerts ──
+
+export interface AwayAlertInput {
+  current: { state: LiveState; since: Date };
+  /** Metres beyond the fence edge at the latest fix. */
+  lastBeyond: number;
+  /** When the last alert for this day went out, if any. */
+  lastAlertAt: Date | null;
+  now: Date;
+  policy: Pick<AttendancePolicy, 'awayAlertMeters' | 'awayAlertAfterMin' | 'awayAlertRepeatMin'>;
+}
+
+/**
+ * "Please go back to your workstation" — due when someone has been away (not
+ * borderline, not merely quiet) for long enough, far enough out, and either
+ * has not been told about this trip yet or was told long enough ago.
+ *
+ * A trip is one unbroken stretch outside. Coming back in and leaving again is
+ * a new trip, so it gets its own first alert.
+ */
+export function awayAlertDue(i: AwayAlertInput): boolean {
+  if (i.current.state !== 'OUTSIDE') return false;
+  if (i.lastBeyond < i.policy.awayAlertMeters) return false;
+  const awayMs = i.now.getTime() - i.current.since.getTime();
+  if (awayMs < i.policy.awayAlertAfterMin * 60_000) return false;
+  if (!i.lastAlertAt || i.lastAlertAt < i.current.since) return true;
+  return i.now.getTime() - i.lastAlertAt.getTime() >= i.policy.awayAlertRepeatMin * 60_000;
+}
+
+/**
+ * After a batch lands, tell the employee (push) and their manager (bell +
+ * push) if they have been away long enough. Claimed with a compare-and-set on
+ * `awayAlertAt`, so two batches arriving together send one alert, not two.
+ * Never throws — an alert that fails must not cost the phone its upload.
+ */
+async function alertIfAway(
+  prisma: PrismaClient,
+  att: {
+    id: string; employeeId: string; geofenceStatus: string; awayAlertAt: Date | null;
+    employee: { name: string; branchId: string; reportingManagerId: string | null; branch: GeofenceConfig & { name: string } };
+  },
+  win: TrackWindow,
+  policy: AttendancePolicy,
+  now: Date,
+) {
+  try {
+    const rows = withBeyond((await logsByAttendance(prisma, [att.id])).get(att.id) ?? [], att.employee.branch);
+    const s = summarizeTrack({
+      from: win.from, to: now, seedStatus: att.geofenceStatus, radius: att.employee.branch.geofenceRadius, rows,
+    });
+    const last = s.last;
+    const lastBeyond = last
+      ? last.beyond ?? (last.distance != null ? Math.max(0, last.distance - att.employee.branch.geofenceRadius) : 0)
+      : 0;
+    if (!awayAlertDue({ current: s.current, lastBeyond, lastAlertAt: att.awayAlertAt, now, policy })) return;
+
+    const claimed = await prisma.attendance.updateMany({
+      where: { id: att.id, awayAlertAt: att.awayAlertAt },
+      data: { awayAlertAt: now },
+    });
+    if (claimed.count !== 1) return;
+
+    const minutes = Math.round((now.getTime() - s.current.since.getTime()) / 60_000);
+    const metres = Math.round(lastBeyond);
+    const branch = att.employee.branch.name;
+    await pushToEmployee(
+      prisma,
+      att.employeeId,
+      `You are away from ${branch}`,
+      `You have been outside your office location for ${minutes} min (about ${metres} m away). Please go back to your workstation.`,
+    );
+    await notifyAdmins(prisma, await approverIds(prisma, att.employee), {
+      type: 'AWAY_ALERT',
+      title: 'Away from branch',
+      body: `${att.employee.name} has been ${metres} m from ${branch} for ${minutes} min`,
+    });
+  } catch (err) {
+    logger.warn({ err, attendanceId: att.id }, 'away alert failed');
+  }
+}
+
 // ── Phone side ──
 
 export interface IngestBody {
@@ -338,6 +424,10 @@ export async function ingestTrack(
   if (win.open && !tracking) {
     await prisma.attendance.update({ where: { id: att.id }, data: { trackingTo: now } });
   }
+  // A field worker is meant to be out; nobody is told to go back.
+  if (tracking && count > 0 && policy.awayAlertOn && !att.employee.fieldWorker) {
+    await alertIfAway(prisma, att, win, policy, now);
+  }
   return { tracking, intervalSec: TRACK_INTERVAL_SEC, accepted: count, dropped };
 }
 
@@ -385,6 +475,11 @@ export async function closeOpenTracking(prisma: PrismaClient, where: { employeeI
 export function watchableWhere(user: Pick<JwtPayload, 'role' | 'sub' | 'branchId'>): Prisma.EmployeeWhereInput {
   if (user.role !== 'BRANCH_MANAGER') return {};
   return { OR: [{ reportingManagerId: user.sub }, ...(user.branchId ? [{ branchId: user.branchId }] : [])] };
+}
+
+/** A field worker's stretches outside the fence are field time, drawn as such. */
+function shownSegments(segments: TrackSegment[], fieldWorker: boolean): (Omit<TrackSegment, 'state'> & { state: ShownState })[] {
+  return fieldWorker ? segments.map((g) => (g.state === 'OUTSIDE' ? { ...g, state: 'FIELD' as const } : g)) : segments;
 }
 
 const LOG_SELECT = {
@@ -485,7 +580,8 @@ export async function liveTracking(
       department: r.employee.department.name,
       designation: r.employee.designation.name,
       checkIn: r.checkIn,
-      state: s.current.state,
+      fieldWorker: r.employee.fieldWorker,
+      state: (r.employee.fieldWorker && s.current.state === 'OUTSIDE' ? 'FIELD' : s.current.state) as ShownState,
       since: s.current.since,
       last: s.last
         ? { lat: s.last.lat, lng: s.last.lng, accuracy: s.last.accuracy, ts: s.last.ts, distance: s.last.distance, status: s.last.status }
@@ -497,7 +593,7 @@ export async function liveTracking(
       episodes: s.episodes.length,
       mockFixes: s.mockFixes,
       // The day so far, for the little timeline beside each name.
-      segments: s.segments,
+      segments: shownSegments(s.segments, r.employee.fieldWorker),
     };
   });
 
@@ -539,7 +635,8 @@ export async function trackDetail(prisma: PrismaClient, attendanceId: string, no
       .filter((r) => r.kind === 'FIX' && r.lat != null && r.lng != null)
       .map((r) => ({ ts: r.ts, lat: r.lat, lng: r.lng, accuracy: r.accuracy, status: r.status, distance: r.distance, mock: !!r.isMock })),
     events: rows.filter((r) => r.kind !== 'FIX').map((r) => ({ ts: r.ts, kind: r.kind })),
-    summary,
+    fieldWorker: att.employee.fieldWorker,
+    summary: { ...summary, segments: shownSegments(summary.segments, att.employee.fieldWorker) },
   };
 }
 
@@ -554,6 +651,7 @@ export interface TrackingReportRow {
   checkIn: Date | null;
   checkOut: Date | null;
   trackedMin: number;
+  fieldWorker: boolean;
   summary: TrackSummary;
 }
 
@@ -606,6 +704,7 @@ export async function trackingReportRows(
         checkIn: d.checkIn,
         checkOut: d.checkOut,
         trackedMin: Math.round((win.to.getTime() - win.from.getTime()) / 60_000),
+        fieldWorker: d.employee.fieldWorker,
         summary,
       });
     }

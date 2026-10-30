@@ -9,7 +9,8 @@ import { requireTenantId } from '../context/tenant-context.js';
  */
 
 export interface NotifyPayload {
-  type: 'CLAIM_SUBMITTED' | 'CLAIM_APPROVED';
+  /** AWAY_ALERT: a tracked employee has been well outside their branch for a while. */
+  type: 'CLAIM_SUBMITTED' | 'CLAIM_APPROVED' | 'AWAY_ALERT';
   title: string;
   body: string;
   claimId?: string;

@@ -29,6 +29,11 @@ export interface AttendancePolicy {
   punchOutReminderAt: string;
   /** Record location between check-in and check-out — docs/LIVE-TRACKING.md. */
   liveTrackingOn: boolean;
+  /** "Please go back to your workstation" — when, how far, how often. */
+  awayAlertOn: boolean;
+  awayAlertMeters: number;
+  awayAlertAfterMin: number;
+  awayAlertRepeatMin: number;
 }
 
 /** How pay is arrived at. See CLAUDE.md "Payroll Calculation Engine". */
@@ -103,6 +108,10 @@ export function defaultPolicy(): TenantPolicy {
       punchRemindersOn: process.env.PUNCH_REMINDERS !== 'off',
       punchOutReminderAt: process.env.PUNCH_OUT_REMINDER_AT ?? '19:30',
       liveTrackingOn: false,
+      awayAlertOn: true,
+      awayAlertMeters: 100,
+      awayAlertAfterMin: 10,
+      awayAlertRepeatMin: 30,
     },
     payroll: {
       defaultPayrollBasis: 'MONTHLY',
@@ -133,6 +142,7 @@ type SettingsRow = {
   lateRequiresApproval: boolean; openPunchLookbackDays: number;
   manualPunchLatest: string;
   punchRemindersOn: boolean; punchOutReminderAt: string; liveTrackingOn: boolean;
+  awayAlertOn: boolean; awayAlertMeters: number; awayAlertAfterMin: number; awayAlertRepeatMin: number;
   defaultPayrollBasis: string;
   monthDivisor: number; clPerYear: number; otHoursPerDay: number;
   payrollLateShiftAt: number;
@@ -159,6 +169,10 @@ function toPolicy(row: SettingsRow): TenantPolicy {
       punchRemindersOn: row.punchRemindersOn,
       punchOutReminderAt: row.punchOutReminderAt,
       liveTrackingOn: row.liveTrackingOn,
+      awayAlertOn: row.awayAlertOn,
+      awayAlertMeters: row.awayAlertMeters,
+      awayAlertAfterMin: row.awayAlertAfterMin,
+      awayAlertRepeatMin: row.awayAlertRepeatMin,
     },
     payroll: {
       defaultPayrollBasis: row.defaultPayrollBasis === 'PRESENT_DAYS' ? 'PRESENT_DAYS' : 'MONTHLY',

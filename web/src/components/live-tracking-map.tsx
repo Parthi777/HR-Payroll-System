@@ -17,6 +17,7 @@ export const STATE_COLOR: Record<TrackState, string> = {
   OUTSIDE: '#E11D48',
   OFF: '#B45309',
   NO_SIGNAL: '#64748B',
+  FIELD: '#0284C7',
 };
 
 export const STATE_LABEL: Record<TrackState, string> = {
@@ -24,6 +25,7 @@ export const STATE_LABEL: Record<TrackState, string> = {
   OUTSIDE: 'Away',
   OFF: 'GPS off',
   NO_SIGNAL: 'No signal',
+  FIELD: 'On field',
 };
 
 export interface TrackPoint {
@@ -82,6 +84,7 @@ function BranchSummary({ branch, employees, untracked, onSelect }: {
     ['Inside', count(['INSIDE']), STATE_COLOR.INSIDE],
     ['Away', count(['OUTSIDE']), STATE_COLOR.OUTSIDE],
     ['No signal', count(['OFF', 'NO_SIGNAL']), STATE_COLOR.NO_SIGNAL],
+    ['On field', count(['FIELD']), STATE_COLOR.FIELD],
     ['Not tracked', untracked, '#94A3B8'],
   ];
   return (

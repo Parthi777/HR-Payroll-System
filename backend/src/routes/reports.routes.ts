@@ -576,7 +576,8 @@ export async function reportsRoutes(app: FastifyInstance) {
       const note =
         `A location is recorded every ${TRACK_INTERVAL_SEC / 60} minutes from check-in to check-out. ` +
         `More than ${gapMin} minutes without one counts as "no signal". A reading near the fence edge counts as inside. ` +
-        'GPS off includes time the phone reported location switched off, permission refused, or a mock location.';
+        'GPS off includes time the phone reported location switched off, permission refused, or a mock location. ' +
+        '"(field)" marks a field worker, whose time away from the branch is their work.';
 
       if (format !== 'json') {
         await recordAudit(req, 'TRACKING_REPORT_EXPORTED', 'Attendance', { metadata: { from, to, view, format, ...scope } });
@@ -633,6 +634,8 @@ export async function reportsRoutes(app: FastifyInstance) {
         outsideMin: r.summary.outsideMin,
         episodes: r.summary.episodes.length,
         longestAwayMin: r.summary.episodes.reduce((m, e) => Math.max(m, e.minutes), 0),
+        // Out of the fence is their job, so their "away" is not absence.
+        fieldWorker: r.fieldWorker,
         offMin: r.summary.offMin,
         noSignalMin: r.summary.noSignalMin,
         mockFixes: r.summary.mockFixes,
@@ -663,7 +666,7 @@ export async function reportsRoutes(app: FastifyInstance) {
             { header: 'No signal', width: 8, align: 'right' },
           ],
           rows: summary.map((r) => [
-            r.date, r.employeeCode, r.name, r.branch, r.department, r.designation,
+            r.date, r.employeeCode, r.fieldWorker ? `${r.name} (field)` : r.name, r.branch, r.department, r.designation,
             r.checkIn ?? '-', r.checkOut ?? '-',
             hm(r.trackedMin), hm(r.insideMin), hm(r.outsideMin), r.episodes, hm(r.longestAwayMin),
             hm(r.offMin), hm(r.noSignalMin),

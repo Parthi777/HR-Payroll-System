@@ -39,6 +39,8 @@ interface EmployeeRow {
   esiEnabled?: boolean;
   /** Never live-tracked, even when the dealer tracks. */
   trackingExempt?: boolean;
+  /** Checks in and out anywhere: no geofence, never "away", no away alerts. */
+  fieldWorker?: boolean;
   /** The app's consent screen (terms, privacy, location & tracking) — version agreed to, and when. */
   consentVersion?: number | null;
   consentAt?: string | null;
@@ -256,6 +258,7 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
     pfEnabled: employee?.pfEnabled ?? false,
     esiEnabled: employee?.esiEnabled ?? false,
     trackingExempt: employee?.trackingExempt ?? false,
+    fieldWorker: employee?.fieldWorker ?? false,
     bankAccountName: employee?.bankAccountName ?? '',
     // Prefilled with the API's mask. Sent back only if someone types over it —
     // see the save below — so a mask can never be stored as an account number.
@@ -367,6 +370,10 @@ function EmployeeModal({ employee, onClose, onSaved }: { employee: EmployeeRow |
           {can(SETUP_ROLES) && <label className="col-span-2 flex cursor-pointer items-center gap-2 text-sm" title="Their location is never recorded between check-in and check-out, even when Live tracking is on in Settings">
             <input type="checkbox" checked={f.trackingExempt} onChange={(e) => setF((p) => ({ ...p, trackingExempt: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
             Exempt from live tracking
+          </label>}
+          {can(SETUP_ROLES) && <label className="col-span-2 flex cursor-pointer items-center gap-2 text-sm" title="Sales on the road, service visits: they may check in and out away from the branch, are shown “On field” instead of away, and get no away alerts">
+            <input type="checkbox" checked={f.fieldWorker} onChange={(e) => setF((p) => ({ ...p, fieldWorker: e.target.checked }))} className="h-4 w-4 accent-brand-600" />
+            Field worker — can check in and out anywhere (no geofence)
           </label>}
           {editing && (
             <p className="col-span-2 text-xs text-muted-foreground">

@@ -29,6 +29,8 @@ interface TrackDetail {
   window: { from: string; to: string; open: boolean };
   points: TrackPoint[];
   events: { ts: string; kind: string }[];
+  /** Their time outside the fence is field work, not absence. */
+  fieldWorker?: boolean;
   summary: {
     insideMin: number; outsideMin: number; offMin: number; noSignalMin: number; mockFixes: number;
     episodes: { from: string; to: string; minutes: number; maxBeyondM: number }[];
@@ -41,6 +43,8 @@ interface SummaryRow {
   department: string; designation: string; checkIn: string | null; checkOut: string | null;
   trackedMin: number; insideMin: number; outsideMin: number; episodes: number; longestAwayMin: number;
   offMin: number; noSignalMin: number; mockFixes: number;
+  /** Away from the branch is their job — kept out of the "away" figures. */
+  fieldWorker?: boolean;
 }
 interface EpisodeRow {
   date: string; employeeCode: string; name: string; branch: string; department: string;
@@ -64,7 +68,7 @@ function dur(min: number) {
 }
 
 /** Order of concern: who is away, then who has gone quiet, then everyone else. */
-const RANK: Record<TrackState, number> = { OUTSIDE: 0, NO_SIGNAL: 1, OFF: 2, INSIDE: 3 };
+const RANK: Record<TrackState, number> = { OUTSIDE: 0, NO_SIGNAL: 1, OFF: 2, FIELD: 3, INSIDE: 4 };
 
 type Tab = 'live' | 'reports';
 
@@ -409,7 +413,12 @@ function PersonPanel({ emp, track, sinceMin, onClose, onTrack }: {
   const state = emp?.state ?? 'NO_SIGNAL';
   const s = track?.summary;
   const stats: [string, number, TrackState][] = s
-    ? [['Inside', s.insideMin, 'INSIDE'], ['Away', s.outsideMin, 'OUTSIDE'], ['GPS off', s.offMin, 'OFF'], ['No signal', s.noSignalMin, 'NO_SIGNAL']]
+    ? [
+        ['Inside', s.insideMin, 'INSIDE'],
+        track?.fieldWorker ? ['On field', s.outsideMin, 'FIELD'] : ['Away', s.outsideMin, 'OUTSIDE'],
+        ['GPS off', s.offMin, 'OFF'],
+        ['No signal', s.noSignalMin, 'NO_SIGNAL'],
+      ]
     : [];
 
   return (
@@ -498,7 +507,9 @@ function PersonPanel({ emp, track, sinceMin, onClose, onTrack }: {
           )}
 
           <div>
-            <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><Route className="h-4 w-4" /> Times away</h4>
+            <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+              <Route className="h-4 w-4" /> {track.fieldWorker ? 'Out of the branch (field work)' : 'Times away'}
+            </h4>
             {s.episodes.length === 0 ? (
               <p className="text-sm text-muted-foreground">Has not left the branch today.</p>
             ) : (
@@ -563,9 +574,12 @@ function ReportsView({ isBranchManager }: { isBranchManager: boolean }) {
   const rows = useMemo(() => summary?.rows ?? [], [summary]);
 
   const totals = useMemo(() => {
-    const t = { inside: 0, away: 0, off: 0, quiet: 0, episodes: 0, people: new Set<string>() };
+    const t = { inside: 0, away: 0, field: 0, off: 0, quiet: 0, episodes: 0, people: new Set<string>() };
     for (const r of rows) {
-      t.inside += r.insideMin; t.away += r.outsideMin; t.off += r.offMin; t.quiet += r.noSignalMin; t.episodes += r.episodes;
+      t.inside += r.insideMin; t.off += r.offMin; t.quiet += r.noSignalMin;
+      // A field worker outside the fence is working, not away.
+      if (r.fieldWorker) { t.field += r.outsideMin; continue; }
+      t.away += r.outsideMin; t.episodes += r.episodes;
       if (r.outsideMin > 0) t.people.add(r.employeeCode);
     }
     return t;
@@ -574,6 +588,7 @@ function ReportsView({ isBranchManager }: { isBranchManager: boolean }) {
   const ranking = useMemo(() => {
     const by = new Map<string, { name: string; branch: string; away: number; days: number; episodes: number }>();
     for (const r of rows) {
+      if (r.fieldWorker) continue;
       const e = by.get(r.employeeCode) ?? { name: r.name, branch: r.branch, away: 0, days: 0, episodes: 0 };
       e.away += r.outsideMin; e.days += 1; e.episodes += r.episodes;
       by.set(r.employeeCode, e);
@@ -677,11 +692,12 @@ function ReportsView({ isBranchManager }: { isBranchManager: boolean }) {
                 data={[
                   { name: 'Inside', value: hours(totals.inside) },
                   { name: 'Away', value: hours(totals.away) },
+                  { name: 'On field', value: hours(totals.field) },
                   { name: 'GPS off', value: hours(totals.off) },
                   { name: 'No signal', value: hours(totals.quiet) },
                 ]}
-                colors={[CHART.green, CHART.rose, CHART.amber, CHART.slate]}
-                centre={{ value: `${hours(totals.inside + totals.away + totals.off + totals.quiet)}h`, label: 'tracked' }}
+                colors={[CHART.green, CHART.rose, CHART.sky, CHART.amber, CHART.slate]}
+                centre={{ value: `${hours(totals.inside + totals.away + totals.field + totals.off + totals.quiet)}h`, label: 'tracked' }}
               />
             </section>
           </div>
@@ -730,7 +746,10 @@ function ReportsView({ isBranchManager }: { isBranchManager: boolean }) {
                       {sorted.map((r) => (
                         <tr key={r.attendanceId} className="hover:bg-muted/30">
                           <td className="px-5 py-3">
-                            <div className="font-medium">{r.name}</div>
+                            <div className="flex items-center gap-1.5 font-medium">
+                              {r.name}
+                              {r.fieldWorker && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">Field</span>}
+                            </div>
                             <div className="text-xs text-muted-foreground">{r.employeeCode} · {r.branch}</div>
                           </td>
                           <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
@@ -738,7 +757,12 @@ function ReportsView({ isBranchManager }: { isBranchManager: boolean }) {
                           </td>
                           <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{r.checkIn ?? '—'} – {r.checkOut ?? '…'}</td>
                           <td className="px-3 py-3"><SplitBar r={r} /></td>
-                          <td className={`px-3 py-3 text-right font-semibold tabular-nums ${r.outsideMin ? 'text-rose-600' : 'text-muted-foreground'}`}>{dur(r.outsideMin)}</td>
+                          <td
+                            className={`px-3 py-3 text-right font-semibold tabular-nums ${!r.outsideMin ? 'text-muted-foreground' : r.fieldWorker ? 'text-sky-700' : 'text-rose-600'}`}
+                            title={r.fieldWorker ? 'On field — their work is away from the branch' : undefined}
+                          >
+                            {dur(r.outsideMin)}
+                          </td>
                           <td className="px-3 py-3 text-right tabular-nums">{r.episodes || '—'}</td>
                           <td className="px-3 py-3 text-right tabular-nums">{dur(r.longestAwayMin)}</td>
                           <td className="px-3 py-3 text-right tabular-nums">{dur(r.offMin)}</td>
@@ -813,7 +837,7 @@ function Stat({ icon: Icon, label, value, hint, tone }: {
 function SplitBar({ r }: { r: SummaryRow }) {
   const parts: [number, string, string][] = [
     [r.insideMin, STATE_COLOR.INSIDE, 'Inside'],
-    [r.outsideMin, STATE_COLOR.OUTSIDE, 'Away'],
+    [r.outsideMin, r.fieldWorker ? STATE_COLOR.FIELD : STATE_COLOR.OUTSIDE, r.fieldWorker ? 'On field' : 'Away'],
     [r.offMin, STATE_COLOR.OFF, 'GPS off'],
     [r.noSignalMin, STATE_COLOR.NO_SIGNAL, 'No signal'],
   ];

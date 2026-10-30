@@ -114,6 +114,12 @@ const companySchema = z.object({
 
   // Live location tracking between check-in and check-out.
   liveTrackingOn: z.boolean().optional(),
+  // "Please go back to your workstation": distance past the fence, how long
+  // away before the first alert, and how often it repeats.
+  awayAlertOn: z.boolean().optional(),
+  awayAlertMeters: z.number().int().min(20).max(5000).optional(),
+  awayAlertAfterMin: z.number().int().min(2).max(240).optional(),
+  awayAlertRepeatMin: z.number().int().min(10).max(480).optional(),
 
   // The basis a new employee inherits when their own is not set.
   defaultPayrollBasis: z.enum(['MONTHLY', 'PRESENT_DAYS']).optional(),
@@ -161,6 +167,10 @@ export async function masterRoutes(app: FastifyInstance) {
         punchRemindersOn: d.attendance.punchRemindersOn,
         punchOutReminderAt: d.attendance.punchOutReminderAt,
         liveTrackingOn: d.attendance.liveTrackingOn,
+        awayAlertOn: d.attendance.awayAlertOn,
+        awayAlertMeters: d.attendance.awayAlertMeters,
+        awayAlertAfterMin: d.attendance.awayAlertAfterMin,
+        awayAlertRepeatMin: d.attendance.awayAlertRepeatMin,
         defaultPayrollBasis: d.payroll.defaultPayrollBasis,
         monthDivisor: d.payroll.monthDivisor,
         clPerYear: d.payroll.clPerYear,

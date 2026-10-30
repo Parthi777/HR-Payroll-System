@@ -140,7 +140,7 @@ suite('live tracking', () => {
     for (const [key, phone, branchId] of [
       ['e1', '+919000077701', branchA], ['e2', '+919000077702', branchA],
       ['e3', '+919000077703', branchB], ['e4', '+919000077704', branchA],
-      ['e5', '+919000077705', branchA],
+      ['e5', '+919000077705', branchA], ['e6', '+919000077706', branchA],
     ] as const) {
       const res = await as(tok.owner, 'POST', '/api/admin/employees', {
         name: `Staff ${key}`, phone, password: APP_PASSWORD, branchId,
@@ -363,6 +363,71 @@ suite('live tracking', () => {
     expect(back.statusCode, back.body).toBe(200);
     expect(back.json().branch.geofencePolygon).toBeNull();
     expect((await check(d(0, 80))).json()).toMatchObject({ inside: true, shape: 'circle' });
+  });
+
+  /** Fixes every 2 minutes over the last `minutes`, `north` metres from a point. */
+  const fixesOut = (from: { lat: number; lng: number }, north: number, minutes: number) => {
+    const now = Date.now();
+    return Array.from({ length: minutes / 2 + 1 }, (_, i) => ({
+      ts: new Date(now - (minutes - i * 2) * 60_000).toISOString(),
+      lat: from.lat + north / 111_195, lng: from.lng, accuracy: 8,
+    }));
+  };
+  /** Pretend a day was checked in `minutes` ago, so a back-dated track fits its window. */
+  const backdate = (attendanceId: string, minutes: number) =>
+    inTenant(() => app.prisma.attendance.update({
+      where: { id: attendanceId },
+      data: { checkIn: new Date(Date.now() - minutes * 60_000), trackingFrom: new Date(Date.now() - minutes * 60_000) },
+    }));
+  const awayNotes = () => inTenant(() => app.prisma.notification.count({ where: { type: 'AWAY_ALERT' } }));
+
+  it('someone well outside the fence for 10 minutes is told to go back, and their manager is told — once', async () => {
+    await backdate(att3, 30);
+    const before = await awayNotes();
+    // ~670 m north of branch B for the last 12 minutes.
+    const res = await as(emp.e3.token, 'POST', '/api/attendance/gps-log', { attendanceId: att3, points: fixesOut(B, 670, 12) });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await awayNotes()).toBeGreaterThan(before);
+    const row = await inTenant(() => app.prisma.attendance.findUniqueOrThrow({ where: { id: att3 } }));
+    expect(row.awayAlertAt).not.toBeNull();
+    const note = await inTenant(() => app.prisma.notification.findFirstOrThrow({ where: { type: 'AWAY_ALERT' } }));
+    expect(note.body).toMatch(/Staff e3 has been \d+ m from Branch B for 1[12] min/);
+
+    // Still out a minute later: inside the 30-minute repeat, so nothing new.
+    const told = await awayNotes();
+    await as(emp.e3.token, 'POST', '/api/attendance/gps-log', {
+      attendanceId: att3, points: [{ ts: new Date().toISOString(), lat: B.lat + 670 / 111_195, lng: B.lng, accuracy: 8 }],
+    });
+    expect(await awayNotes()).toBe(told);
+  });
+
+  it('a field worker checks in anywhere, shows as on the field, and is never sent back', async () => {
+    const byBm = await as(tok.bm, 'PUT', `/api/admin/employees/${emp.e6.id}`, { fieldWorker: true });
+    expect(byBm.json().employee.fieldWorker).toBe(false);
+    const byHr = await as(tok.hr, 'PUT', `/api/admin/employees/${emp.e6.id}`, { fieldWorker: true });
+    expect(byHr.json().employee.fieldWorker).toBe(true);
+
+    expect((await as(tok.hr, 'PUT', `/api/admin/geofence/${branchA}`, { strictMode: true })).statusCode).toBe(200);
+    const violations = await inTenant(() => app.prisma.geofenceViolation.count());
+    // ~1.1 km from a strict branch: refused for anyone else.
+    const farAway = { lat: A.lat + 0.01, lng: A.lng };
+    const res = await punch(emp.e6.token, 'checkin', farAway);
+    expect(res.statusCode, res.body).toBe(200);
+    // Lateness still applies to a field worker (depending on when this runs);
+    // the geofence never does.
+    expect(res.json().flagReason ?? '').not.toMatch(/Geofence/);
+    expect(res.json().tracking.enabled).toBe(true);
+    expect(await inTenant(() => app.prisma.geofenceViolation.count())).toBe(violations);
+
+    const att6 = res.json().id as string;
+    await backdate(att6, 30);
+    const notes = await awayNotes();
+    await as(emp.e6.token, 'POST', '/api/attendance/gps-log', { attendanceId: att6, points: fixesOut(A, 1100, 14) });
+    expect(await awayNotes()).toBe(notes);
+
+    const live = (await as(tok.hr, 'GET', '/api/admin/tracking/live')).json();
+    expect(live.employees.find((e: { attendanceId: string }) => e.attendanceId === att6)).toMatchObject({ state: 'FIELD', fieldWorker: true });
+    await as(tok.hr, 'PUT', `/api/admin/geofence/${branchA}`, { strictMode: false });
   });
 
   it('switching it off closes open days and stops the phone', async () => {

@@ -213,8 +213,12 @@ export async function markCheckIn(
   }
 
   const geo = checkGeofence({ lat, lng }, employee.branch, accuracy);
+  // A field worker's day is meant to start away from the branch: the fence
+  // neither blocks them, holds the punch, nor counts as a violation. Where they
+  // were is still stored on the row.
+  const field = employee.fieldWorker;
   // Strict-mode branches hard-block outside check-ins.
-  if (geo.status === 'OUTSIDE' && employee.branch.strictMode) {
+  if (geo.status === 'OUTSIDE' && employee.branch.strictMode && !field) {
     throw new AppError(
       `You are ${awayMetres(geo)}m away from ${employee.branch.name}. Move inside the branch area to check in.`,
       403,
@@ -236,7 +240,7 @@ export async function markCheckIn(
   // A late punch, or an out-of-zone (soft-mode) punch, is held for approval —
   // it isn't paid until the reporting manager / HR approves it.
   const lateNeedsApproval = late && attendance.lateRequiresApproval;
-  const approvalStatus = geo.status === 'OUTSIDE' || lateNeedsApproval ? 'PENDING' : null;
+  const approvalStatus = (geo.status === 'OUTSIDE' && !field) || lateNeedsApproval ? 'PENDING' : null;
 
   // Identity gate before any side effects: enrolled face + selfie must match
   // the logged-in employee, or the check-in is rejected outright.
@@ -244,7 +248,7 @@ export async function markCheckIn(
 
   const selfieUrl = selfie ? await saveSelfie(selfie, employeeId, resources.s3Prefix) : null;
 
-  const geoFlagged = geo.status !== 'INSIDE';
+  const geoFlagged = geo.status !== 'INSIDE' && !field;
   const flagged = geoFlagged || lateNeedsApproval;
   const reasons: string[] = [];
   if (geoFlagged) reasons.push(`Geofence ${geo.status} — ${awayMetres(geo)}m from ${employee.branch.name}`);
@@ -353,8 +357,9 @@ export async function markCheckOut(
     throw new AppError('Your phone did not send a location. Switch ON Location/GPS, wait a few seconds, and try again.', 400);
   }
 
-  // Strict-mode branches also block outside check-outs (same rule as check-in).
-  if (employee?.branch.strictMode) {
+  // Strict-mode branches also block outside check-outs (same rule as check-in),
+  // except for a field worker, who may finish the day wherever the work is.
+  if (employee?.branch.strictMode && !employee.fieldWorker) {
     const geo = checkGeofence({ lat, lng }, employee.branch);
     if (geo.status === 'OUTSIDE') {
       throw new AppError(
