@@ -20,7 +20,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { AppError } from '../../utils/AppError.js';
 import type { JwtPayload } from '../../middleware/auth.js';
 import { requireTenantId } from '../../context/tenant-context.js';
-import { checkGeofence, type GeofenceConfig } from '../geofence/geofence.service.js';
+import { checkGeofence, parsePolygon, type GeofenceConfig } from '../geofence/geofence.service.js';
 import { atCompanyTime, startOfDay } from '../../utils/time.js';
 import { getTenantPolicy } from '../settings/tenant-settings.service.js';
 
@@ -93,9 +93,9 @@ export interface FixClass {
 export function classifyFix(p: { lat: number; lng: number; accuracy?: number | null }, branch: GeofenceConfig): FixClass {
   const geo = checkGeofence(p, branch, p.accuracy ?? undefined);
   let status = geo.status;
-  if (status === 'OUTSIDE' && p.accuracy && geo.distance > 0) {
+  if (status === 'OUTSIDE' && p.accuracy) {
     const blur = Math.min(p.accuracy, MAX_TRUSTED_ACCURACY_M);
-    if (geo.distance - blur <= branch.geofenceRadius) status = 'BORDERLINE';
+    if (geo.beyond <= blur) status = 'BORDERLINE';
   }
   return { status, distance: geo.distance };
 }
@@ -115,6 +115,8 @@ export interface TrackRow {
   lat?: number | null;
   lng?: number | null;
   accuracy?: number | null;
+  /** Metres outside the fence edge, when it is not simply distance − radius (a drawn building). */
+  beyond?: number;
 }
 
 export interface SummaryInput {
@@ -228,7 +230,7 @@ export function summarizeTrack(input: SummaryInput): TrackSummary {
       }
       state = toState(r.status);
       lastFixState = state;
-      beyond = r.distance != null ? Math.max(0, r.distance - input.radius) : 0;
+      beyond = r.beyond ?? (r.distance != null ? Math.max(0, r.distance - input.radius) : 0);
       if (r.lat != null && r.lng != null) last = r;
     } else if (r.kind === 'GPS_ON') {
       // Back on: assume where it last was until the next fix says otherwise —
@@ -413,8 +415,22 @@ async function logsByAttendance(prisma: PrismaClient, ids: string[]): Promise<Ma
 }
 
 const BRANCH_SELECT = {
-  id: true, name: true, geofenceLat: true, geofenceLng: true, geofenceRadius: true, strictMode: true,
+  id: true, name: true, geofenceLat: true, geofenceLng: true, geofenceRadius: true, geofencePolygon: true, strictMode: true,
 } as const;
+
+/**
+ * For a branch drawn as a building, how far outside its walls each fix was —
+ * the stored distance is from the middle, which says nothing about the edge of
+ * an outline. Circles need nothing: distance − radius already is the edge.
+ */
+function withBeyond(rows: TrackRow[], branch: GeofenceConfig): TrackRow[] {
+  if (!parsePolygon(branch.geofencePolygon)) return rows;
+  return rows.map((r) =>
+    r.kind === 'FIX' && r.lat != null && r.lng != null
+      ? { ...r, beyond: checkGeofence({ lat: r.lat, lng: r.lng }, branch).beyond }
+      : r,
+  );
+}
 
 /** Everyone checked in right now who is being tracked, with where they are. */
 export async function liveTracking(
@@ -457,7 +473,7 @@ export async function liveTracking(
     const win = trackingWindow(r, r.employee.shift.isNightShift, now)!;
     const s = summarizeTrack({
       from: win.from, to: win.to, seedStatus: r.geofenceStatus,
-      radius: r.employee.branch.geofenceRadius, rows: logs.get(r.id) ?? [],
+      radius: r.employee.branch.geofenceRadius, rows: withBeyond(logs.get(r.id) ?? [], r.employee.branch),
     });
     return {
       attendanceId: r.id,
@@ -490,9 +506,13 @@ export async function liveTracking(
     intervalSec: TRACK_INTERVAL_SEC,
     generatedAt: now,
     branches,
-    // Checked in but not followed (exempt, kiosk, manual, or switched off) —
-    // so the count reconciles with Live Attendance.
+    // Checked in but not followed (exempt, kiosk, manual, an older app) —
+    // so the count reconciles with Live Attendance. Per branch too, for the
+    // head-count a branch shows when it is clicked on the map.
     untrackedCheckedIn: current.length - tracked.length,
+    untrackedByBranch: current
+      .filter((r) => !tracked.includes(r))
+      .reduce<Record<string, number>>((by, r) => ({ ...by, [r.employee.branchId]: (by[r.employee.branchId] ?? 0) + 1 }), {}),
     employees,
   };
 }
@@ -505,7 +525,7 @@ export async function trackDetail(prisma: PrismaClient, attendanceId: string, no
   });
   if (!att || !att.trackingFrom) throw AppError.notFound('Tracked attendance');
   const win = trackingWindow(att, att.employee.shift.isNightShift, now)!;
-  const rows = (await logsByAttendance(prisma, [att.id])).get(att.id) ?? [];
+  const rows = withBeyond((await logsByAttendance(prisma, [att.id])).get(att.id) ?? [], att.employee.branch);
   const summary = summarizeTrack({
     from: win.from, to: win.to, seedStatus: att.geofenceStatus,
     radius: att.employee.branch.geofenceRadius, rows,
@@ -573,7 +593,7 @@ export async function trackingReportRows(
       const win = trackingWindow(d, d.employee.shift.isNightShift, now)!;
       const summary = summarizeTrack({
         from: win.from, to: win.to, seedStatus: d.geofenceStatus,
-        radius: d.employee.branch.geofenceRadius, rows: logs.get(d.id) ?? [],
+        radius: d.employee.branch.geofenceRadius, rows: withBeyond(logs.get(d.id) ?? [], d.employee.branch),
       });
       out.push({
         attendanceId: d.id,

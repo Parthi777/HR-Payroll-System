@@ -7,7 +7,8 @@ import { fetcher, api } from '@/lib/api';
 import { PageHero } from '@/components/page-hero';
 import { can, SETUP_ROLES } from '@/lib/permissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MapPin, Loader2, Pencil, Trash2, Plus, X, LocateFixed } from 'lucide-react';
+import { MapPin, Loader2, Pencil, Trash2, Plus, X, LocateFixed, Circle as CircleIcon, Square, Hexagon, Undo2, Eraser } from 'lucide-react';
+import { parseOutline, rectangle, type Corner } from '@/lib/geofence';
 
 // Leaflet touches `window`, so load the map only on the client.
 const BranchMap = dynamic(() => import('@/components/branch-map'), {
@@ -27,6 +28,8 @@ interface Branch {
   geofenceLng: number;
   geofenceRadius: number;
   strictMode: boolean;
+  /** JSON corners when the fence is drawn round the building. */
+  geofencePolygon?: string | null;
 }
 interface Violation {
   id: string;
@@ -47,7 +50,20 @@ interface Draft {
   lng: number;
   radius: number;
   strict: boolean;
+  /** Circle round a pin, a rectangle from two corners, or an outline clicked corner by corner. */
+  shape: Shape;
+  corners: Corner[];
+  /** Rectangle mode: the first corner, waiting for the opposite one. */
+  rectStart: Corner | null;
 }
+
+type Shape = 'circle' | 'rectangle' | 'outline';
+
+const SHAPES: { key: Shape; label: string; icon: typeof Square; hint: string }[] = [
+  { key: 'circle', label: 'Circle', icon: CircleIcon, hint: 'Click the map or drag the pin to set the centre, then choose a radius.' },
+  { key: 'rectangle', label: 'Rectangle', icon: Square, hint: 'Click one corner of the building, then the opposite corner. Click again to start over.' },
+  { key: 'outline', label: 'Building outline', icon: Hexagon, hint: 'Click each corner of the building in order, going round it. Drag a numbered corner to adjust it.' },
+];
 
 const input = 'h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40';
 
@@ -89,15 +105,42 @@ export default function GeofencePage() {
     );
   }
 
-  const startEdit = (b: Branch) =>
-    setDraft({ id: b.id, name: b.name, address: b.address, lat: b.geofenceLat, lng: b.geofenceLng, radius: b.geofenceRadius, strict: b.strictMode });
+  const startEdit = (b: Branch) => {
+    const outline = parseOutline(b.geofencePolygon);
+    setDraft({
+      id: b.id, name: b.name, address: b.address, lat: b.geofenceLat, lng: b.geofenceLng, radius: b.geofenceRadius, strict: b.strictMode,
+      shape: outline ? 'outline' : 'circle', corners: outline ?? [], rectStart: null,
+    });
+  };
   const startNew = () =>
-    setDraft({ id: null, name: '', address: '', lat: branches[0]?.geofenceLat ?? 11.4452, lng: branches[0]?.geofenceLng ?? 77.6822, radius: 100, strict: false });
+    setDraft({
+      id: null, name: '', address: '', lat: branches[0]?.geofenceLat ?? 11.4452, lng: branches[0]?.geofenceLng ?? 77.6822, radius: 100, strict: false,
+      shape: 'circle', corners: [], rectStart: null,
+    });
+
+  /** What a click on the map means depends on the shape being drawn. */
+  function mapClick(lat: number, lng: number) {
+    setDraft((d) => {
+      if (!d) return d;
+      if (d.shape === 'circle') return { ...d, lat, lng };
+      if (d.shape === 'outline') return { ...d, corners: [...d.corners, { lat, lng }] };
+      // Rectangle: first click is one corner, the second the opposite one.
+      if (!d.rectStart) return { ...d, rectStart: { lat, lng }, corners: [{ lat, lng }] };
+      return { ...d, rectStart: null, corners: rectangle(d.rectStart, { lat, lng }) };
+    });
+  }
+  const setShape = (shape: Shape) =>
+    setDraft((d) => (d ? { ...d, shape, rectStart: null, corners: shape === 'circle' ? d.corners : shape === d.shape ? d.corners : [] } : d));
+  const isOutline = draft ? draft.shape !== 'circle' : false;
 
   async function save() {
     if (!draft) return;
     if (!draft.name || !draft.address) {
       setErr('Name and address are required.');
+      return;
+    }
+    if (draft.shape !== 'circle' && draft.corners.length < 3) {
+      setErr(draft.shape === 'rectangle' ? 'Click two opposite corners of the building.' : 'Click at least 3 corners round the building.');
       return;
     }
     setSaving(true);
@@ -109,6 +152,8 @@ export default function GeofencePage() {
       geofenceLng: draft.lng,
       geofenceRadius: draft.radius,
       strictMode: draft.strict,
+      // The outline is the fence when drawn; null puts the branch back on its circle.
+      geofencePolygon: draft.shape === 'circle' ? null : draft.corners,
     });
     try {
       if (draft.id) await api(`/admin/branches/${draft.id}`, { method: 'PUT', body });
@@ -148,17 +193,23 @@ export default function GeofencePage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              {draft ? `Editing: ${draft.name || 'New branch'} — click the map or drag the pin to set the centre` : 'Branch Map'}
+              {draft ? `Editing: ${draft.name || 'New branch'} — ${SHAPES.find((x) => x.key === draft.shape)!.hint}` : 'Branch Map'}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <BranchMap
               branches={branches.filter((b) => b.id !== draft?.id)}
               draft={draft ? { lat: draft.lat, lng: draft.lng, radius: draft.radius } : null}
-              onMapClick={draft ? (lat, lng) => setDraft((d) => (d ? { ...d, lat, lng } : d)) : undefined}
+              onMapClick={draft ? mapClick : undefined}
+              draftCorners={isOutline ? draft!.corners : null}
+              onCornerMove={(i, lat, lng) =>
+                setDraft((d) => (d ? { ...d, shape: d.shape === 'rectangle' ? 'outline' : d.shape, corners: d.corners.map((c, j) => (j === i ? { lat, lng } : c)) } : d))
+              }
+              onRecentre={isOutline ? (lat, lng) => setDraft((d) => (d ? { ...d, lat, lng } : d)) : undefined}
             />
             <p className="mt-2 text-xs text-muted-foreground">
               Red = strict zone · Green = soft zone {draft && '· Dashed indigo = the fence you are editing'}
+              {isOutline && ' · Tip: switch to Satellite to see the roof you are tracing'}
             </p>
           </CardContent>
         </Card>
@@ -194,6 +245,57 @@ export default function GeofencePage() {
             </div>
 
             <div>
+              <div className="mb-1.5 text-sm font-medium">Fence shape</div>
+              <div className="flex flex-wrap gap-2">
+                {SHAPES.map(({ key, label, icon: Icon }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setShape(key)}
+                    className={`flex h-10 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition ${
+                      draft.shape === key ? 'border-brand-600 bg-brand-600 text-white' : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" /> {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">{SHAPES.find((x) => x.key === draft.shape)!.hint}</p>
+            </div>
+
+            {isOutline && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/30 p-3">
+                <span className={`text-sm font-medium ${draft.corners.length >= 3 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {draft.corners.length === 0
+                    ? 'No corners yet — click the map'
+                    : draft.corners.length < 3
+                      ? `${draft.corners.length} corner${draft.corners.length > 1 ? 's' : ''} — ${draft.shape === 'rectangle' ? 'now click the opposite corner' : `${3 - draft.corners.length} more needed`}`
+                      : `${draft.corners.length} corners — inside this outline counts as at the branch`}
+                </span>
+                <div className="ml-auto flex gap-2">
+                  {draft.shape === 'outline' && (
+                    <button
+                      type="button"
+                      disabled={draft.corners.length === 0}
+                      onClick={() => setDraft({ ...draft, corners: draft.corners.slice(0, -1) })}
+                      className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold disabled:opacity-50"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" /> Undo corner
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={draft.corners.length === 0}
+                    onClick={() => setDraft({ ...draft, corners: [], rectStart: null })}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold disabled:opacity-50"
+                  >
+                    <Eraser className="h-3.5 w-3.5" /> Clear
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!isOutline && <div>
               <div className="mb-1 flex items-center justify-between text-sm">
                 <span className="font-medium">Geofence radius</span>
                 <span className="text-muted-foreground">
@@ -228,7 +330,7 @@ export default function GeofencePage() {
                 Note: phone GPS is typically accurate to ±15–50 ft. A fence under ~50 ft may reject genuine
                 check-ins standing at the door — 150–300 ft is a safe strict-mode radius.
               </p>
-            </div>
+            </div>}
 
             <label className="flex cursor-pointer items-center gap-3 text-sm">
               <input type="checkbox" checked={draft.strict} onChange={(e) => setDraft({ ...draft, strict: e.target.checked })} className="h-4 w-4 accent-brand-600" />
@@ -264,7 +366,10 @@ export default function GeofencePage() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-semibold">{b.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      {b.address} · {b.geofenceLat.toFixed(4)}, {b.geofenceLng.toFixed(4)} · radius {Math.round(b.geofenceRadius * 3.28084)} ft
+                      {b.address} · {b.geofenceLat.toFixed(4)}, {b.geofenceLng.toFixed(4)} ·{' '}
+                      {parseOutline(b.geofencePolygon)
+                        ? `building outline, ${parseOutline(b.geofencePolygon)!.length} corners`
+                        : `radius ${Math.round(b.geofenceRadius * 3.28084)} ft`}
                     </div>
                   </div>
                   <span className={`chip ${b.strictMode ? 'chip-off' : 'chip-present'}`}>{b.strictMode ? 'Strict' : 'Soft'}</span>

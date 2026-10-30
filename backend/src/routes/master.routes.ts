@@ -6,6 +6,7 @@ import { clearCachedPolicy, requireTenantId } from '../context/tenant-context.js
 import { defaultPolicy } from '../services/settings/tenant-settings.service.js';
 import { recordAudit } from '../services/audit/audit.service.js';
 import { closeOpenTracking } from '../services/tracking/tracking.service.js';
+import { polygonWrite } from '../services/geofence/geofence.service.js';
 
 const branchSchema = z.object({
   name: z.string().min(1),
@@ -16,7 +17,25 @@ const branchSchema = z.object({
   geofenceLng: z.number().min(-180).max(180),
   geofenceRadius: z.number().min(0.5).max(10000).default(100),
   strictMode: z.boolean().default(false),
+  // The building's outline, drawn corner by corner on the Geofence page. When
+  // set it is the fence and the circle only places the pin; null goes back to
+  // the circle.
+  geofencePolygon: z
+    .array(z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }))
+    .min(3)
+    .max(40)
+    .nullable()
+    .optional(),
 });
+
+/** The branch row's columns for a request that may carry an outline. */
+function withOutline<T extends { geofencePolygon?: { lat: number; lng: number }[] | null }>(data: T) {
+  const { geofencePolygon, ...rest } = data;
+  if (geofencePolygon === undefined) return rest;
+  const write = polygonWrite(geofencePolygon);
+  if (typeof write === 'string') throw new AppError(write, 400);
+  return { ...rest, ...write };
+}
 
 /**
  * A public holiday, as a calendar date rather than an instant.
@@ -185,7 +204,7 @@ export async function masterRoutes(app: FastifyInstance) {
     branches: await app.prisma.branch.findMany({ orderBy: { name: 'asc' } }),
   }));
   app.post('/admin/branches', setupWriters, async (req) => {
-    const data = branchSchema.parse(req.body);
+    const data = withOutline(branchSchema.parse(req.body));
     const branch = await app.prisma.branch.create({ data: { ...data, tenantId: requireTenantId() } });
     await recordAudit(req, 'BRANCH_CREATED', 'Branch', {
       entityId: branch.id,
@@ -195,9 +214,19 @@ export async function masterRoutes(app: FastifyInstance) {
   });
   app.put('/admin/branches/:id', setupWriters, async (req) => {
     const { id } = req.params as { id: string };
-    const data = branchSchema.partial().parse(req.body);
+    const parsed = branchSchema.partial().parse(req.body);
+    const data = withOutline(parsed);
     const branch = await app.prisma.branch.update({ where: { id }, data });
-    await recordAudit(req, 'BRANCH_UPDATED', 'Branch', { entityId: branch.id, metadata: { name: branch.name, ...data } });
+    await recordAudit(req, 'BRANCH_UPDATED', 'Branch', {
+      entityId: branch.id,
+      metadata: {
+        name: branch.name,
+        ...parsed,
+        // The corners themselves are noise in the trail; the shape and its size are what was decided.
+        geofencePolygon: parsed.geofencePolygon === undefined ? undefined
+          : parsed.geofencePolygon === null ? 'removed (circle)' : `${parsed.geofencePolygon.length} corners`,
+      },
+    });
     return { branch };
   });
   app.delete('/admin/branches/:id', setupWriters, async (req) => {

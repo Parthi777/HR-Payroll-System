@@ -257,6 +257,7 @@ suite('live tracking', () => {
     expect(hr.enabled).toBe(true);
     expect(hr.employees.map((e: { attendanceId: string }) => e.attendanceId).sort()).toEqual([att1, att3].sort());
     expect(hr.untrackedCheckedIn).toBe(3); // the exempt one, the kiosk punch, the old app
+    expect(hr.untrackedByBranch).toEqual({ [branchA]: 3 }); // all three are branch A staff
     const e1 = hr.employees.find((e: { attendanceId: string }) => e.attendanceId === att1);
     expect(e1.state).toBe('OUTSIDE');
     expect(e1.last).toMatchObject({ status: 'OUTSIDE' });
@@ -339,6 +340,29 @@ suite('live tracking', () => {
     expect(listed.consentVersion).toBe(1);
 
     expect((await as(tok.owner, 'POST', '/api/me/consent', { version: 1 })).statusCode).toBe(403);
+  });
+
+  it('a branch drawn as a building outline uses the outline, and can go back to a circle', async () => {
+    // ~60 m × 40 m round branch A's pin.
+    const d = (east: number, north: number) => ({ lat: A.lat + north / 111_195, lng: A.lng + east / (111_195 * Math.cos((A.lat * Math.PI) / 180)) });
+    const outline = [d(-30, -20), d(30, -20), d(30, 20), d(-30, 20)];
+    const check = (p: { lat: number; lng: number }) => as(tok.hr, 'GET', `/api/geofence/check?lat=${p.lat}&lng=${p.lng}&branchId=${branchA}`);
+
+    const saved = await as(tok.hr, 'PUT', `/api/admin/geofence/${branchA}`, { geofencePolygon: outline });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(JSON.parse(saved.json().branch.geofencePolygon)).toHaveLength(4);
+
+    // 80 m north is outside the 20 m wall, though inside the 100 m circle it replaced.
+    expect((await check(d(25, 0))).json()).toMatchObject({ inside: true, status: 'INSIDE', shape: 'polygon' });
+    expect((await check(d(0, 80))).json()).toMatchObject({ inside: false, status: 'OUTSIDE' });
+
+    expect((await as(tok.hr, 'PUT', `/api/admin/geofence/${branchA}`, { geofencePolygon: outline.slice(0, 2) })).statusCode).toBe(422);
+    expect((await as(tok.bm, 'PUT', `/api/admin/geofence/${branchA}`, { geofencePolygon: outline })).statusCode).toBe(403);
+
+    const back = await as(tok.hr, 'PUT', `/api/admin/branches/${branchA}`, { geofencePolygon: null });
+    expect(back.statusCode, back.body).toBe(200);
+    expect(back.json().branch.geofencePolygon).toBeNull();
+    expect((await check(d(0, 80))).json()).toMatchObject({ inside: true, shape: 'circle' });
   });
 
   it('switching it off closes open days and stops the phone', async () => {

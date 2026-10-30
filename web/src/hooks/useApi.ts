@@ -94,6 +94,8 @@ export interface TrackBranch {
   geofenceLng: number;
   geofenceRadius: number;
   strictMode: boolean;
+  /** JSON corners when the fence is a drawn building outline. */
+  geofencePolygon?: string | null;
 }
 
 export type LiveTracking =
@@ -104,6 +106,8 @@ export type LiveTracking =
       generatedAt: string;
       branches: TrackBranch[];
       untrackedCheckedIn: number;
+      /** Checked in without tracking, per branch id. */
+      untrackedByBranch: Record<string, number>;
       employees: TrackedEmployee[];
     };
 

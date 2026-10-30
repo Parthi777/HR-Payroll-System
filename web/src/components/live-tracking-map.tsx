@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Circle, CircleMarker, MapContainer, Marker, Polyline, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet';
+import { Circle, CircleMarker, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Crosshair, Layers } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import type { TrackBranch, TrackedEmployee, TrackState } from '@/hooks/useApi';
+import { insideFence, parseOutline } from '@/lib/geofence';
 
 /**
  * Colour per state. Inside uses the deeper brand green (#00835E) rather than
@@ -56,9 +57,73 @@ function personIcon(e: TrackedEmployee, selected: boolean) {
   });
 }
 
-function branchIcon(name: string) {
+function branchIcon(name: string, here: number) {
   const safe = name.replace(/[<>&"]/g, '');
-  return L.divIcon({ className: 'lt-person', iconSize: [0, 0], html: `<span class="lt-branch">🏢 ${safe}</span>` });
+  const badge = `<b class="lt-branch-count${here ? '' : ' lt-branch-empty'}">${here}</b>`;
+  return L.divIcon({ className: 'lt-person', iconSize: [0, 0], html: `<span class="lt-branch">🏢 ${safe} ${badge}</span>` });
+}
+
+/**
+ * What clicking a branch shows: who is physically inside its fence right now
+ * (from any branch — a visitor counts where they are), and how its own staff
+ * are spread today, including those checked in without tracking.
+ */
+function BranchSummary({ branch, employees, untracked, onSelect }: {
+  branch: TrackBranch;
+  employees: TrackedEmployee[];
+  untracked: number;
+  onSelect: (attendanceId: string) => void;
+}) {
+  const map = useMap();
+  const here = employees.filter((e) => e.last && insideFence(e.last, branch));
+  const own = employees.filter((e) => e.branchId === branch.id);
+  const count = (states: TrackState[]) => own.filter((e) => states.includes(e.state)).length;
+  const staff: [string, number, string][] = [
+    ['Inside', count(['INSIDE']), STATE_COLOR.INSIDE],
+    ['Away', count(['OUTSIDE']), STATE_COLOR.OUTSIDE],
+    ['No signal', count(['OFF', 'NO_SIGNAL']), STATE_COLOR.NO_SIGNAL],
+    ['Not tracked', untracked, '#94A3B8'],
+  ];
+  return (
+    <div style={{ minWidth: 230 }} className="font-sans">
+      <div className="text-sm font-semibold text-foreground">{branch.name}</div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className="text-2xl font-bold tabular-nums text-brand-700">{here.length}</span>
+        <span className="text-xs text-muted-foreground">at the branch now</span>
+      </div>
+      {here.length === 0 ? (
+        <p className="mt-1 text-xs text-muted-foreground">Nobody tracked is at this branch right now.</p>
+      ) : (
+        <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-y-auto">
+          {here.map((e) => (
+            <li key={e.attendanceId}>
+              <button
+                type="button"
+                onClick={() => { map.closePopup(); onSelect(e.attendanceId); }}
+                className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-xs hover:bg-muted"
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STATE_COLOR[e.state] }} />
+                <span className="truncate font-medium text-foreground">{e.name}</span>
+                {e.branchId !== branch.id && <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">from {e.branch}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-2 border-t border-border pt-2">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Its staff checked in today</div>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+          {staff.map(([label, n, color]) => (
+            <div key={label} className="flex items-center gap-1.5 text-xs">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
+              <span className="truncate text-muted-foreground">{label}</span>
+              <span className="ml-auto font-semibold tabular-nums text-foreground">{n}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -118,6 +183,7 @@ export default function LiveTrackingMap({
   onSelect,
   fitKey,
   focus,
+  untrackedByBranch = {},
 }: {
   branches: TrackBranch[];
   employees: TrackedEmployee[];
@@ -128,6 +194,8 @@ export default function LiveTrackingMap({
   fitKey: string;
   /** Set by the Track button: fly here, over the path framing. */
   focus?: { lat: number; lng: number; key: number } | null;
+  /** Checked in without tracking, per branch — for the branch popup. */
+  untrackedByBranch?: Record<string, number>;
 }) {
   const [satellite, setSatellite] = useState(false);
   const placed = branches.filter((b) => b.geofenceLat || b.geofenceLng);
@@ -179,16 +247,33 @@ export default function LiveTrackingMap({
         <FlyToPoint focus={focus ?? null} />
         <Recenter points={everyone} />
 
-        {placed.map((b) => (
+        {placed.map((b) => {
+          const outline = parseOutline(b.geofencePolygon);
+          const fence = { color: '#00835E', weight: 1.5, dashArray: '6 6', fillColor: '#00A174', fillOpacity: 0.08 };
+          const here = people.filter((e) => insideFence(e.last!, b)).length;
+          // The same summary opens from the label or anywhere on the fence.
+          const summary = (
+            <Popup>
+              <BranchSummary branch={b} employees={employees} untracked={untrackedByBranch[b.id] ?? 0} onSelect={onSelect} />
+            </Popup>
+          );
+          return (
           <div key={b.id}>
-            <Circle
-              center={[b.geofenceLat, b.geofenceLng]}
-              radius={b.geofenceRadius}
-              pathOptions={{ color: '#00835E', weight: 1.5, dashArray: '6 6', fillColor: '#00A174', fillOpacity: 0.08 }}
-            />
-            <Marker position={[b.geofenceLat, b.geofenceLng]} icon={branchIcon(b.name)} interactive={false} />
+            {outline ? (
+              <Polygon positions={outline.map((c) => [c.lat, c.lng] as [number, number])} pathOptions={{ ...fence, fillOpacity: 0.12 }}>
+                {summary}
+              </Polygon>
+            ) : (
+              <Circle center={[b.geofenceLat, b.geofenceLng]} radius={b.geofenceRadius} pathOptions={fence}>
+                {summary}
+              </Circle>
+            )}
+            <Marker position={[b.geofenceLat, b.geofenceLng]} icon={branchIcon(b.name, here)} zIndexOffset={2000}>
+              {summary}
+            </Marker>
           </div>
-        ))}
+          );
+        })}
 
         {strokes.map((s, i) => (
           <Polyline

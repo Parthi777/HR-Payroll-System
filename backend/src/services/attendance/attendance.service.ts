@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { AppError } from '../../utils/AppError.js';
 import { assertManages, type JwtPayload } from '../../middleware/auth.js';
-import { checkGeofence } from '../geofence/geofence.service.js';
+import { awayMetres, checkGeofence } from '../geofence/geofence.service.js';
 import { TRACK_INTERVAL_SEC } from '../tracking/tracking.service.js';
 import { verifyFace, isFaceMatchEnabled } from '../ai/face.service.js';
 import { dispatchWhatsApp, waTemplates } from '../whatsapp/whatsapp.service.js';
@@ -216,7 +216,7 @@ export async function markCheckIn(
   // Strict-mode branches hard-block outside check-ins.
   if (geo.status === 'OUTSIDE' && employee.branch.strictMode) {
     throw new AppError(
-      `You are ${Math.round(geo.distance)}m away from ${employee.branch.name}. Move inside the branch area to check in.`,
+      `You are ${awayMetres(geo)}m away from ${employee.branch.name}. Move inside the branch area to check in.`,
       403,
     );
   }
@@ -247,7 +247,7 @@ export async function markCheckIn(
   const geoFlagged = geo.status !== 'INSIDE';
   const flagged = geoFlagged || lateNeedsApproval;
   const reasons: string[] = [];
-  if (geoFlagged) reasons.push(`Geofence ${geo.status} — ${Math.round(geo.distance)}m from ${employee.branch.name}`);
+  if (geoFlagged) reasons.push(`Geofence ${geo.status} — ${awayMetres(geo)}m from ${employee.branch.name}`);
   if (lateNeedsApproval) reasons.push('Late arrival');
   const flagReason = reasons.length ? `${reasons.join('; ')}${approvalStatus ? ' — awaiting approval' : ''}` : null;
   // Agreeing to the app's consent screen is also the sign the phone can track
@@ -260,7 +260,11 @@ export async function markCheckIn(
   // Log a geofence violation row when the check-in is outside/borderline the zone.
   if (geoFlagged) {
     await prisma.geofenceViolation.create({
-      data: { employeeId, branchId: employee.branchId, lat, lng, distance: geo.distance, tenantId: requireTenantId() },
+      // For a drawn building, how far outside its walls; for a circle, from the centre as before.
+      data: {
+        employeeId, branchId: employee.branchId, lat, lng, tenantId: requireTenantId(),
+        distance: geo.shape === 'polygon' ? geo.beyond : geo.distance,
+      },
     });
   }
 
@@ -354,7 +358,7 @@ export async function markCheckOut(
     const geo = checkGeofence({ lat, lng }, employee.branch);
     if (geo.status === 'OUTSIDE') {
       throw new AppError(
-        `You are ${Math.round(geo.distance)}m away from ${employee.branch.name}. Move inside the branch area to check out.`,
+        `You are ${awayMetres(geo)}m away from ${employee.branch.name}. Move inside the branch area to check out.`,
         403,
       );
     }

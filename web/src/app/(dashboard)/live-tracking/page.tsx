@@ -125,6 +125,7 @@ export default function LiveTrackingPage() {
           employees={data.employees}
           branches={data.branches}
           untracked={data.untrackedCheckedIn}
+          untrackedByBranch={data.untrackedByBranch ?? {}}
           fitKey={branchId || 'all'}
         />
       )}
@@ -164,10 +165,11 @@ function TrackingOff() {
 
 // ── Live map ──
 
-function LiveView({ employees, branches, untracked, fitKey }: {
+function LiveView({ employees, branches, untracked, untrackedByBranch, fitKey }: {
   employees: TrackedEmployee[];
   branches: TrackBranch[];
   untracked: number;
+  untrackedByBranch: Record<string, number>;
   fitKey: string;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -288,6 +290,7 @@ function LiveView({ employees, branches, untracked, fitKey }: {
             onSelect={pick}
             fitKey={fitKey}
             focus={focus}
+            untrackedByBranch={untrackedByBranch}
           />
           {selected && (
             <div className="absolute inset-x-3 bottom-14 z-[1000] max-h-[70%] overflow-y-auto rounded-2xl border border-border bg-card/95 shadow-xl backdrop-blur lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-14 lg:max-h-none lg:w-[340px]">

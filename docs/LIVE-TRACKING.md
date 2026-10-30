@@ -134,6 +134,9 @@ paying them needs.
   or PDF.
 - each person's **current address** and a **Track** button that flies the map
   to them (also "Google Maps" in their panel).
+- click a **branch** (its label shows a count) for who is inside its fence right
+  now — visitors from other branches included and tagged — and how its own
+  staff are spread today, including those checked in without tracking.
 
 ### Addresses
 

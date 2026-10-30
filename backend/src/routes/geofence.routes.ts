@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { checkGeofence } from '../services/geofence/geofence.service.js';
+import { checkGeofence, parsePolygon, polygonWrite } from '../services/geofence/geofence.service.js';
 import { changed, recordAudit } from '../services/audit/audit.service.js';
 import { AppError } from '../utils/AppError.js';
 
@@ -34,11 +34,21 @@ export async function geofenceRoutes(app: FastifyInstance) {
         geofenceLng: z.number().min(-180).max(180).optional(),
         geofenceRadius: z.number().min(0.5).max(10000).optional(), // meters (0.5m ≈ 1.6ft — owner wants very tight fences)
         strictMode: z.boolean().optional(),
+        // A building outline instead of a circle; null goes back to the circle.
+        geofencePolygon: z
+          .array(z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }))
+          .min(3)
+          .max(40)
+          .nullable()
+          .optional(),
       })
       .parse(req.body);
     const before = await app.prisma.branch.findUnique({ where: { id: branchId } });
     if (!before) throw new AppError('Branch not found', 404);
-    const branch = await app.prisma.branch.update({ where: { id: branchId }, data });
+    const { geofencePolygon, ...rest } = data;
+    const outline = geofencePolygon === undefined ? {} : polygonWrite(geofencePolygon);
+    if (typeof outline === 'string') throw new AppError(outline, 400);
+    const branch = await app.prisma.branch.update({ where: { id: branchId }, data: { ...rest, ...outline } });
 
     // A fence that quietly grew, or strict mode switched off, is what someone
     // investigating attendance from the wrong place will be looking for — so
@@ -51,6 +61,7 @@ export async function geofenceRoutes(app: FastifyInstance) {
         ...changed('lng', before.geofenceLng, branch.geofenceLng),
         ...changed('radiusMetres', before.geofenceRadius, branch.geofenceRadius),
         ...changed('strictMode', before.strictMode, branch.strictMode),
+        ...changed('shape', parsePolygon(before.geofencePolygon) ? 'building outline' : 'circle', parsePolygon(branch.geofencePolygon) ? 'building outline' : 'circle'),
       },
     });
     return { branch };

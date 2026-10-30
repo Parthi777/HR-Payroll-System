@@ -196,7 +196,21 @@
     opacity: 0;
   }
 }
+.lt-branch-count {
+  min-width: 18px;
+  border-radius: 9999px;
+  background: #00835e;
+  color: #fff;
+  padding: 1px 6px;
+  text-align: center;
+  font-weight: 700;
+}
+.lt-branch-count.lt-branch-empty {
+  background: #e5e7eb;
+  color: #6b7280;
+}
 .lt-branch {
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -207,5 +221,7 @@
   padding: 3px 8px;
   font: 600 11px/1.2 ui-sans-serif, system-ui, sans-serif;
   box-shadow: 0 4px 12px -6px rgba(23, 28, 32, 0.45);
-  transform: translate(-50%, -50%);
+  /* Above the pin, not on it: staff inside a branch cluster round its pin,
+     and their markers would otherwise cover the label and take its clicks. */
+  transform: translate(-50%, calc(-100% - 24px));
 }

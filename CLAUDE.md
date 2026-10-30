@@ -250,7 +250,12 @@ the employee payroll routes (and WhatsApp `SLIP`) while it is off.
 
 ### 3. Geofence Management
 - Map interface (Google Maps / Leaflet)
-- Draw geofence polygon or circle per branch
+- Draw the fence per branch as a circle, a rectangle (two opposite corners) or
+  a building outline clicked corner by corner (`Branch.geofencePolygon`, JSON
+  corners). An outline is the fence for check-in, kiosk and live tracking:
+  anywhere inside it is INSIDE, within 10 m outside is BORDERLINE, and
+  "metres away" is measured from the nearest wall. Saving one moves the branch
+  pin inside it (the kiosk punches at the pin); `null` goes back to the circle
 - Configurable radius (default 100m)
 - Multiple branches on one map
 - Strict mode (block attendance outside) vs. Soft mode (allow but flag)

@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { MapContainer, TileLayer, Circle, CircleMarker, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, CircleMarker, Marker, Polygon, Popup, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { LocateFixed, Loader2 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
+import { parseOutline, type Corner } from '@/lib/geofence';
 
 export interface MapBranch {
   id: string;
@@ -13,7 +14,18 @@ export interface MapBranch {
   geofenceLng: number;
   geofenceRadius: number;
   strictMode: boolean;
+  /** JSON corners when the fence is drawn round the building instead of a circle. */
+  geofencePolygon?: string | null;
 }
+
+/** A small square handle for one corner of the outline being drawn. */
+const cornerIcon = (n: number) =>
+  L.divIcon({
+    className: '',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    html: `<div style="width:18px;height:18px;border-radius:5px;background:#fff;border:2px solid #6C5CE7;box-shadow:0 2px 6px rgba(0,0,0,.3);font:700 10px/14px ui-sans-serif,system-ui;color:#6C5CE7;text-align:center">${n}</div>`,
+  });
 
 // Leaflet's default marker icons break under bundlers — point them at the CDN.
 const markerIcon = L.icon({
@@ -83,6 +95,9 @@ export default function BranchMap({
   draft,
   scrollZoom,
   children,
+  draftCorners,
+  onCornerMove,
+  onRecentre,
 }: {
   branches: MapBranch[];
   height?: number;
@@ -94,7 +109,14 @@ export default function BranchMap({
   scrollZoom?: boolean;
   /** Extra layers drawn over the branches — the live-tracking dots and paths. */
   children?: ReactNode;
+  /** The building outline being drawn. Set (even empty) = outline mode: no circle, no centre pin. */
+  draftCorners?: Corner[] | null;
+  /** A corner handle was dragged. */
+  onCornerMove?: (index: number, lat: number, lng: number) => void;
+  /** Where search and "locate me" go when a click means something else (adding a corner). */
+  onRecentre?: (lat: number, lng: number) => void;
 }) {
+  const goTo = onRecentre ?? onMapClick;
   const valid = branches.filter((b) => b.geofenceLat && b.geofenceLng);
   const [satellite, setSatellite] = useState(false);
   const [query, setQuery] = useState('');
@@ -111,7 +133,7 @@ export default function BranchMap({
       (pos) => {
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, ts: Date.now() };
         setMe(p);
-        onMapClick?.(p.lat, p.lng);
+        goTo?.(p.lat, p.lng);
         setLocating(false);
       },
       (e) => {
@@ -133,11 +155,11 @@ export default function BranchMap({
       : [11.4452, 77.6822]; // fallback: Bhavani
 
   async function search() {
-    if (!query.trim() || !onMapClick) return;
+    if (!query.trim() || !goTo) return;
     setSearching(true);
     try {
       const hit = await geocode(query);
-      if (hit) onMapClick(hit.lat, hit.lng);
+      if (hit) goTo(hit.lat, hit.lng);
       else alert('Place not found — try adding the town/city name');
     } catch {
       alert('Search failed — check your internet connection');
@@ -224,25 +246,54 @@ export default function BranchMap({
       )}
       {valid.map((b) => {
         const color = b.strictMode ? '#e11d48' : '#16a34a';
+        const outline = parseOutline(b.geofencePolygon);
         return (
           <div key={b.id}>
             <Marker position={[b.geofenceLat, b.geofenceLng]} icon={markerIcon}>
               <Popup>
                 <strong>{b.name}</strong>
                 <br />
-                {b.strictMode ? 'Strict' : 'Soft'} · {b.geofenceRadius}m radius
+                {b.strictMode ? 'Strict' : 'Soft'} · {outline ? `building outline, ${outline.length} corners` : `${b.geofenceRadius}m radius`}
               </Popup>
             </Marker>
-            <Circle
-              center={[b.geofenceLat, b.geofenceLng]}
-              radius={b.geofenceRadius}
-              pathOptions={{ color, fillColor: color, fillOpacity: 0.12 }}
-            />
+            {outline ? (
+              <Polygon positions={outline.map((c) => [c.lat, c.lng] as [number, number])} pathOptions={{ color, fillColor: color, fillOpacity: 0.15, weight: 2 }} />
+            ) : (
+              <Circle
+                center={[b.geofenceLat, b.geofenceLng]}
+                radius={b.geofenceRadius}
+                pathOptions={{ color, fillColor: color, fillOpacity: 0.12 }}
+              />
+            )}
           </div>
         );
       })}
       {children}
-      {draft && (
+      {draftCorners && (
+        <>
+          {draft && <Recenter lat={draft.lat} lng={draft.lng} />}
+          {draftCorners.length >= 2 && (
+            <Polygon
+              positions={draftCorners.map((c) => [c.lat, c.lng] as [number, number])}
+              pathOptions={{ color: '#6C5CE7', fillColor: '#6C5CE7', fillOpacity: draftCorners.length >= 3 ? 0.18 : 0, dashArray: '6 6', weight: 2 }}
+            />
+          )}
+          {draftCorners.map((c, i) => (
+            <Marker
+              key={i}
+              position={[c.lat, c.lng]}
+              icon={cornerIcon(i + 1)}
+              draggable={!!onCornerMove}
+              eventHandlers={
+                onCornerMove
+                  ? { dragend: (e) => { const p = (e.target as L.Marker).getLatLng(); onCornerMove(i, p.lat, p.lng); } }
+                  : undefined
+              }
+            />
+          ))}
+        </>
+      )}
+      {draft && !draftCorners && (
         <>
           <Recenter lat={draft.lat} lng={draft.lng} />
           <Marker
